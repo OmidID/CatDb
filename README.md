@@ -1,34 +1,49 @@
-# STSdb 4.0
+# CatDb
 
-STSdb 4.0 is a NoSQL key-value store open-source database with innovative indexing algorithm. The STSdb 4.0 engine is based on WaterfallTree technology which provides blazing performance in real-time indexing of both sequential and random keys, making STSdb 4.0 perfect for BigData and enterprise systems.
+CatDb is a NoSQL key-value store open-source database with innovative indexing algorithm. The CatDb engine is based on WaterfallTree technology which provides blazing performance in real-time indexing of both sequential and random keys, making CatDb perfect for BigData and enterprise systems.
+
+CatDb forked from STSdb 4.0. Ported to .Net 6 and try to make it more compatible with multi-platform in future. The main idea is to get rid of code injection to be able to use it everywhere.
+
+# Installation
+
+| Name | Description | Version |
+|:-|:-|:-|
+| [CatDb](https://www.nuget.org/packages/CatDb/) | Database engine library | ![Nuget](https://badgen.net/nuget/v/CatDb) |
+
 
 # Key Features
 
 ## Innovative Technology
-The storage engine of STSdb 4.0 is based on an innovative data indexing structure called WaterfallTree. WaterfallTree is an algorithm that effectively solves one of the fundamental problems in the database world – speed degradation when indexing random keys.
+The storage engine of CatDb is based on an innovative data indexing structure called WaterfallTree. WaterfallTree is an algorithm that effectively solves one of the fundamental problems in the database world – speed degradation when indexing random keys.
 
-More about WaterfallTree: http://stssoft.com/technologies/waterfalltree/.
+More about WaterfallTree: https://ieeexplore.ieee.org/document/6857846/references.
 
 ## Performance
-STSdb provides up to 100x increase in indexing speed and data procesing.
+CatDb provides up to 100x increase in indexing speed and data processing.
 
 * up to 6x increase compared to LSM-tree technology.
 * up to 10x increase compared to FractalTree technology.
 * up to 100x increase compared to B-tree technology.
  
-More about the performance: http://stssoft.com/products/stsdb-4-0/benchmark/.
-
 # Compression
-STSdb is not only faster, but more compact in size. In most of the cases it can achieve up to 4x better compression than competitive solutions thanks to fast parallel vertical compressions.
+CatDb is not only faster, but more compact in size. In most of the cases it can achieve up to 4x better compression than competitive solutions thanks to fast parallel vertical compressions.
 
 ## BigData
-With its innovative WaterfallTree technology, STSdb 4.0 is the perfect choice for BigData. STSdb can be used as a scalable and versatile node for cloud computing and enterprise systems. 
+With its innovative WaterfallTree technology, CatDb is the perfect choice for BigData. CatDb can be used as a scalable and versatile node for cloud computing and enterprise systems. 
 
-More about STSdb and BigData: http://stssoft.com/products/stsdb-4-0/bigdata/.
+## Usage
 
-## Simplicity
-STSdb 4.0 has the best designed API in the database world. Simplicity is beauty.
+```csharp
+var engine = Database.CatDb.FromFile(FILE_NAME);
+var table = engine.OpenXTable<long, Tick>("table");
+var table2 = engine.OpenXTable<string, string>("table2");
 
-Get started in fust a few minutes: http://docs.stsdb.com/display/stsdb404/Quick+Start.
-***
-More about STSdb and our technologies: http://stssoft.com/
+table2["My Random Key"] = "Random Value";
+table2["My Random Key2"] = "Random Value2";
+
+//Save to file
+engine.Commit();
+
+Console.WriteLine(table2["My Random Key"]);
+Console.WriteLine(table2["My Random Key2"]);
+```
