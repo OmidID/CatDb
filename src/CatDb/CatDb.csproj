@@ -3,22 +3,37 @@
 	<PropertyGroup>
 		<TargetFramework>net6.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<Description>CatDb is a NoSQL key-value store open-source database with innovative indexing algorithm</Description>
+		<Copyright>GNU2.0</Copyright>
+		<PackageProjectUrl>https://github.com/OmidID/CatDb</PackageProjectUrl>
+		<PackageLicenseUrl>https://github.com/OmidID/CatDb/blob/master/LICENSE</PackageLicenseUrl>
+		<PackageIcon>nuget.png</PackageIcon>
+		<RepositoryUrl>https://github.com/OmidID/CatDb</RepositoryUrl>
+		<PackageTags>Database;Cache;Fast Collection;KeyValue Pair</PackageTags>
+		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+		<Authors>Omid Mafakher</Authors>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageLicenseFile>C:\Users\Omid\Projects\Applications\CatDb\LICENSE</PackageLicenseFile>
 	</PropertyGroup>
-
-	<!--<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-	  <DefineConstants>$(DefineConstants)TRACE;NETX_CORE</DefineConstants>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
-	  <DefineConstants>$(DefineConstants)TRACE;NETFX_CORE</DefineConstants>
-	</PropertyGroup>-->
 
 	<ItemGroup>
 	  <Compile Remove="Database\Operations\ResultOperation.cs" />
 	</ItemGroup>
 
 	<ItemGroup>
+	  <None Include="..\..\images\nuget.png">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	  <None Include="..\..\README.md">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	</ItemGroup>
+
+	<ItemGroup>
 	  <PackageReference Include="System.CodeDom" Version="6.0.0" />
 	  <PackageReference Include="System.Reflection.Emit" Version="4.7.0" />
 	</ItemGroup>
+
 </Project>

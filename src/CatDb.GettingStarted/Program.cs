@@ -37,7 +37,7 @@ namespace CatDb.GettingStarted
             sw.Reset();
             sw.Start();
             int c = 0;
-            using (IStorageEngine engine = Database.CatDb.FromFile(FILE_NAME))
+            using (var engine = Database.CatDb.FromFile(FILE_NAME))
             {
                 ITable<long, Tick> table = engine.OpenXTable<long, Tick>("table");
 
