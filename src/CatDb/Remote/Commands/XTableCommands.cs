@@ -137,20 +137,20 @@ namespace CatDb.Remote.Commands
 
     public abstract class OutValueCommand : ICommand
     {
-        private int code;
+        private readonly int _code;
 
         public IData Key;
         public IData Record;
 
         public OutValueCommand(int code, IData key, IData record)
         {
-            this.code = code;
+            this._code = code;
 
             Key = key;
             Record = record;
         }
 
-        public int Code => code;
+        public int Code => _code;
 
         public bool IsSynchronous => true;
     }
@@ -170,20 +170,20 @@ namespace CatDb.Remote.Commands
 
     public abstract class OutKeyValueCommand : ICommand
     {
-        private int code;
+        private readonly int _code;
 
         public IData Key;
         public KeyValuePair<IData, IData>? KeyValue;
 
         public OutKeyValueCommand(int code, IData key, KeyValuePair<IData, IData>? keyValue)
         {
-            this.code = code;
+            this._code = code;
 
             Key = key;
             KeyValue = keyValue;
         }
 
-        public int Code => code;
+        public int Code => _code;
 
         public bool IsSynchronous => true;
     }
@@ -246,7 +246,7 @@ namespace CatDb.Remote.Commands
 
     public abstract class IteratorCommand : ICommand
     {
-        private int code;
+        private readonly int _code;
 
         public IData FromKey;
         public IData ToKey;
@@ -256,7 +256,7 @@ namespace CatDb.Remote.Commands
 
         public IteratorCommand(int code, int pageCount, IData from, IData to, List<KeyValuePair<IData, IData>> list)
         {
-            this.code = code;
+            this._code = code;
 
             FromKey = from;
             ToKey = to;
@@ -267,7 +267,7 @@ namespace CatDb.Remote.Commands
 
         public bool IsSynchronous => true;
 
-        public int Code => code;
+        public int Code => _code;
     }
 
     public class ForwardCommand : IteratorCommand

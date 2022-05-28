@@ -9,9 +9,9 @@ namespace CatDb.Database
     public class StorageEngine : WTree, IStorageEngine
     {
         //user scheme
-        private Dictionary<string, Item1> map = new Dictionary<string, Item1>();
+        private readonly Dictionary<string, Item1> _map = new();
 
-        private readonly object SyncRoot = new object();
+        private readonly object _syncRoot = new();
 
         public StorageEngine(IHeap heap)
             : base(heap)
@@ -23,7 +23,7 @@ namespace CatDb.Database
                 
                 var item = new Item1(locator, null);
 
-                map[locator.Name] = item;
+                _map[locator.Name] = item;
             }
         }
 
@@ -32,8 +32,7 @@ namespace CatDb.Database
             Debug.Assert(keyDataType != null);
             Debug.Assert(recordDataType != null);
 
-            Item1 item;
-            if (!map.TryGetValue(name, out item))
+            if (!_map.TryGetValue(name, out var item))
             {
                 if (keyType == null)
                     keyType = DataTypeUtils.BuildType(keyDataType);
@@ -43,7 +42,7 @@ namespace CatDb.Database
                 var locator = CreateLocator(name, structureType, keyDataType, recordDataType, keyType, recordType);
                 var table = new XTablePortable(this, locator);
 
-                map[name] = item = new Item1(locator, table);
+                _map[name] = item = new Item1(locator, table);
             }
             else
             {
@@ -90,7 +89,7 @@ namespace CatDb.Database
 
         public ITable<IData, IData> OpenXTablePortable(string name, DataType keyDataType, DataType recordDataType)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
                 var item = Obtain(name, StructureType.XTABLE, keyDataType, recordDataType, null, null);
 
@@ -100,7 +99,7 @@ namespace CatDb.Database
 
         public ITable<TKey, TRecord> OpenXTablePortable<TKey, TRecord>(string name, DataType keyDataType, DataType recordDataType, ITransformer<TKey, IData> keyTransformer, ITransformer<TRecord, IData> recordTransformer)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
                 var item = Obtain(name, StructureType.XTABLE, keyDataType, recordDataType, null, null);
 
@@ -121,7 +120,7 @@ namespace CatDb.Database
 
         public ITable<TKey, TRecord> OpenXTable<TKey, TRecord>(string name)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
                 var keyType = typeof(TKey);
                 var recordType = typeof(TRecord);
@@ -140,7 +139,7 @@ namespace CatDb.Database
 
         public XFile OpenXFile(string name)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
                 var item = Obtain(name, StructureType.XFILE, DataType.Int64, DataType.ByteArray, typeof(long), typeof(byte[]));
 
@@ -155,10 +154,9 @@ namespace CatDb.Database
         {
             get
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    Item1 item;
-                    if (!map.TryGetValue(name, out item))
+                    if (!_map.TryGetValue(name, out var item))
                         return null;
 
                     return item.Locator;
@@ -168,19 +166,18 @@ namespace CatDb.Database
 
         public IDescriptor Find(long id)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
                 return GetLocator(id);
         }
 
         public void Delete(string name)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                Item1 item;
-                if (!map.TryGetValue(name, out item))
+                if (!_map.TryGetValue(name, out var item))
                     return;
 
-                map.Remove(name);
+                _map.Remove(name);
 
                 if (item.Table != null)
                 {
@@ -194,42 +191,41 @@ namespace CatDb.Database
 
         public void Rename(string name, string newName)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                if (map.ContainsKey(newName))
+                if (_map.ContainsKey(newName))
                     return;
 
-                Item1 item;
-                if (!map.TryGetValue(name, out item))
+                if (!_map.TryGetValue(name, out var item))
                     return;
 
                 item.Locator.Name = newName;
 
-                map.Remove(name);
-                map.Add(newName, item);
+                _map.Remove(name);
+                _map.Add(newName, item);
             }
         }
 
         public bool Exists(string name)
         {
-            lock (SyncRoot)
-                return map.ContainsKey(name);
+            lock (_syncRoot)
+                return _map.ContainsKey(name);
         }
 
         public int Count
         {
             get
             {
-                lock (SyncRoot)
-                    return map.Count;
+                lock (_syncRoot)
+                    return _map.Count;
             }
         }
 
         public override void Commit()
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                foreach (var kv in map)
+                foreach (var kv in _map)
                 {
                     var table = kv.Value.Table;
 
@@ -244,7 +240,7 @@ namespace CatDb.Database
 
                 base.Commit();
 
-                foreach (var kv in map)
+                foreach (var kv in _map)
                 {
                     var table = kv.Value.Table;
 
@@ -261,9 +257,9 @@ namespace CatDb.Database
 
         public IEnumerator<IDescriptor> GetEnumerator()
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                return map.Select(x => (IDescriptor)x.Value.Locator).GetEnumerator();
+                return _map.Select(x => (IDescriptor)x.Value.Locator).GetEnumerator();
             }
         }
 
@@ -276,7 +272,7 @@ namespace CatDb.Database
 
         private class Item1
         {
-            public Locator Locator;
+            public readonly Locator Locator;
             public XTablePortable Table;
 
             public ITable Direct;

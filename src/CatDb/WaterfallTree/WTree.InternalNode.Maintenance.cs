@@ -33,7 +33,7 @@ namespace CatDb.WaterfallTree
 
                 //sink branches
                 var operationCount = Branches.Sum(x => x.Value.Cache.OperationCount);
-                if (operationCount > Branch.Tree.INTERNAL_NODE_MAX_OPERATIONS)
+                if (operationCount > Branch.Tree._internalNodeMaxOperations)
                 {
                     //Debug.WriteLine(string.Format("{0}: {1} = {2}", level, Branch.NodeHandle, operationCount));
                     foreach (var kv in Branches.Where(x => x.Value.Cache.OperationCount > 0).OrderByDescending(x => x.Value.Cache.OperationCount))
@@ -44,7 +44,7 @@ namespace CatDb.WaterfallTree
                         if (branch.Fall(level, token, new Params(WalkMethod.Current, WalkAction.None, null, true)))
                             IsModified = true;
 
-                        if (operationCount <= Branch.Tree.INTERNAL_NODE_MIN_OPERATIONS)
+                        if (operationCount <= Branch.Tree._internalNodeMinOperations)
                             break;
 
                         //branch.WaitFall();
@@ -54,20 +54,20 @@ namespace CatDb.WaterfallTree
 
             private class MaintenanceHelper
             {
-                public readonly int Level;
-                public readonly Token Token;
-                public readonly MaintenanceHelper[] Helpers;
-                public readonly int Index;
+                private readonly int _level;
+                private readonly Token _token;
+                private readonly MaintenanceHelper[] _helpers;
+                private readonly int _index;
 
                 public BranchCollection List;
-                public Task Task;
+                public readonly Task Task;
 
                 public MaintenanceHelper(int level, Token token, MaintenanceHelper[] helpers, KeyValuePair<FullKey, Branch> kv, int index)
                 {
-                    Level = level;
-                    Token = token;
-                    Helpers = helpers;
-                    Index = index;
+                    _level = level;
+                    _token = token;
+                    _helpers = helpers;
+                    _index = index;
                     Task = Task.Factory.StartNew(Do, kv, TaskCreationOptions.AttachedToParent);
                 }
 
@@ -99,7 +99,7 @@ namespace CatDb.WaterfallTree
                     branch.NodeState = branch.Node.State;
 
                     //release node space
-                    node.Branch.Tree.heap.Release(node.Branch.NodeHandle);
+                    node.Branch.Tree._heap.Release(node.Branch.NodeHandle);
                 }
 
                 private void Do(object state)
@@ -114,7 +114,7 @@ namespace CatDb.WaterfallTree
                         List = new BranchCollection(kv);
                     else
                     {
-                        branch.Fall(Level, Token, new Params(WalkMethod.Current, WalkAction.None, null, true));
+                        branch.Fall(_level, _token, new Params(WalkMethod.Current, WalkAction.None, null, true));
                         branch.WaitFall();
                         isFall = true;
 
@@ -122,31 +122,30 @@ namespace CatDb.WaterfallTree
                             List = new BranchCollection(kv);
                         else
                         {
-                            List = new BranchCollection();
-                            List.Add(kv);
+                            List = new BranchCollection { kv };
 
                             if (branch.NodeState == NodeState.Overflow)
                                 Split(0);
                         }
                     }
 
-                    if (Index + 1 >= Helpers.Length)
+                    if (_index + 1 >= _helpers.Length)
                         return;
 
-                    var h = Helpers[Index + 1];
+                    var h = _helpers[_index + 1];
                     h.Task.Wait();
 
                     if (branch.NodeState == NodeState.Underflow || h.List[0].Value.NodeState == NodeState.Underflow)
                     {
                         if (!isFall)
                         {
-                            branch.Fall(Level, Token, new Params(WalkMethod.Current, WalkAction.None, null, true));
+                            branch.Fall(_level, _token, new Params(WalkMethod.Current, WalkAction.None, null, true));
                             branch.WaitFall();
                         }
 
                         if (h.List[0].Value.Cache.OperationCount > 0)
                         {
-                            h.List[0].Value.Fall(Level, Token, new Params(WalkMethod.Current, WalkAction.None, null, true));
+                            h.List[0].Value.Fall(_level, _token, new Params(WalkMethod.Current, WalkAction.None, null, true));
                             h.List[0].Value.WaitFall();
                         }
 

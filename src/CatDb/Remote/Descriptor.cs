@@ -31,10 +31,10 @@ namespace CatDb.Remote
 
         #region IDescriptor
 
-        public long ID
+        public long Id
         {
-            get => InternalDescriptor.ID;
-            set => InternalDescriptor.ID = value;
+            get => InternalDescriptor.Id;
+            set => InternalDescriptor.Id = value;
         }
 
         public string Name
@@ -152,7 +152,7 @@ namespace CatDb.Remote
     {
         public DescriptorStructure(long id, string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType, DateTime createTime, DateTime modifiedTime, DateTime accessTime, byte[] tag)
         {
-            ID = id;
+            Id = id;
             Name = name;
             StructureType = structureType;
 
@@ -171,7 +171,7 @@ namespace CatDb.Remote
 
         #region IDescriptor
 
-        public long ID { get; set; }
+        public long Id { get; set; }
         public string Name { get; set; }
         public int StructureType { get; set; }
 
@@ -224,7 +224,7 @@ namespace CatDb.Remote
 
         public void Serialize(BinaryWriter writer)
         {
-            CountCompression.Serialize(writer, (ulong)ID);
+            CountCompression.Serialize(writer, (ulong)Id);
             writer.Write(Name);
 
             CountCompression.Serialize(writer, (ulong)StructureType);

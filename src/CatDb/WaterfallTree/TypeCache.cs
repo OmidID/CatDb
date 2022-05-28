@@ -4,7 +4,7 @@ namespace CatDb.WaterfallTree
 {
     public class TypeCache
     {
-        private static readonly ConcurrentDictionary<string, Type> cache = new ConcurrentDictionary<string, Type>();
+        private static readonly ConcurrentDictionary<string, Type> Cache = new();
 
         public static Type GetType(string fullName)
         {
@@ -12,7 +12,7 @@ namespace CatDb.WaterfallTree
             if (type != null)
                 return type;
 
-            return cache.GetOrAdd(fullName, (x) =>
+            return Cache.GetOrAdd(fullName, (x) =>
             {
                 foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
                 {

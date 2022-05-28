@@ -2,16 +2,16 @@
 {
     public class Countdown
     {
-        private long count; 
+        private long _count; 
         
         public void Increment()
         {
-            Interlocked.Increment(ref count);
+            Interlocked.Increment(ref _count);
         }
 
         public void Decrement()
         {
-            Interlocked.Decrement(ref count);
+            Interlocked.Decrement(ref _count);
         }
 
         public void Wait()
@@ -24,6 +24,6 @@
                 Thread.Sleep(1);
         }
 
-        public long Count => Interlocked.Read(ref count);
+        public long Count => Interlocked.Read(ref _count);
     }
 }

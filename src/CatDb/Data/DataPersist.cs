@@ -6,31 +6,31 @@ namespace CatDb.Data
 {
     public class DataPersist : IPersist<IData>
     {
-        public readonly Action<BinaryWriter, IData> write;
-        public readonly Func<BinaryReader, IData> read;
+        private readonly Action<BinaryWriter, IData> _write;
+        private readonly Func<BinaryReader, IData> _read;
 
-        public readonly Type Type;
-        public readonly Func<Type, MemberInfo, int> MembersOrder;
-        public readonly AllowNull AllowNull;
+        private readonly Type _type;
+        private readonly Func<Type, MemberInfo, int> _membersOrder;
+        private readonly AllowNull _allowNull;
 
         public DataPersist(Type type, Func<Type, MemberInfo, int> membersOrder = null, AllowNull allowNull = AllowNull.None)
         {
-            Type = type;
-            MembersOrder = membersOrder;
-            AllowNull = allowNull;
+            _type = type;
+            _membersOrder = membersOrder;
+            _allowNull = allowNull;
 
-            write = CreateWriteMethod().Compile();
-            read = CreateReadMethod().Compile();
+            _write = CreateWriteMethod().Compile();
+            _read = CreateReadMethod().Compile();
         }
 
         public void Write(BinaryWriter writer, IData item)
         {
-            write(writer, item);
+            _write(writer, item);
         }
 
         public IData Read(BinaryReader reader)
         {
-            return read(reader);
+            return _read(reader);
         }
 
         public Expression<Action<BinaryWriter, IData>> CreateWriteMethod()
@@ -38,22 +38,22 @@ namespace CatDb.Data
             var writer = Expression.Parameter(typeof(BinaryWriter), "writer");
             var idata = Expression.Parameter(typeof(IData), "idata");
 
-            var dataType = typeof(Data<>).MakeGenericType(Type);
-            var dataValue = Expression.Variable(Type, "dataValue");
+            var dataType = typeof(Data<>).MakeGenericType(_type);
+            var dataValue = Expression.Variable(_type, "dataValue");
 
             var assign = Expression.Assign(dataValue, Expression.Convert(idata, dataType).Value());
 
-            return Expression.Lambda<Action<BinaryWriter, IData>>(Expression.Block(new[] { dataValue }, assign, PersistHelper.CreateWriteBody(dataValue, writer, MembersOrder, AllowNull)), writer, idata);
+            return Expression.Lambda<Action<BinaryWriter, IData>>(Expression.Block(new[] { dataValue }, assign, PersistHelper.CreateWriteBody(dataValue, writer, _membersOrder, _allowNull)), writer, idata);
         }
 
         public Expression<Func<BinaryReader, IData>> CreateReadMethod()
         {
             var reader = Expression.Parameter(typeof(BinaryReader), "reader");
 
-            var dataType = typeof(Data<>).MakeGenericType(Type);
+            var dataType = typeof(Data<>).MakeGenericType(_type);
 
             return Expression.Lambda<Func<BinaryReader, IData>>(
-                    Expression.Label(Expression.Label(dataType), Expression.New(dataType.GetConstructor(new[] { Type }), PersistHelper.CreateReadBody(reader, Type, MembersOrder, AllowNull))),
+                    Expression.Label(Expression.Label(dataType), Expression.New(dataType.GetConstructor(new[] { _type }), PersistHelper.CreateReadBody(reader, _type, _membersOrder, _allowNull))),
                     reader
                 );
         }

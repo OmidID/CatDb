@@ -7,7 +7,7 @@ namespace CatDb.WaterfallTree
     {
         private partial class Branch
         {
-            public volatile Task FallTask;
+            private volatile Task _fallTask;
 
             private void DoFall(object state)
             {
@@ -95,9 +95,9 @@ namespace CatDb.WaterfallTree
 //#if DEBUG
 //                node.TaskID = 0;
 //#endif
-                branch.FallTask = null;
+                branch._fallTask = null;
 
-                Tree.WorkingFallCount.Decrement();
+                Tree._workingFallCount.Decrement();
             }
 
             public bool Fall(int level, Token token, Params param, TaskCreationOptions taskCreationOptions = TaskCreationOptions.None)
@@ -138,8 +138,8 @@ namespace CatDb.WaterfallTree
                         }
                     }
 
-                    Tree.WorkingFallCount.Increment();
-                    FallTask = Task.Factory.StartNew(DoFall, new Tuple<Branch, BranchCache, int, Token, Params>(this, cache, level - 1, token, param), taskCreationOptions);
+                    Tree._workingFallCount.Increment();
+                    _fallTask = Task.Factory.StartNew(DoFall, new Tuple<Branch, BranchCache, int, Token, Params>(this, cache, level - 1, token, param), taskCreationOptions);
 
                     return haveSink;
                 }
@@ -149,7 +149,7 @@ namespace CatDb.WaterfallTree
             {
                 lock (this)
                 {
-                    var task = FallTask;
+                    var task = _fallTask;
                     if (task != null)
                         task.Wait();
                 }
@@ -169,28 +169,30 @@ namespace CatDb.WaterfallTree
 
             public void MaintenanceRoot(Token token)
             {
-                if (node.IsOverflow)
+                if (_node.IsOverflow)
                 {
-                    var newBranch = new Branch(Tree, NodeType, NodeHandle);
-                    newBranch.Node = Node;
+                    var newBranch = new Branch(Tree, NodeType, NodeHandle)
+                    {
+                        Node = Node
+                    };
                     newBranch.Node.Branch = newBranch;
                     newBranch.NodeState = newBranch.Node.State;
 
                     NodeType = NodeType.Internal;
                     //NodeHandle = Tree.Repository.Reserve();
-                    NodeHandle = Tree.heap.ObtainNewHandle();
+                    NodeHandle = Tree._heap.ObtainNewHandle();
                     Node = Node.Create(this);
                     NodeState = NodeState.None;
 
-                    Tree.Depth++;
+                    Tree._depth++;
 
                     var rootNode = (InternalNode)Node;
                     rootNode.Branches.Add(new FullKey(Tree.MinLocator, null), newBranch);
                     //rootNode.Branches.Add(newBranch.Node.FirstKey, newBranch);
                     rootNode.HaveChildrenForMaintenance = true;
-                    rootNode.Maintenance(Tree.Depth + 1, token);
+                    rootNode.Maintenance(Tree._depth + 1, token);
                 }
-                else if (node.IsUnderflow)
+                else if (_node.IsUnderflow)
                 {
                     //TODO: also to release handle
                     //Debug.Assert(node.Type == NodeType.Internal);
@@ -233,11 +235,11 @@ namespace CatDb.WaterfallTree
 
         private class CacheWalkParams : WalkParams
         {
-            public long TouchID;
+            public long TouchId;
 
-            public CacheWalkParams(long touchID)
+            public CacheWalkParams(long touchId)
             {
-                TouchID = touchID;
+                TouchId = touchId;
             }
         }
 
@@ -325,7 +327,7 @@ namespace CatDb.WaterfallTree
             //private static long globalID = 0;
 
             //public readonly long ID;
-            public readonly CountdownEvent CountdownEvent = new CountdownEvent(1);
+            public readonly CountdownEvent CountdownEvent = new(1);
             public readonly SemaphoreSlim Semaphore;
             public readonly CancellationToken Cancellation;
 

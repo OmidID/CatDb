@@ -9,8 +9,8 @@ namespace CatDb.WaterfallTree
         private class BranchesOptimizator
         {
             private const int MAP_CAPACITY = 131072;
-            private ConcurrentDictionary<Locator, Range> Map = new ConcurrentDictionary<Locator, Range>();
-            private BranchCollection Branches;
+            private ConcurrentDictionary<Locator, Range> _map = new();
+            private BranchCollection _branches;
 
             public BranchesOptimizator()
             {
@@ -18,20 +18,20 @@ namespace CatDb.WaterfallTree
 
             public void Rebuild(BranchCollection branches)
             {
-                Branches = branches;
-                Map = BuildRanges();
+                _branches = branches;
+                _map = BuildRanges();
             }
 
             private ConcurrentDictionary<Locator, Range> BuildRanges()
             {
                 var map = new ConcurrentDictionary<Locator, Range>();
-                var locator = Branches[0].Key.Locator;
+                var locator = _branches[0].Key.Locator;
                 var range = new Range(0, true);
                 map[locator] = range;
 
-                for (var i = 1; i < Branches.Count; i++)
+                for (var i = 1; i < _branches.Count; i++)
                 {
-                    var newLocator = Branches[i].Key.Locator;
+                    var newLocator = _branches[i].Key.Locator;
 
                     if (newLocator.Equals(locator))
                     {
@@ -48,20 +48,18 @@ namespace CatDb.WaterfallTree
 
             public Range FindRange(Locator locator)
             {
-                Range range;
-
-                if (Map.TryGetValue(locator, out range))
+                if (_map.TryGetValue(locator, out var range))
                     return range;
 
-                var idx = Branches.BinarySearch(new FullKey(locator, null));
+                var idx = _branches.BinarySearch(new FullKey(locator, null));
                 Debug.Assert(idx < 0);
                 idx = ~idx - 1;
                 Debug.Assert(idx >= 0);
 
-                Map[locator] = range = new Range(idx, false);
+                _map[locator] = range = new Range(idx, false);
 
-                if (Map.Count > MAP_CAPACITY)
-                    Map = BuildRanges(); //TODO: background rebuild
+                if (_map.Count > MAP_CAPACITY)
+                    _map = BuildRanges(); //TODO: background rebuild
 
                 return range;
             }
@@ -71,14 +69,14 @@ namespace CatDb.WaterfallTree
                 if (!range.IsBaseLocator)
                     return range.LastIndex;
 
-                var cmp = locator.KeyComparer.Compare(key, Branches[range.LastIndex].Key.Key);
+                var cmp = locator.KeyComparer.Compare(key, _branches[range.LastIndex].Key.Key);
                 if (cmp >= 0)
                     return range.LastIndex;
 
                 if (range.FirstIndex == range.LastIndex)
                     return range.LastIndex - 1;
 
-                var idx = Branches.BinarySearch(new FullKey(locator, key), range.FirstIndex, range.LastIndex - range.FirstIndex, LightComparer.Instance);
+                var idx = _branches.BinarySearch(new FullKey(locator, key), range.FirstIndex, range.LastIndex - range.FirstIndex, LightComparer.Instance);
                 if (idx < 0)
                     idx = ~idx - 1;
 
@@ -87,7 +85,7 @@ namespace CatDb.WaterfallTree
 
             private class LightComparer : IComparer<KeyValuePair<FullKey, Branch>>
             {
-                public readonly static LightComparer Instance = new LightComparer();
+                public readonly static LightComparer Instance = new();
 
                 public int Compare(KeyValuePair<FullKey, Branch> x, KeyValuePair<FullKey, Branch> y)
                 {

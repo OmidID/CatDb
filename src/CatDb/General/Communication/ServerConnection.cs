@@ -5,9 +5,9 @@ namespace CatDb.General.Communication
 {
     public class ServerConnection
     {
-        private Thread Receiver;
-        private Thread Sender;
-        private volatile bool Shutdown = false;
+        private Thread _receiver;
+        private Thread _sender;
+        private volatile bool _shutdown = false;
 
         public BlockingCollection<Packet> PendingPackets;
 
@@ -32,13 +32,13 @@ namespace CatDb.General.Communication
             TcpServer.ServerConnections.TryAdd(this, this);
             PendingPackets = new BlockingCollection<Packet>();
 
-            Shutdown = false;
+            _shutdown = false;
 
-            Receiver = new Thread(DoReceive);
-            Receiver.Start();
+            _receiver = new Thread(DoReceive);
+            _receiver.Start();
 
-            Sender = new Thread(DoSend);
-            Sender.Start();
+            _sender = new Thread(DoSend);
+            _sender.Start();
         }
 
         public void Disconnect()
@@ -46,42 +46,41 @@ namespace CatDb.General.Communication
             if (!IsConnected)
                 return;
 
-            Shutdown = true;
+            _shutdown = true;
 
             if (TcpClient != null)
                 TcpClient.Close();
 
-            var thread = Sender;
-            if (thread != null && thread.ThreadState == ThreadState.Running)
+            var thread = _sender;
+            if (thread is { ThreadState: ThreadState.Running })
             {
                 if (!thread.Join(5000))
                     thread.Abort();
             }
 
-            Sender = null;
+            _sender = null;
 
-            thread = Receiver;
-            if (thread != null && thread.ThreadState == ThreadState.Running)
+            thread = _receiver;
+            if (thread is { ThreadState: ThreadState.Running })
             {
                 if (!thread.Join(5000))
                     thread.Abort();
             }
 
-            Receiver = null;
+            _receiver = null;
 
             PendingPackets.Dispose();
 
-            ServerConnection reference;
-            TcpServer.ServerConnections.TryRemove(this, out reference);
+            TcpServer.ServerConnections.TryRemove(this, out _);
         }
 
-        public bool IsConnected => Receiver != null || Sender != null;
+        public bool IsConnected => _receiver != null || _sender != null;
 
         private void DoReceive()
         {
             try
             {
-                while (!TcpServer.ShutdownTokenSource.Token.IsCancellationRequested && !Shutdown && TcpClient.Connected)
+                while (!TcpServer.ShutdownTokenSource.Token.IsCancellationRequested && !_shutdown && TcpClient.Connected)
                     ReceivePacket();
             }
             catch (Exception exc)
@@ -102,8 +101,10 @@ namespace CatDb.General.Communication
             var size = reader.ReadInt32();
             TcpServer.BytesReceive += size;
 
-            var packet = new Packet(new MemoryStream(reader.ReadBytes(size)));
-            packet.ID = id;
+            var packet = new Packet(new MemoryStream(reader.ReadBytes(size)))
+            {
+                Id = id
+            };
 
             TcpServer.RecievedPackets.Add(new KeyValuePair<ServerConnection, Packet>(this, packet));
         }
@@ -112,7 +113,7 @@ namespace CatDb.General.Communication
         {
             try
             {
-                while (!TcpServer.ShutdownTokenSource.Token.IsCancellationRequested && !Shutdown && TcpClient.Connected)
+                while (!TcpServer.ShutdownTokenSource.Token.IsCancellationRequested && !_shutdown && TcpClient.Connected)
                     SendPacket();
             }
             catch (OperationCanceledException exc)

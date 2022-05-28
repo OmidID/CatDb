@@ -2,12 +2,14 @@
 {
     public class LittleEndianByteArrayComparer : IComparer<byte[]>
     {
-        public static readonly LittleEndianByteArrayComparer Instance = new LittleEndianByteArrayComparer();
+        public static readonly LittleEndianByteArrayComparer Instance = new();
         
         public int Compare(byte[] x, byte[] y, int length)
         {
-            var common = new CommonArray();
-            common.ByteArray = x;
+            var common = new CommonArray
+            {
+                ByteArray = x
+            };
             var array1 = common.UInt64Array;
             common.ByteArray = y;
             var array2 = common.UInt64Array;

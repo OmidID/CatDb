@@ -13,7 +13,7 @@
 
     public class Packet
     {
-        internal long ID;
+        internal long Id;
 
         public readonly MemoryStream Request; // Request Message
         public MemoryStream Response; // Response Message
@@ -43,7 +43,7 @@
         {
             var size = (int)memoryStream.Length;
 
-            writer.Write(ID);
+            writer.Write(Id);
             writer.Write(size);
             writer.Write(memoryStream.GetBuffer(), 0, size);
         }

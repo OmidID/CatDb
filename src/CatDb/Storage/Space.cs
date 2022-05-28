@@ -18,8 +18,8 @@
 
     public class Space
     {
-        private int activeChunkIndex = -1;
-        private List<Ptr> free = new List<Ptr>(); //free chunks are always: ordered by position, not overlapped & not contiguous
+        private int _activeChunkIndex = -1;
+        private readonly List<Ptr> _free = new(); //free chunks are always: ordered by position, not overlapped & not contiguous
 
         public AllocationStrategy Strategy;
 
@@ -32,17 +32,17 @@
 
         public void Add(Ptr freeChunk)
         {
-            if (free.Count == 0)
-                free.Add(freeChunk);
+            if (_free.Count == 0)
+                _free.Add(freeChunk);
             else
             {
-                var last = free[free.Count - 1];
+                var last = _free[_free.Count - 1];
                 if (freeChunk.Position > last.PositionPlusSize)
-                    free.Add(freeChunk);
+                    _free.Add(freeChunk);
                 else if (freeChunk.Position == last.PositionPlusSize)
                 {
                     last.Size += freeChunk.Size;
-                    free[free.Count - 1] = last;
+                    _free[_free.Count - 1] = last;
                 }
                 else
                     throw new ArgumentException("Invalid ptr order.");
@@ -53,28 +53,29 @@
 
         public Ptr Alloc(long size)
         {
-            if (activeChunkIndex < 0 || activeChunkIndex == free.Count - 1 || free[activeChunkIndex].Size < size)
+            if (_activeChunkIndex < 0 || _activeChunkIndex == _free.Count - 1 || _free[_activeChunkIndex].Size < size)
             {
-                var idx = 0;
-                switch (Strategy)
+                var idx = Strategy switch
                 {
-                    case AllocationStrategy.FromTheCurrentBlock : idx = activeChunkIndex >= 0 && activeChunkIndex + 1 < free.Count - 1 ? activeChunkIndex + 1 : 0; break;
-                    case AllocationStrategy.FromTheBeginning: idx = 0; break;
-                    default:
-                        throw new NotSupportedException(Strategy.ToString());
-                }
+                    AllocationStrategy.FromTheCurrentBlock => _activeChunkIndex >= 0 &&
+                                                              _activeChunkIndex + 1 < _free.Count - 1
+                        ? _activeChunkIndex + 1
+                        : 0,
+                    AllocationStrategy.FromTheBeginning => 0,
+                    _ => throw new NotSupportedException(Strategy.ToString())
+                };
 
-                for (var i = idx; i < free.Count; i++)
+                for (var i = idx; i < _free.Count; i++)
                 {
-                    if (free[i].Size >= size)
+                    if (_free[i].Size >= size)
                     {
-                        activeChunkIndex = i;
+                        _activeChunkIndex = i;
                         break;
                     }
                 }
             }
 
-            var ptr = free[activeChunkIndex];
+            var ptr = _free[_activeChunkIndex];
 
             if (ptr.Size < size)
                 throw new Exception("Not enough space.");
@@ -84,11 +85,11 @@
             ptr.Size -= size;
 
             if (ptr.Size > 0)
-                free[activeChunkIndex] = ptr;
+                _free[_activeChunkIndex] = ptr;
             else //if (ptr.Size == 0)
             {
-                free.RemoveAt(activeChunkIndex);
-                activeChunkIndex = -1; //search for active chunk at next alloc
+                _free.RemoveAt(_activeChunkIndex);
+                _activeChunkIndex = -1; //search for active chunk at next alloc
             }
 
             FreeBytes -= size;
@@ -98,52 +99,52 @@
 
         public void Free(Ptr ptr)
         {
-            var idx = free.BinarySearch(ptr);
+            var idx = _free.BinarySearch(ptr);
             if (idx >= 0)
                 throw new ArgumentException("Space already freed.");
 
             idx = ~idx;
-            if ((idx < free.Count && ptr.PositionPlusSize > free[idx].Position) || (idx > 0 && ptr.Position < free[idx - 1].PositionPlusSize))
+            if ((idx < _free.Count && ptr.PositionPlusSize > _free[idx].Position) || (idx > 0 && ptr.Position < _free[idx - 1].PositionPlusSize))
                 throw new ArgumentException("Can't free overlapped space.");
 
             var merged = false;
 
-            if (idx < free.Count) //try merge with right chunk
+            if (idx < _free.Count) //try merge with right chunk
             {
-                var p = free[idx];
+                var p = _free[idx];
                 if (ptr.PositionPlusSize == p.Position)
                 {
                     p.Position -= ptr.Size;
                     p.Size += ptr.Size;
-                    free[idx] = p;
+                    _free[idx] = p;
                     merged = true;
                 }
             }
 
             if (idx > 0) //try merge with left chunk
             {
-                var p = free[idx - 1];
+                var p = _free[idx - 1];
                 if (ptr.Position == p.PositionPlusSize)
                 {
                     if (merged)
                     {
-                        p.Size += free[idx].Size;
-                        free[idx - 1] = p;
-                        free.RemoveAt(idx);
-                        if (activeChunkIndex >= idx)
-                            activeChunkIndex--;
+                        p.Size += _free[idx].Size;
+                        _free[idx - 1] = p;
+                        _free.RemoveAt(idx);
+                        if (_activeChunkIndex >= idx)
+                            _activeChunkIndex--;
                     }
                     else
                     {
                         p.Size += ptr.Size;
-                        free[idx - 1] = p;
+                        _free[idx - 1] = p;
                         merged = true;
                     }
                 }
             }
 
             if (!merged)
-                free.Insert(idx, ptr);
+                _free.Insert(idx, ptr);
 
             FreeBytes += ptr.Size;
         }
@@ -151,26 +152,26 @@
         public void Serialize(BinaryWriter writer)
         {
             writer.Write((byte)Strategy);
-            writer.Write(activeChunkIndex);
-            writer.Write(free.Count);
+            writer.Write(_activeChunkIndex);
+            writer.Write(_free.Count);
 
-            for (var i = 0; i < free.Count; i++)
-                free[i].Serialize(writer);
+            for (var i = 0; i < _free.Count; i++)
+                _free[i].Serialize(writer);
         }
 
         public void Deserealize(BinaryReader reader)
         {
             Strategy = (AllocationStrategy)reader.ReadByte();
-            activeChunkIndex = reader.ReadInt32();
+            _activeChunkIndex = reader.ReadInt32();
             var count = reader.ReadInt32();
 
-            free.Clear();
+            _free.Clear();
             FreeBytes = 0;
 
             for (var i = 0; i < count; i++)
             {
                 var ptr = Ptr.Deserialize(reader);
-                free.Add(ptr);
+                _free.Add(ptr);
                 FreeBytes += ptr.Size;
             }
         }

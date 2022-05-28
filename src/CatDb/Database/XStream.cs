@@ -8,18 +8,18 @@ namespace CatDb.Database
     {
         internal const int BLOCK_SIZE = 2 * 1024;
 
-        private object SyncRoot;
+        private readonly object _syncRoot;
 
-        private long position;
-        private bool isModified;
-        private long cachedLength;
+        private long _position;
+        private bool _isModified;
+        private long _cachedLength;
 
         public ITable<IData, IData> Table { get; private set; }
 
         internal XStream(ITable<IData, IData> table)
         {
             Table = table;
-            SyncRoot = new object();
+            _syncRoot = new object();
             SetCahchedLenght();
         }
 
@@ -30,9 +30,9 @@ namespace CatDb.Database
                 var key = (Data<long>)row.Key;
                 var rec = (Data<byte[]>)row.Value;
 
-                isModified = false;
+                _isModified = false;
 
-                cachedLength = key.Value + rec.Value.Length;
+                _cachedLength = key.Value + rec.Value.Length;
                 break;
             }
         }
@@ -43,22 +43,22 @@ namespace CatDb.Database
 
         public override void Write(byte[] buffer, int offset, int count)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
                 while (count > 0)
                 {
-                    var chunk = Math.Min(BLOCK_SIZE - (int)(position % BLOCK_SIZE), count);
+                    var chunk = Math.Min(BLOCK_SIZE - (int)(_position % BLOCK_SIZE), count);
 
-                    IData key = new Data<long>(position);
+                    IData key = new Data<long>(_position);
                     IData record = new Data<byte[]>(buffer.Middle(offset, chunk));
                     Table[key] = record;
 
-                    position += chunk;
+                    _position += chunk;
                     offset += chunk;
                     count -= chunk;
                 }
 
-                isModified = true;
+                _isModified = true;
             }
         }
 
@@ -76,17 +76,17 @@ namespace CatDb.Database
             if (offset + count > buffer.Length)
                 throw new ArgumentException("offset + count > buffer.Length");
 
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                var result = (int)(Length - position);
+                var result = (int)(Length - _position);
 
                 if (result > count)
                     result = count;
                 if (result <= 0)
                     return 0;
 
-                var fromKey = new Data<long>(position - position % BLOCK_SIZE);
-                var toKey = new Data<long>(position + count - 1);
+                var fromKey = new Data<long>(_position - _position % BLOCK_SIZE);
+                var toKey = new Data<long>(_position + count - 1);
 
                 long currentKey = -1;
 
@@ -101,12 +101,12 @@ namespace CatDb.Database
 
                     if (currentKey < 0)
                     {
-                        if (position >= key)
-                            sourceOffset = (int)(position - key);
+                        if (_position >= key)
+                            sourceOffset = (int)(_position - key);
                         else
                         {
-                            Array.Clear(buffer, bufferOffset, (int)(key - position));
-                            bufferOffset += (int)(key - position);
+                            Array.Clear(buffer, bufferOffset, (int)(key - _position));
+                            bufferOffset += (int)(key - _position);
                         }
                     }
                     else if (currentKey != key)
@@ -149,7 +149,7 @@ namespace CatDb.Database
                     Array.Clear(buffer, bufferOffset, clearCount);
                 }
 
-                position += result;
+                _position += result;
 
                 return result;
             }
@@ -170,15 +170,15 @@ namespace CatDb.Database
         {
             get
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    if (!isModified)
-                        return cachedLength;
+                    if (!_isModified)
+                        return _cachedLength;
                     else
                     {
                         SetCahchedLenght();
 
-                        return cachedLength;
+                        return _cachedLength;
                     }
                 }
             }
@@ -188,46 +188,46 @@ namespace CatDb.Database
         {
             get
             {
-                lock (SyncRoot)
-                    return position;
+                lock (_syncRoot)
+                    return _position;
             }
             set
             {
-                lock (SyncRoot)
-                    position = value;
+                lock (_syncRoot)
+                    _position = value;
             }
         }
 
         public override long Seek(long offset, SeekOrigin origin)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
                 switch (origin)
                 {
                     case SeekOrigin.Begin:
-                        position = offset;
+                        _position = offset;
                         break;
                     case SeekOrigin.Current:
-                        position += offset;
+                        _position += offset;
                         break;
                     case SeekOrigin.End:
-                        position = Length - 1 - offset;
+                        _position = Length - 1 - offset;
                         break;
                 }
 
-                return position;
+                return _position;
             }
         }
 
         public override void SetLength(long value)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
                 var length = Length;
                 if (value == length)
                     return;
 
-                var oldPosition = position;
+                var oldPosition = _position;
                 try
                 {
                     if (value > length)
@@ -245,7 +245,7 @@ namespace CatDb.Database
                 {
                     Seek(oldPosition, SeekOrigin.Begin);
 
-                    isModified = true;
+                    _isModified = true;
                 }
             }
         }
@@ -254,15 +254,15 @@ namespace CatDb.Database
 
         public void Zero(long count)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                var fromKey = new Data<long>(position);
-                var toKey = new Data<long>(position + count - 1);
+                var fromKey = new Data<long>(_position);
+                var toKey = new Data<long>(_position + count - 1);
                 Table.Delete(fromKey, toKey);
 
-                position += count;
+                _position += count;
 
-                isModified = true;
+                _isModified = true;
             }
         }
     }

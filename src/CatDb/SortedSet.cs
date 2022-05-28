@@ -42,31 +42,31 @@ namespace CatDb
     [Serializable]
     public partial class SortedSet<T> : ISet<T>, ICollection<T>, ICollection, IReadOnlyCollection<T>, IReadOnlySet<T>, ISerializable, IDeserializationCallback
     {
-        private const string Arg_RankMultiDimNotSupported = "";
-        private const string Arg_NonZeroLowerBound = "";
-        private const string ArgumentOutOfRange_NeedNonNegNum = "";
-        private const string Arg_ArrayPlusOffTooSmall = "";
-        private const string Argument_InvalidArrayType = "";
-        private const string SortedSet_LowerValueGreaterThanUpperValue = "";
-        private const string Serialization_InvalidOnDeser = "";
-        private const string Serialization_MissingValues = "";
-        private const string Serialization_MismatchedCount = "";
-        private const string InvalidOperation_EnumFailedVersion = "";
-        private const string InvalidOperation_EnumOpCantHappen = "";
+        private const string ARG_RANK_MULTI_DIM_NOT_SUPPORTED = "";
+        private const string ARG_NON_ZERO_LOWER_BOUND = "";
+        private const string ARGUMENT_OUT_OF_RANGE_NEED_NON_NEG_NUM = "";
+        private const string ARG_ARRAY_PLUS_OFF_TOO_SMALL = "";
+        private const string ARGUMENT_INVALID_ARRAY_TYPE = "";
+        private const string SORTED_SET_LOWER_VALUE_GREATER_THAN_UPPER_VALUE = "";
+        private const string SERIALIZATION_INVALID_ON_DESER = "";
+        private const string SERIALIZATION_MISSING_VALUES = "";
+        private const string SERIALIZATION_MISMATCHED_COUNT = "";
+        private const string INVALID_OPERATION_ENUM_FAILED_VERSION = "";
+        private const string INVALID_OPERATION_ENUM_OP_CANT_HAPPEN = "";
 
         #region Local variables/constants
 
-        internal Node? root;
-        internal IComparer<T> comparer = default!;
-        internal int count;
-        internal int version;
+        internal Node? Root;
+        private IComparer<T> _comparer = default!;
+        private int _count;
+        internal int Version;
 
-        private SerializationInfo? siInfo; // A temporary variable which we need during deserialization.
+        private SerializationInfo? _siInfo; // A temporary variable which we need during deserialization.
 
-        private const string ComparerName = "Comparer"; // Do not rename (binary serialization)
-        private const string CountName = "Count"; // Do not rename (binary serialization)
-        private const string ItemsName = "Items"; // Do not rename (binary serialization)
-        private const string VersionName = "Version"; // Do not rename (binary serialization)
+        private const string COMPARER_NAME = "Comparer"; // Do not rename (binary serialization)
+        private const string COUNT_NAME = "Count"; // Do not rename (binary serialization)
+        private const string ITEMS_NAME = "Items"; // Do not rename (binary serialization)
+        private const string VERSION_NAME = "Version"; // Do not rename (binary serialization)
 
         internal const int StackAllocThreshold = 100;
 
@@ -76,12 +76,12 @@ namespace CatDb
 
         public SortedSet()
         {
-            comparer = Comparer<T>.Default;
+            _comparer = Comparer<T>.Default;
         }
 
         public SortedSet(IComparer<T>? comparer)
         {
-            this.comparer = comparer ?? Comparer<T>.Default;
+            this._comparer = comparer ?? Comparer<T>.Default;
         }
 
 
@@ -99,20 +99,19 @@ namespace CatDb
             {
                 if (sortedSet.Count > 0)
                 {
-                    Debug.Assert(sortedSet.root != null);
-                    this.count = sortedSet.count;
-                    root = sortedSet.root.DeepClone(this.count);
+                    Debug.Assert(sortedSet.Root != null);
+                    this._count = sortedSet._count;
+                    Root = sortedSet.Root.DeepClone(this._count);
                 }
                 return;
             }
 
-            int count;
-            var elements = EnumerableHelpers.ToArray(collection, out count);
+            var elements = EnumerableHelpers.ToArray(collection, out var count);
             if (count > 0)
             {
                 // If `comparer` is null, sets it to Comparer<T>.Default. We checked for this condition in the IComparer<T> constructor.
                 // Array.Sort handles null comparers, but we need this later when we use `comparer.Compare` directly.
-                comparer = this.comparer;
+                comparer = this._comparer;
                 Array.Sort(elements, 0, count, comparer);
 
                 // Overwrite duplicates while shifting the distinct elements towards
@@ -127,12 +126,12 @@ namespace CatDb
                 }
 
                 count = index;
-                root = ConstructRootFromSortedArray(elements, 0, count - 1, null);
-                this.count = count;
+                Root = ConstructRootFromSortedArray(elements, 0, count - 1, null);
+                this._count = count;
             }
         }
 
-        protected SortedSet(SerializationInfo info, StreamingContext context) => siInfo = info;
+        protected SortedSet(SerializationInfo info, StreamingContext context) => _siInfo = info;
 
         #endregion
 
@@ -155,7 +154,7 @@ namespace CatDb
             var max = Max;
             foreach (var item in collection)
             {
-                if (!(comparer.Compare(item, min) < 0 || comparer.Compare(item, max) > 0) && Contains(item))
+                if (!(_comparer.Compare(item, min) < 0 || _comparer.Compare(item, max) > 0) && Contains(item))
                 {
                     Remove(item);
                 }
@@ -185,7 +184,7 @@ namespace CatDb
         /// <returns><c>true</c> if the entire tree has been walked; otherwise, <c>false</c>.</returns>
         internal virtual bool InOrderTreeWalk(TreeWalkPredicate<T> action)
         {
-            if (root == null)
+            if (Root == null)
             {
                 return true;
             }
@@ -195,8 +194,8 @@ namespace CatDb
             // Note: It's not strictly necessary to provide the stack capacity, but we don't
             // want the stack to unnecessarily allocate arrays as it grows.
 
-            var stack = new Stack<Node>(2 * (int)Log2(Count + 1));
-            var current = root;
+            var stack = new Stack<Node>(2 * Log2(Count + 1));
+            var current = Root;
 
             while (current != null)
             {
@@ -233,13 +232,13 @@ namespace CatDb
         /// <returns><c>true</c> if the entire tree has been walked; otherwise, <c>false</c>.</returns>
         internal virtual bool BreadthFirstTreeWalk(TreeWalkPredicate<T> action)
         {
-            if (root == null)
+            if (Root == null)
             {
                 return true;
             }
 
             var processQueue = new Queue<Node>();
-            processQueue.Enqueue(root);
+            processQueue.Enqueue(Root);
 
             Node current;
             while (processQueue.Count != 0)
@@ -272,11 +271,16 @@ namespace CatDb
             get
             {
                 VersionCheck(updateCount: true);
-                return count;
+                return _count;
             }
+            internal set => _count = value;
         }
 
-        public IComparer<T> Comparer => comparer;
+        public IComparer<T> Comparer
+        {
+            get => _comparer;
+            internal set => _comparer = value;
+        }
 
         bool ICollection<T>.IsReadOnly => false;
 
@@ -306,36 +310,36 @@ namespace CatDb
 
         internal virtual bool AddIfNotPresent(T item)
         {
-            if (root == null)
+            if (Root == null)
             {
                 // The tree is empty and this is the first item.
-                root = new Node(item, NodeColor.Black);
-                count = 1;
-                version++;
+                Root = new Node(item, NodeColor.Black);
+                _count = 1;
+                Version++;
                 return true;
             }
 
             // Search for a node at bottom to insert the new node.
             // If we can guarantee the node we found is not a 4-node, it would be easy to do insertion.
             // We split 4-nodes along the search path.
-            var current = root;
+            var current = Root;
             Node? parent = null;
             Node? grandParent = null;
             Node? greatGrandParent = null;
 
             // Even if we don't actually add to the set, we may be altering its structure (by doing rotations and such).
             // So update `_version` to disable any instances of Enumerator/TreeSubSet from working on it.
-            version++;
+            Version++;
 
             var order = 0;
             while (current != null)
             {
-                order = comparer.Compare(item, current.Item);
+                order = _comparer.Compare(item, current.Item);
                 if (order == 0)
                 {
                     // We could have changed root node to red during the search process.
                     // We need to set it to black before we return.
-                    root.ColorBlack();
+                    Root.ColorBlack();
                     return false;
                 }
 
@@ -375,8 +379,8 @@ namespace CatDb
             }
 
             // The root node is always black.
-            root.ColorBlack();
-            ++count;
+            Root.ColorBlack();
+            ++_count;
             return true;
         }
 
@@ -384,7 +388,7 @@ namespace CatDb
 
         internal virtual bool DoRemove(T item)
         {
-            if (root == null)
+            if (Root == null)
             {
                 return false;
             }
@@ -399,9 +403,9 @@ namespace CatDb
 
             // Even if we don't actually remove from the set, we may be altering its structure (by doing rotations
             // and such). So update our version to disable any enumerators/subsets working on it.
-            version++;
+            Version++;
 
-            var current = root;
+            var current = Root;
             Node? parent = null;
             Node? grandParent = null;
             Node? match = null;
@@ -475,7 +479,7 @@ namespace CatDb
                 }
 
                 // We don't need to compare after we find the match.
-                var order = foundMatch ? -1 : comparer.Compare(item, current.Item);
+                var order = foundMatch ? -1 : _comparer.Compare(item, current.Item);
                 if (order == 0)
                 {
                     // Save the matching node.
@@ -494,18 +498,18 @@ namespace CatDb
             if (match != null)
             {
                 ReplaceNode(match, parentOfMatch!, parent!, grandParent!);
-                --count;
+                --_count;
             }
 
-            root?.ColorBlack();
+            Root?.ColorBlack();
             return foundMatch;
         }
 
         public virtual void Clear()
         {
-            root = null;
-            count = 0;
-            ++version;
+            Root = null;
+            _count = 0;
+            ++Version;
         }
 
         public virtual bool Contains(T item) => FindNode(item) != null;
@@ -520,17 +524,17 @@ namespace CatDb
 
             if (index < 0)
             {
-                throw new ArgumentOutOfRangeException(nameof(index), index, ArgumentOutOfRange_NeedNonNegNum);
+                throw new ArgumentOutOfRangeException(nameof(index), index, ARGUMENT_OUT_OF_RANGE_NEED_NON_NEG_NUM);
             }
 
             if (count < 0)
             {
-                throw new ArgumentOutOfRangeException(nameof(count), ArgumentOutOfRange_NeedNonNegNum);
+                throw new ArgumentOutOfRangeException(nameof(count), ARGUMENT_OUT_OF_RANGE_NEED_NON_NEG_NUM);
             }
 
             if (count > array.Length - index)
             {
-                throw new ArgumentException(Arg_ArrayPlusOffTooSmall);
+                throw new ArgumentException(ARG_ARRAY_PLUS_OFF_TOO_SMALL);
             }
 
             count += index; // Make `count` the upper bound.
@@ -553,22 +557,22 @@ namespace CatDb
 
             if (array.Rank != 1)
             {
-                throw new ArgumentException(Arg_RankMultiDimNotSupported, nameof(array));
+                throw new ArgumentException(ARG_RANK_MULTI_DIM_NOT_SUPPORTED, nameof(array));
             }
 
             if (array.GetLowerBound(0) != 0)
             {
-                throw new ArgumentException(Arg_NonZeroLowerBound, nameof(array));
+                throw new ArgumentException(ARG_NON_ZERO_LOWER_BOUND, nameof(array));
             }
 
             if (index < 0)
             {
-                throw new ArgumentOutOfRangeException(nameof(index), index, ArgumentOutOfRange_NeedNonNegNum);
+                throw new ArgumentOutOfRangeException(nameof(index), index, ARGUMENT_OUT_OF_RANGE_NEED_NON_NEG_NUM);
             }
 
             if (array.Length - index < Count)
             {
-                throw new ArgumentException(Arg_ArrayPlusOffTooSmall);
+                throw new ArgumentException(ARG_ARRAY_PLUS_OFF_TOO_SMALL);
             }
 
             var tarray = array as T[];
@@ -581,7 +585,7 @@ namespace CatDb
                 var objects = array as object[];
                 if (objects == null)
                 {
-                    throw new ArgumentException(Argument_InvalidArrayType, nameof(array));
+                    throw new ArgumentException(ARGUMENT_INVALID_ARRAY_TYPE, nameof(array));
                 }
 
                 try
@@ -594,7 +598,7 @@ namespace CatDb
                 }
                 catch (ArrayTypeMismatchException)
                 {
-                    throw new ArgumentException(Argument_InvalidArrayType, nameof(array));
+                    throw new ArgumentException(ARGUMENT_INVALID_ARRAY_TYPE, nameof(array));
                 }
             }
         }
@@ -603,7 +607,7 @@ namespace CatDb
 
         #region IEnumerable<T> members
 
-        public Enumerator GetEnumerator() => new Enumerator(this);
+        public Enumerator GetEnumerator() => new(this);
 
         IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
 
@@ -660,7 +664,7 @@ namespace CatDb
             }
             else
             {
-                root = newChild;
+                Root = newChild;
             }
         }
 
@@ -705,10 +709,10 @@ namespace CatDb
 
         internal virtual Node? FindNode(T item)
         {
-            var current = root;
+            var current = Root;
             while (current != null)
             {
-                var order = comparer.Compare(item, current.Item);
+                var order = _comparer.Compare(item, current.Item);
                 if (order == 0)
                 {
                     return current;
@@ -736,11 +740,11 @@ namespace CatDb
         /// </remarks>
         internal virtual int InternalIndexOf(T item)
         {
-            var current = root;
+            var current = Root;
             var count = 0;
             while (current != null)
             {
-                var order = comparer.Compare(item, current.Item);
+                var order = _comparer.Compare(item, current.Item);
                 if (order == 0)
                 {
                     return count;
@@ -757,16 +761,16 @@ namespace CatDb
 
         internal Node? FindRange(T? from, T? to, bool lowerBoundActive, bool upperBoundActive)
         {
-            var current = root;
+            var current = Root;
             while (current != null)
             {
-                if (lowerBoundActive && comparer.Compare(from, current.Item) > 0)
+                if (lowerBoundActive && _comparer.Compare(from, current.Item) > 0)
                 {
                     current = current.Right;
                 }
                 else
                 {
-                    if (upperBoundActive && comparer.Compare(to, current.Item) < 0)
+                    if (upperBoundActive && _comparer.Compare(to, current.Item) < 0)
                     {
                         current = current.Left;
                     }
@@ -780,7 +784,7 @@ namespace CatDb
             return null;
         }
 
-        internal void UpdateVersion() => ++version;
+        internal void UpdateVersion() => ++Version;
 
         /// <summary>
         /// Returns an <see cref="IEqualityComparer{T}"/> object that can be used to create a collection that contains individual sets.
@@ -868,10 +872,10 @@ namespace CatDb
 
             if (asSorted != null && treeSubset == null && Count == 0)
             {
-                var dummy = new SortedSet<T>(asSorted, comparer);
-                root = dummy.root;
-                count = dummy.count;
-                version++;
+                var dummy = new SortedSet<T>(asSorted, _comparer);
+                Root = dummy.Root;
+                _count = dummy._count;
+                Version++;
                 return;
             }
 
@@ -918,11 +922,11 @@ namespace CatDb
                 // now merged has all c elements
 
                 // safe to gc the root, we  have all the elements
-                root = null;
+                Root = null;
 
-                root = ConstructRootFromSortedArray(merged, 0, c - 1, null);
-                count = c;
-                version++;
+                Root = ConstructRootFromSortedArray(merged, 0, c - 1, null);
+                _count = c;
+                Version++;
             }
             else
             {
@@ -965,8 +969,10 @@ namespace CatDb
                     }
                     break;
                 case 2:
-                    root = new Node(arr[startIndex], NodeColor.Black);
-                    root.Right = new Node(arr[endIndex], NodeColor.Black);
+                    root = new Node(arr[startIndex], NodeColor.Black)
+                    {
+                        Right = new Node(arr[endIndex], NodeColor.Black)
+                    };
                     root.Right.ColorRed();
                     if (redNode != null)
                     {
@@ -974,9 +980,11 @@ namespace CatDb
                     }
                     break;
                 case 3:
-                    root = new Node(arr[startIndex + 1], NodeColor.Black);
-                    root.Left = new Node(arr[startIndex], NodeColor.Black);
-                    root.Right = new Node(arr[endIndex], NodeColor.Black);
+                    root = new Node(arr[startIndex + 1], NodeColor.Black)
+                    {
+                        Left = new Node(arr[startIndex], NodeColor.Black),
+                        Right = new Node(arr[endIndex], NodeColor.Black)
+                    };
                     if (redNode != null)
                     {
                         root.Left.Left = redNode;
@@ -984,11 +992,13 @@ namespace CatDb
                     break;
                 default:
                     var midpt = ((startIndex + endIndex) / 2);
-                    root = new Node(arr[midpt], NodeColor.Black);
-                    root.Left = ConstructRootFromSortedArray(arr, startIndex, midpt - 1, redNode);
-                    root.Right = size % 2 == 0 ?
-                        ConstructRootFromSortedArray(arr, midpt + 2, endIndex, new Node(arr[midpt + 1], NodeColor.Red)) :
-                        ConstructRootFromSortedArray(arr, midpt + 1, endIndex, null);
+                    root = new Node(arr[midpt], NodeColor.Black)
+                    {
+                        Left = ConstructRootFromSortedArray(arr, startIndex, midpt - 1, redNode),
+                        Right = size % 2 == 0 ?
+                            ConstructRootFromSortedArray(arr, midpt + 2, endIndex, new Node(arr[midpt + 1], NodeColor.Red)) :
+                            ConstructRootFromSortedArray(arr, midpt + 1, endIndex, null)
+                    };
                     break;
 
             }
@@ -1020,8 +1030,8 @@ namespace CatDb
                 // First do a merge sort to an array.
                 var merged = new T[Count];
                 var c = 0;
-                var mine = GetEnumerator();
-                var theirs = asSorted.GetEnumerator();
+                using var mine = GetEnumerator();
+                using var theirs = asSorted.GetEnumerator();
                 bool mineEnded = !mine.MoveNext(), theirsEnded = !theirs.MoveNext();
                 var max = Max;
 
@@ -1047,11 +1057,11 @@ namespace CatDb
                 // now merged has all c elements
 
                 // safe to gc the root, we  have all the elements
-                root = null;
+                Root = null;
 
-                root = ConstructRootFromSortedArray(merged, 0, c - 1, null);
-                count = c;
-                version++;
+                Root = ConstructRootFromSortedArray(merged, 0, c - 1, null);
+                _count = c;
+                Version++;
             }
             else
             {
@@ -1082,7 +1092,7 @@ namespace CatDb
         {
             ArgumentNullException.ThrowIfNull(other);
 
-            if (count == 0)
+            if (_count == 0)
                 return;
 
             if (other == this)
@@ -1096,15 +1106,15 @@ namespace CatDb
             if (asSorted != null && HasEqualComparer(asSorted))
             {
                 // Outside range, no point in doing anything
-                if (comparer.Compare(asSorted.Max, Min) >= 0 && comparer.Compare(asSorted.Min, Max) <= 0)
+                if (_comparer.Compare(asSorted.Max, Min) >= 0 && _comparer.Compare(asSorted.Min, Max) <= 0)
                 {
                     var min = Min;
                     var max = Max;
                     foreach (var item in other)
                     {
-                        if (comparer.Compare(item, min) < 0)
+                        if (_comparer.Compare(item, min) < 0)
                             continue;
-                        if (comparer.Compare(item, max) > 0)
+                        if (_comparer.Compare(item, max) > 0)
                             break;
                         Remove(item);
                     }
@@ -1140,8 +1150,7 @@ namespace CatDb
             }
             else
             {
-                int length;
-                var elements = EnumerableHelpers.ToArray(other, out length);
+                var elements = EnumerableHelpers.ToArray(other, out var length);
                 Array.Sort(elements, 0, length, Comparer);
                 SymmetricExceptWithSameComparer(elements, length);
             }
@@ -1172,7 +1181,7 @@ namespace CatDb
             var previous = other[0];
             for (var i = 0; i < count; i++)
             {
-                while (i < count && i != 0 && comparer.Compare(other[i], previous) == 0)
+                while (i < count && i != 0 && _comparer.Compare(other[i], previous) == 0)
                     i++;
                 if (i >= count)
                     break;
@@ -1246,7 +1255,7 @@ namespace CatDb
         {
             ArgumentNullException.ThrowIfNull(other);
 
-            if (other is ICollection c && c.Count == 0)
+            if (other is ICollection { Count: 0 })
                 return true;
 
             // do it one way for HashSets
@@ -1276,7 +1285,7 @@ namespace CatDb
             if (Count == 0)
                 return false;
 
-            if (other is ICollection c && c.Count == 0)
+            if (other is ICollection { Count: 0 })
                 return true;
 
             // another way for sorted sets
@@ -1308,8 +1317,8 @@ namespace CatDb
             var asSorted = other as SortedSet<T>;
             if (asSorted != null && HasEqualComparer(asSorted))
             {
-                var mine = GetEnumerator();
-                var theirs = asSorted.GetEnumerator();
+                using var mine = GetEnumerator();
+                using var theirs = asSorted.GetEnumerator();
                 var mineEnded = !mine.MoveNext();
                 var theirsEnded = !theirs.MoveNext();
                 while (!mineEnded && !theirsEnded)
@@ -1336,11 +1345,11 @@ namespace CatDb
             if (Count == 0)
                 return false;
 
-            if (other is ICollection<T> c && c.Count == 0)
+            if (other is ICollection<T> { Count: 0 })
                 return false;
 
             var asSorted = other as SortedSet<T>;
-            if (asSorted != null && HasEqualComparer(asSorted) && (comparer.Compare(Min, asSorted.Max) > 0 || comparer.Compare(Max, asSorted.Min) < 0))
+            if (asSorted != null && HasEqualComparer(asSorted) && (_comparer.Compare(Min, asSorted.Max) > 0 || _comparer.Compare(Max, asSorted.Min) < 0))
             {
                 return false;
             }
@@ -1407,7 +1416,7 @@ namespace CatDb
                 new BitHelper(new int[intArrayLength], clear: false);
 
             // count of items in other not found in this
-            var UnfoundCount = 0;
+            var unfoundCount = 0;
             // count of unique items in other found in this
             var uniqueFoundCount = 0;
 
@@ -1425,7 +1434,7 @@ namespace CatDb
                 }
                 else
                 {
-                    UnfoundCount++;
+                    unfoundCount++;
                     if (returnIfUnfound)
                     {
                         break;
@@ -1434,7 +1443,7 @@ namespace CatDb
             }
 
             result.UniqueCount = uniqueFoundCount;
-            result.UnfoundCount = UnfoundCount;
+            result.UnfoundCount = unfoundCount;
             return result;
         }
 
@@ -1476,12 +1485,12 @@ namespace CatDb
         {
             get
             {
-                if (root == null)
+                if (Root == null)
                 {
                     return default;
                 }
 
-                var current = root;
+                var current = Root;
                 while (current.Left != null)
                 {
                     current = current.Left;
@@ -1497,12 +1506,12 @@ namespace CatDb
         {
             get
             {
-                if (root == null)
+                if (Root == null)
                 {
                     return default;
                 }
 
-                var current = root;
+                var current = Root;
                 while (current.Right != null)
                 {
                     current = current.Right;
@@ -1525,7 +1534,7 @@ namespace CatDb
         {
             if (Comparer.Compare(lowerValue, upperValue) > 0)
             {
-                throw new ArgumentException(SortedSet_LowerValueGreaterThanUpperValue, nameof(lowerValue));
+                throw new ArgumentException(SORTED_SET_LOWER_VALUE_GREATER_THAN_UPPER_VALUE, nameof(lowerValue));
             }
             return new TreeSubSet(this, lowerValue, upperValue, true, true);
         }
@@ -1535,7 +1544,7 @@ namespace CatDb
         /// debug status to be checked whenever any operation is called
         /// </summary>
         /// <returns></returns>
-        internal virtual bool versionUpToDate()
+        internal virtual bool VersionUpToDate()
         {
             return true;
         }
@@ -1547,15 +1556,15 @@ namespace CatDb
         {
             ArgumentNullException.ThrowIfNull(info);
 
-            info.AddValue(CountName, count); // This is the length of the bucket array.
-            info.AddValue(ComparerName, comparer, typeof(IComparer<T>));
-            info.AddValue(VersionName, version);
+            info.AddValue(COUNT_NAME, _count); // This is the length of the bucket array.
+            info.AddValue(COMPARER_NAME, _comparer, typeof(IComparer<T>));
+            info.AddValue(VERSION_NAME, Version);
 
-            if (root != null)
+            if (Root != null)
             {
                 var items = new T[Count];
                 CopyTo(items, 0);
-                info.AddValue(ItemsName, items, typeof(T[]));
+                info.AddValue(ITEMS_NAME, items, typeof(T[]));
             }
         }
 
@@ -1563,26 +1572,26 @@ namespace CatDb
 
         protected virtual void OnDeserialization(object? sender)
         {
-            if (comparer != null)
+            if (_comparer != null)
             {
                 return; // Somebody had a dependency on this class and fixed us up before the ObjectManager got to it.
             }
 
-            if (siInfo == null)
+            if (_siInfo == null)
             {
-                throw new SerializationException(Serialization_InvalidOnDeser);
+                throw new SerializationException(SERIALIZATION_INVALID_ON_DESER);
             }
 
-            comparer = (IComparer<T>)siInfo.GetValue(ComparerName, typeof(IComparer<T>))!;
-            var savedCount = siInfo.GetInt32(CountName);
+            _comparer = (IComparer<T>)_siInfo.GetValue(COMPARER_NAME, typeof(IComparer<T>))!;
+            var savedCount = _siInfo.GetInt32(COUNT_NAME);
 
             if (savedCount != 0)
             {
-                var items = (T[]?)siInfo.GetValue(ItemsName, typeof(T[]));
+                var items = (T[]?)_siInfo.GetValue(ITEMS_NAME, typeof(T[]));
 
                 if (items == null)
                 {
-                    throw new SerializationException(Serialization_MissingValues);
+                    throw new SerializationException(SERIALIZATION_MISSING_VALUES);
                 }
 
                 for (var i = 0; i < items.Length; i++)
@@ -1591,13 +1600,13 @@ namespace CatDb
                 }
             }
 
-            version = siInfo.GetInt32(VersionName);
-            if (count != savedCount)
+            Version = _siInfo.GetInt32(VERSION_NAME);
+            if (_count != savedCount)
             {
-                throw new SerializationException(Serialization_MismatchedCount);
+                throw new SerializationException(SERIALIZATION_MISMATCHED_COUNT);
             }
 
-            siInfo = null;
+            _siInfo = null;
         }
 
         #endregion
@@ -1612,9 +1621,9 @@ namespace CatDb
                 Color = color;
             }
 
-            public static bool IsNonNullBlack(Node? node) => node != null && node.IsBlack;
+            public static bool IsNonNullBlack(Node? node) => node is { IsBlack: true };
 
-            public static bool IsNonNullRed(Node? node) => node != null && node.IsRed;
+            public static bool IsNonNullRed(Node? node) => node is { IsRed: true };
 
             public static bool IsNullOrBlack(Node? node) => node == null || node.IsBlack;
 
@@ -1697,7 +1706,7 @@ namespace CatDb
                 return node == Left ? Right! : Left!;
             }
 
-            public Node ShallowClone() => new Node(Item, Color);
+            public Node ShallowClone() => new(Item, Color);
 
             public void Split4Node()
             {
@@ -1861,10 +1870,10 @@ namespace CatDb
             {
                 _tree = set;
                 set.VersionCheck();
-                _version = set.version;
+                _version = set.Version;
 
                 // 2 log(n + 1) is the maximum height.
-                _stack = new Stack<Node>(2 * (int)Log2(set.TotalCount() + 1));
+                _stack = new Stack<Node>(2 * Log2(set.TotalCount() + 1));
                 _current = null;
                 _reverse = reverse;
 
@@ -1884,7 +1893,7 @@ namespace CatDb
             private void Initialize()
             {
                 _current = null;
-                var node = _tree.root;
+                var node = _tree.Root;
                 Node? next, other;
                 while (node != null)
                 {
@@ -1911,9 +1920,9 @@ namespace CatDb
                 // Make sure that the underlying subset has not been changed since
                 _tree.VersionCheck();
 
-                if (_version != _tree.version)
+                if (_version != _tree.Version)
                 {
-                    throw new InvalidOperationException(InvalidOperation_EnumFailedVersion);
+                    throw new InvalidOperationException(INVALID_OPERATION_ENUM_FAILED_VERSION);
                 }
 
                 if (_stack.Count == 0)
@@ -1966,7 +1975,7 @@ namespace CatDb
                 {
                     if (_current == null)
                     {
-                        throw new InvalidOperationException(InvalidOperation_EnumOpCantHappen);
+                        throw new InvalidOperationException(INVALID_OPERATION_ENUM_OP_CANT_HAPPEN);
                     }
 
                     return _current.Item;
@@ -1977,9 +1986,9 @@ namespace CatDb
 
             internal void Reset()
             {
-                if (_version != _tree.version)
+                if (_version != _tree.Version)
                 {
-                    throw new InvalidOperationException(InvalidOperation_EnumFailedVersion);
+                    throw new InvalidOperationException(INVALID_OPERATION_ENUM_FAILED_VERSION);
                 }
 
                 _stack.Clear();
@@ -2052,23 +2061,23 @@ namespace CatDb
             // used to see if the count is out of date
 
 #if DEBUG
-            internal override bool versionUpToDate()
+            internal override bool VersionUpToDate()
             {
-                return (version == _underlying.version);
+                return (Version == _underlying.Version);
             }
 #endif
 
-            public TreeSubSet(SortedSet<T> Underlying, T? Min, T? Max, bool lowerBoundActive, bool upperBoundActive)
-                : base(Underlying.Comparer)
+            public TreeSubSet(SortedSet<T> underlying, T? min, T? max, bool lowerBoundActive, bool upperBoundActive)
+                : base(underlying.Comparer)
             {
-                _underlying = Underlying;
-                _min = Min;
-                _max = Max;
+                _underlying = underlying;
+                _min = min;
+                _max = max;
                 _lBoundActive = lowerBoundActive;
                 _uBoundActive = upperBoundActive;
-                root = _underlying.FindRange(_min, _max, _lBoundActive, _uBoundActive); // root is first element within range
-                count = 0;
-                version = -1;
+                Root = _underlying.FindRange(_min, _max, _lBoundActive, _uBoundActive); // root is first element within range
+                _count = 0;
+                Version = -1;
                 _countVersion = -1;
             }
 
@@ -2082,7 +2091,7 @@ namespace CatDb
                 var ret = _underlying.AddIfNotPresent(item);
                 VersionCheck();
 #if DEBUG
-                Debug.Assert(versionUpToDate() && root == _underlying.FindRange(_min, _max));
+                Debug.Assert(VersionUpToDate() && Root == _underlying.FindRange(_min, _max));
 #endif
 
                 return ret;
@@ -2092,7 +2101,7 @@ namespace CatDb
             {
                 VersionCheck();
 #if DEBUG
-                Debug.Assert(versionUpToDate() && root == _underlying.FindRange(_min, _max));
+                Debug.Assert(VersionUpToDate() && Root == _underlying.FindRange(_min, _max));
 #endif
                 return base.Contains(item);
             }
@@ -2107,7 +2116,7 @@ namespace CatDb
                 var ret = _underlying.Remove(item);
                 VersionCheck();
 #if DEBUG
-                Debug.Assert(versionUpToDate() && root == _underlying.FindRange(_min, _max));
+                Debug.Assert(VersionUpToDate() && Root == _underlying.FindRange(_min, _max));
 #endif
                 return ret;
             }
@@ -2127,9 +2136,9 @@ namespace CatDb
                     toRemove.RemoveAt(toRemove.Count - 1);
                 }
 
-                root = null;
-                count = 0;
-                version = _underlying.version;
+                Root = null;
+                _count = 0;
+                Version = _underlying.Version;
             }
 
             internal override bool IsWithinRange(T item)
@@ -2149,7 +2158,7 @@ namespace CatDb
                 get
                 {
                     VersionCheck();
-                    var current = root;
+                    var current = Root;
                     T? result = default;
 
                     while (current != null)
@@ -2180,7 +2189,7 @@ namespace CatDb
                 get
                 {
                     VersionCheck();
-                    var current = root;
+                    var current = Root;
                     T? result = default;
 
                     while (current != null)
@@ -2209,15 +2218,15 @@ namespace CatDb
             {
                 VersionCheck();
 
-                if (root == null)
+                if (Root == null)
                 {
                     return true;
                 }
 
                 // The maximum height of a red-black tree is 2*lg(n+1).
                 // See page 264 of "Introduction to algorithms" by Thomas H. Cormen
-                var stack = new Stack<Node>(2 * (int)Log2(count + 1)); // this is not exactly right if count is out of date, but the stack can grow
-                var current = root;
+                var stack = new Stack<Node>(2 * Log2(_count + 1)); // this is not exactly right if count is out of date, but the stack can grow
+                var current = Root;
                 while (current != null)
                 {
                     if (IsWithinRange(current.Item))
@@ -2268,13 +2277,13 @@ namespace CatDb
             {
                 VersionCheck();
 
-                if (root == null)
+                if (Root == null)
                 {
                     return true;
                 }
 
                 var processQueue = new Queue<Node>();
-                processQueue.Enqueue(root);
+                processQueue.Enqueue(Root);
                 Node current;
 
                 while (processQueue.Count != 0)
@@ -2305,7 +2314,7 @@ namespace CatDb
 
                 VersionCheck();
 #if DEBUG
-                Debug.Assert(versionUpToDate() && root == _underlying.FindRange(_min, _max));
+                Debug.Assert(VersionUpToDate() && Root == _underlying.FindRange(_min, _max));
 #endif
                 return base.FindNode(item);
             }
@@ -2322,7 +2331,7 @@ namespace CatDb
                         return count;
                 }
 #if DEBUG
-                Debug.Assert(versionUpToDate() && root == _underlying.FindRange(_min, _max));
+                Debug.Assert(VersionUpToDate() && Root == _underlying.FindRange(_min, _max));
 #endif
                 return -1;
             }
@@ -2336,17 +2345,17 @@ namespace CatDb
             private void VersionCheckImpl(bool updateCount)
             {
                 Debug.Assert(_underlying != null);
-                if (version != _underlying.version)
+                if (Version != _underlying.Version)
                 {
-                    root = _underlying.FindRange(_min, _max, _lBoundActive, _uBoundActive);
-                    version = _underlying.version;
+                    Root = _underlying.FindRange(_min, _max, _lBoundActive, _uBoundActive);
+                    Version = _underlying.Version;
                 }
 
-                if (updateCount && _countVersion != _underlying.version)
+                if (updateCount && _countVersion != _underlying.Version)
                 {
-                    count = 0;
-                    InOrderTreeWalk(n => { count++; return true; });
-                    _countVersion = _underlying.version;
+                    _count = 0;
+                    InOrderTreeWalk(n => { _count++; return true; });
+                    _countVersion = _underlying.Version;
                 }
             }
 
@@ -2379,7 +2388,7 @@ namespace CatDb
             internal override void IntersectWithEnumerable(IEnumerable<T> other)
             {
                 base.IntersectWithEnumerable(other);
-                Debug.Assert(versionUpToDate() && root == _underlying.FindRange(_min, _max));
+                Debug.Assert(VersionUpToDate() && Root == _underlying.FindRange(_min, _max));
             }
 #endif
 
@@ -2401,7 +2410,7 @@ namespace CatDb
 
     internal ref struct BitHelper
     {
-        private const int IntSize = sizeof(int) * 8;
+        private const int INT_SIZE = sizeof(int) * 8;
         private readonly Span<int> _span;
 
         internal BitHelper(Span<int> span, bool clear)
@@ -2415,23 +2424,23 @@ namespace CatDb
 
         internal void MarkBit(int bitPosition)
         {
-            var bitArrayIndex = bitPosition / IntSize;
+            var bitArrayIndex = bitPosition / INT_SIZE;
             if ((uint)bitArrayIndex < (uint)_span.Length)
             {
-                _span[bitArrayIndex] |= (1 << (bitPosition % IntSize));
+                _span[bitArrayIndex] |= (1 << (bitPosition % INT_SIZE));
             }
         }
 
         internal bool IsMarked(int bitPosition)
         {
-            var bitArrayIndex = bitPosition / IntSize;
+            var bitArrayIndex = bitPosition / INT_SIZE;
             return
                 (uint)bitArrayIndex < (uint)_span.Length &&
-                (_span[bitArrayIndex] & (1 << (bitPosition % IntSize))) != 0;
+                (_span[bitArrayIndex] & (1 << (bitPosition % INT_SIZE))) != 0;
         }
 
         /// <summary>How many ints must be allocated to represent n bits. Returns (n+31)/32, but avoids overflow.</summary>
-        internal static int ToIntArrayLength(int n) => n > 0 ? ((n - 1) / IntSize + 1) : 0;
+        internal static int ToIntArrayLength(int n) => n > 0 ? ((n - 1) / INT_SIZE + 1) : 0;
     }
 
     internal static partial class EnumerableHelpers
@@ -2464,40 +2473,38 @@ namespace CatDb
             }
             else
             {
-                using (var en = source.GetEnumerator())
+                using var en = source.GetEnumerator();
+                if (en.MoveNext())
                 {
-                    if (en.MoveNext())
+                    const int defaultCapacity = 4;
+                    var arr = new T[defaultCapacity];
+                    arr[0] = en.Current;
+                    var count = 1;
+
+                    while (en.MoveNext())
                     {
-                        const int DefaultCapacity = 4;
-                        var arr = new T[DefaultCapacity];
-                        arr[0] = en.Current;
-                        var count = 1;
-
-                        while (en.MoveNext())
+                        if (count == arr.Length)
                         {
-                            if (count == arr.Length)
+                            // This is the same growth logic as in List<T>:
+                            // If the array is currently empty, we make it a default size.  Otherwise, we attempt to
+                            // double the size of the array.  Doubling will overflow once the size of the array reaches
+                            // 2^30, since doubling to 2^31 is 1 larger than Int32.MaxValue.  In that case, we instead
+                            // constrain the length to be Array.MaxLength (this overflow check works because of the
+                            // cast to uint).
+                            var newLength = count << 1;
+                            if ((uint)newLength > Array.MaxLength)
                             {
-                                // This is the same growth logic as in List<T>:
-                                // If the array is currently empty, we make it a default size.  Otherwise, we attempt to
-                                // double the size of the array.  Doubling will overflow once the size of the array reaches
-                                // 2^30, since doubling to 2^31 is 1 larger than Int32.MaxValue.  In that case, we instead
-                                // constrain the length to be Array.MaxLength (this overflow check works because of the
-                                // cast to uint).
-                                var newLength = count << 1;
-                                if ((uint)newLength > Array.MaxLength)
-                                {
-                                    newLength = Array.MaxLength <= count ? count + 1 : Array.MaxLength;
-                                }
-
-                                Array.Resize(ref arr, newLength);
+                                newLength = Array.MaxLength <= count ? count + 1 : Array.MaxLength;
                             }
 
-                            arr[count++] = en.Current;
+                            Array.Resize(ref arr, newLength);
                         }
 
-                        length = count;
-                        return arr;
+                        arr[count++] = en.Current;
                     }
+
+                    length = count;
+                    return arr;
                 }
             }
 

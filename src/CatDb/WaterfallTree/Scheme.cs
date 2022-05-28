@@ -6,27 +6,27 @@ namespace CatDb.WaterfallTree
 {
     public class Scheme : IEnumerable<KeyValuePair<long, Locator>>
     {
-        public const byte VERSION = 40;
+        private const byte VERSION = 40;
 
-        private long locatorID = Locator.MIN.ID;
+        private long _locatorId = Locator.Min.Id;
 
-        private ConcurrentDictionary<long, Locator> map = new ConcurrentDictionary<long, Locator>();
+        private readonly ConcurrentDictionary<long, Locator> _map = new();
 
-        private long ObtainPathID()
+        private long ObtainPathId()
         {
-            return Interlocked.Increment(ref locatorID);
+            return Interlocked.Increment(ref _locatorId);
         }
 
         public void Serialize(BinaryWriter writer)
         {
             writer.Write(VERSION);
 
-            writer.Write(locatorID);
-            writer.Write(map.Count);
+            writer.Write(_locatorId);
+            writer.Write(_map.Count);
 
-            foreach (var kv in map)
+            foreach (var kv in _map)
             {
-                var locator = (Locator)kv.Value;
+                var locator = kv.Value;
                 locator.Serialize(writer);
             }
         }
@@ -36,16 +36,18 @@ namespace CatDb.WaterfallTree
             if (reader.ReadByte() != VERSION)
                 throw new Exception("Invalid Scheme version.");
 
-            var scheme = new Scheme();
+            var scheme = new Scheme
+            {
+                _locatorId = reader.ReadInt64()
+            };
 
-            scheme.locatorID = reader.ReadInt64();
             var count = reader.ReadInt32();
 
             for (var i = 0; i < count; i++)
             {
                 var locator = Locator.Deserialize(reader);
 
-                scheme.map[locator.ID] = locator;
+                scheme._map[locator.Id] = locator;
 
                 //Do not prepare the locator yet
             }
@@ -53,24 +55,24 @@ namespace CatDb.WaterfallTree
             return scheme;
         }
 
-        public Locator this[long id] => map[id];
+        public Locator this[long id] => _map[id];
 
         public Locator Create(string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType)
         {
-            var id = ObtainPathID();
+            var id = ObtainPathId();
 
             var locator = new Locator(id, name, structureType, keyDataType, recordDataType, keyType, recordType);
 
-            map[id] = locator;
+            _map[id] = locator;
 
             return locator;
         }
 
-        public int Count => map.Count;
+        public int Count => _map.Count;
 
         public IEnumerator<KeyValuePair<long, Locator>> GetEnumerator()
         {
-            return map.Select(s => new KeyValuePair<long, Locator>(s.Key, s.Value)).GetEnumerator();
+            return _map.Select(s => new KeyValuePair<long, Locator>(s.Key, s.Value)).GetEnumerator();
         }
 
         IEnumerator IEnumerable.GetEnumerator()

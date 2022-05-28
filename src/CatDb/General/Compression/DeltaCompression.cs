@@ -48,7 +48,7 @@ namespace CatDb.General.Compression
 
         private static void SetBits(ulong[] data, int bitIndex, ulong value, int bitCount)
         {
-            Debug.Assert(bitCount > 0 && bitCount <= 64);
+            Debug.Assert(bitCount is > 0 and <= 64);
 
             var index = bitIndex >> 6;
             var idx = bitIndex & 63;
@@ -60,7 +60,7 @@ namespace CatDb.General.Compression
 
         private static ulong GetBits(ulong[] data, int bitIndex, int bitCount)
         {
-            Debug.Assert(bitCount > 0 && bitCount <= 64);
+            Debug.Assert(bitCount is > 0 and <= 64);
 
             var index = bitIndex >> 6;
             var idx = bitIndex & 63;
@@ -214,7 +214,6 @@ namespace CatDb.General.Compression
             }
 
             var readSign = helper.Type == HelperType.Delta;
-            var maxDelta = helper.Delta;
             var alwaysUseDelta = helper.AlwaysUseDelta;
             var sign = helper.Sign;
             int bitCount = helper.DeltaBits;
@@ -264,10 +263,10 @@ namespace CatDb.General.Compression
 
         public class Helper
         {
-            private long oldValue;
+            private long _oldValue;
 
-            private int[] map = new int[1 + 64];
-            private int maxIndex;
+            private readonly int[] _map = new int[1 + 64];
+            private int _maxIndex;
 
             public HelperType Type = HelperType.OneStep;
             public byte DeltaBits;
@@ -285,13 +284,13 @@ namespace CatDb.General.Compression
                 byte b = 0;
 
                 if (Sign)
-                    b |= (byte)0x80;
+                    b |= 0x80;
 
                 if (IsReady)
-                    b |= (byte)0x40;
+                    b |= 0x40;
 
                 if (AlwaysUseDelta)
-                    b |= (byte)0x20;
+                    b |= 0x20;
 
                 b |= (byte)Type;
 
@@ -344,21 +343,21 @@ namespace CatDb.General.Compression
                     bool sign;
                     ulong delta;
 
-                    if (value >= oldValue)
+                    if (value >= _oldValue)
                     {
                         sign = false;
-                        delta = (ulong)(value - oldValue);
+                        delta = (ulong)(value - _oldValue);
                     }
                     else
                     {
                         sign = true;
-                        delta = (ulong)(oldValue - value);
+                        delta = (ulong)(_oldValue - value);
                     }
 
                     var bits = BitUtils.GetBitBounds(delta);
-                    map[bits]++;
-                    if (bits > maxIndex)
-                        maxIndex = bits;
+                    _map[bits]++;
+                    if (bits > _maxIndex)
+                        _maxIndex = bits;
 
                     if (Type > HelperType.Delta)
                     {
@@ -371,25 +370,25 @@ namespace CatDb.General.Compression
                 else if (Count == 1)
                     SecondAdd(value);
 
-                oldValue = value;
+                _oldValue = value;
                 Count++;
             }
 
             private void SecondAdd(long value)
             {
-                if (value >= oldValue)
+                if (value >= _oldValue)
                 {
                     Sign = false;
-                    Delta = (ulong)(value - oldValue);
+                    Delta = (ulong)(value - _oldValue);
                 }
                 else
                 {
                     Sign = true;
-                    Delta = (ulong)(oldValue - value);
+                    Delta = (ulong)(_oldValue - value);
                 }
 
-                maxIndex = BitUtils.GetBitBounds(Delta);
-                map[maxIndex]++;
+                _maxIndex = BitUtils.GetBitBounds(Delta);
+                _map[_maxIndex]++;
             }
 
             public void Prepare()
@@ -407,9 +406,9 @@ namespace CatDb.General.Compression
 
                 var hasSign = Type == HelperType.DeltaMonotone ? 0 : 1;
 
-                for (int i = 1, c = 0; i <= maxIndex; i++)
+                for (int i = 1, c = 0; i <= _maxIndex; i++)
                 {
-                    c += map[i];
+                    c += _map[i];
                     var size = c * (1 + hasSign + i) + (Count - 1 - c) * (1 + 64);
 
                     if (size < SizeBits)
@@ -422,7 +421,7 @@ namespace CatDb.General.Compression
                 if (DeltaBits < 64)
                 {
                     Delta = (1UL << DeltaBits) - 1; //optimal delta
-                    AlwaysUseDelta = DeltaBits == maxIndex;
+                    AlwaysUseDelta = DeltaBits == _maxIndex;
                 }
                 else
                     Type = HelperType.Raw;

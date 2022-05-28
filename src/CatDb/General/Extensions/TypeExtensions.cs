@@ -43,13 +43,12 @@ namespace CatDb.General.Extensions
 
         public static Type GetPropertyOrFieldType(this MemberInfo member)
         {
-            switch (member.MemberType)
+            return member.MemberType switch
             {
-                case MemberTypes.Property: return ((PropertyInfo)member).PropertyType;
-                case MemberTypes.Field: return ((FieldInfo)member).FieldType;
-                default:
-                    throw new NotSupportedException(member.MemberType.ToString());
-            }
+                MemberTypes.Property => ((PropertyInfo)member).PropertyType,
+                MemberTypes.Field => ((FieldInfo)member).FieldType,
+                _ => throw new NotSupportedException(member.MemberType.ToString())
+            };
         }
 
         public static bool HasDefaultConstructor(this Type type)

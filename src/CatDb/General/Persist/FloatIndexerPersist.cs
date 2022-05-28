@@ -5,7 +5,7 @@ namespace CatDb.General.Persist
 {
     public class SingleIndexerPersist : IIndexerPersist<Single>
     {
-        public const byte VERSION = 40;
+        private const byte VERSION = 40;
 
         private int GetMaxDigits(Func<int, float> values, int count)
         {
@@ -158,7 +158,7 @@ namespace CatDb.General.Persist
             if (digits >= 0)
             {
                 var koef = Math.Pow(10, digits);
-                DeltaCompression.Decompress(reader, (idx, val) => values(idx, (double)Math.Round(val / koef, digits)), count);
+                DeltaCompression.Decompress(reader, (idx, val) => values(idx, Math.Round(val / koef, digits)), count);
             }
             else //native read
             {

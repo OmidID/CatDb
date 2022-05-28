@@ -1,6 +1,6 @@
 ﻿namespace CatDb.General.IO
 {
-    public static class IOUtils
+    public static class IoUtils
     {
         public static long GetTotalFreeSpace(string driveName)
         {

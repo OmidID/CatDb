@@ -2,7 +2,7 @@
 {
     public class KeyValuePairComparer<TKey, TValue> : IComparer<KeyValuePair<TKey, TValue>>
     {
-        public static readonly KeyValuePairComparer<TKey, TValue> Instance = new KeyValuePairComparer<TKey, TValue>(Comparer<TKey>.Default);
+        public static readonly KeyValuePairComparer<TKey, TValue> Instance = new(Comparer<TKey>.Default);
 
         public IComparer<TKey> Comparer { get; private set; }
 

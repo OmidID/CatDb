@@ -7,35 +7,35 @@ namespace CatDb.Database
 {
     public class OperationCollectionPersist : IPersist<IOperationCollection>
     {
-        public const byte VERSION = 40;
+        private const byte VERSION = 40;
 
-        private readonly Action<BinaryWriter, IOperation>[] writes;
-        private readonly Func<BinaryReader, IOperation>[] reads;
+        private readonly Action<BinaryWriter, IOperation>[] _writes;
+        private readonly Func<BinaryReader, IOperation>[] _reads;
 
-        public readonly IPersist<IData> KeyPersist;
-        public readonly IPersist<IData> RecordPersist;
-        public readonly IOperationCollectionFactory CollectionFactory;
+        private readonly IPersist<IData> _keyPersist;
+        private readonly IPersist<IData> _recordPersist;
+        private readonly IOperationCollectionFactory _collectionFactory;
 
         public OperationCollectionPersist(IPersist<IData> keyPersist, IPersist<IData> recordPersist, IOperationCollectionFactory collectionFactory)
         {
-            KeyPersist = keyPersist;
-            RecordPersist = recordPersist;
+            _keyPersist = keyPersist;
+            _recordPersist = recordPersist;
 
-            writes = new Action<BinaryWriter, IOperation>[OperationCode.MAX];
-            writes[OperationCode.REPLACE] = WriteReplaceOperation;
-            writes[OperationCode.INSERT_OR_IGNORE] = WriteInsertOrIgnoreOperation;
-            writes[OperationCode.DELETE] = WriteDeleteOperation;
-            writes[OperationCode.DELETE_RANGE] = WriteDeleteRangeOperation;
-            writes[OperationCode.CLEAR] = WriteClearOperation;
+            _writes = new Action<BinaryWriter, IOperation>[OperationCode.MAX];
+            _writes[OperationCode.REPLACE] = WriteReplaceOperation;
+            _writes[OperationCode.INSERT_OR_IGNORE] = WriteInsertOrIgnoreOperation;
+            _writes[OperationCode.DELETE] = WriteDeleteOperation;
+            _writes[OperationCode.DELETE_RANGE] = WriteDeleteRangeOperation;
+            _writes[OperationCode.CLEAR] = WriteClearOperation;
 
-            reads = new Func<BinaryReader, IOperation>[OperationCode.MAX];
-            reads[OperationCode.REPLACE] = ReadReplaceOperation;
-            reads[OperationCode.INSERT_OR_IGNORE] = ReadInsertOrIgnoreOperation;
-            reads[OperationCode.DELETE] = ReadDeleteOperation;
-            reads[OperationCode.DELETE_RANGE] = ReadDeleteRangeOperation;
-            reads[OperationCode.CLEAR] = ReadClearOperation;
+            _reads = new Func<BinaryReader, IOperation>[OperationCode.MAX];
+            _reads[OperationCode.REPLACE] = ReadReplaceOperation;
+            _reads[OperationCode.INSERT_OR_IGNORE] = ReadInsertOrIgnoreOperation;
+            _reads[OperationCode.DELETE] = ReadDeleteOperation;
+            _reads[OperationCode.DELETE_RANGE] = ReadDeleteRangeOperation;
+            _reads[OperationCode.CLEAR] = ReadClearOperation;
 
-            CollectionFactory = collectionFactory;
+            _collectionFactory = collectionFactory;
         }
 
         #region Write Methods
@@ -44,31 +44,27 @@ namespace CatDb.Database
         {
             var opr = (ReplaceOperation)operation;
 
-            KeyPersist.Write(writer, opr.FromKey);
-            RecordPersist.Write(writer, opr.Record);
+            _keyPersist.Write(writer, opr.FromKey);
+            _recordPersist.Write(writer, opr.Record);
         }
 
         private void WriteInsertOrIgnoreOperation(BinaryWriter writer, IOperation operation)
         {
             var opr = (InsertOrIgnoreOperation)operation;
 
-            KeyPersist.Write(writer, opr.FromKey);
-            RecordPersist.Write(writer, opr.Record);
+            _keyPersist.Write(writer, opr.FromKey);
+            _recordPersist.Write(writer, opr.Record);
         }
 
         private void WriteDeleteOperation(BinaryWriter writer, IOperation operation)
         {
-            var opr = (DeleteOperation)operation;
-
-            KeyPersist.Write(writer, operation.FromKey);
+            _keyPersist.Write(writer, operation.FromKey);
         }
 
         private void WriteDeleteRangeOperation(BinaryWriter writer, IOperation operation)
         {
-            var opr = (DeleteRangeOperation)operation;
-
-            KeyPersist.Write(writer, operation.FromKey);
-            KeyPersist.Write(writer, operation.ToKey);
+            _keyPersist.Write(writer, operation.FromKey);
+            _keyPersist.Write(writer, operation.ToKey);
         }
 
         private void WriteClearOperation(BinaryWriter writer, IOperation operation)
@@ -82,31 +78,31 @@ namespace CatDb.Database
 
         private IOperation ReadReplaceOperation(BinaryReader reader)
         {
-            var key = KeyPersist.Read(reader);
-            var record = RecordPersist.Read(reader);
+            var key = _keyPersist.Read(reader);
+            var record = _recordPersist.Read(reader);
 
             return new ReplaceOperation(key, record);
         }
 
         private IOperation ReadInsertOrIgnoreOperation(BinaryReader reader)
         {
-            var key = KeyPersist.Read(reader);
-            var record = RecordPersist.Read(reader);
+            var key = _keyPersist.Read(reader);
+            var record = _recordPersist.Read(reader);
 
             return new InsertOrIgnoreOperation(key, record);
         }
 
         private IOperation ReadDeleteOperation(BinaryReader reader)
         {
-            var key = KeyPersist.Read(reader);
+            var key = _keyPersist.Read(reader);
 
             return new DeleteOperation(key);
         }
 
         private IOperation ReadDeleteRangeOperation(BinaryReader reader)
         {
-            var from = KeyPersist.Read(reader);
-            var to = KeyPersist.Read(reader);
+            var from = _keyPersist.Read(reader);
+            var to = _keyPersist.Read(reader);
 
             return new DeleteRangeOperation(from, to);
         }
@@ -177,7 +173,7 @@ namespace CatDb.Database
                 {
                     var operation = item[i];
                     writer.Write(operation.Code);
-                    writes[operation.Code](writer, operation);
+                    _writes[operation.Code](writer, operation);
                 }
             }
         }
@@ -241,11 +237,11 @@ namespace CatDb.Database
                 for (var i = 0; i < count; i++)
                 {
                     var code = reader.ReadInt32();
-                    array[i] = reads[code](reader);
+                    array[i] = _reads[code](reader);
                 }
             }
 
-            var operations = CollectionFactory.Create(array, commonAction, areAllMonotoneAndPoint);
+            var operations = _collectionFactory.Create(array, commonAction, areAllMonotoneAndPoint);
 
             return operations;
         }

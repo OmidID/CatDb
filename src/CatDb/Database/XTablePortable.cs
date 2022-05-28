@@ -8,13 +8,13 @@ namespace CatDb.Database
 {
     public class XTablePortable : ITable<IData, IData>
     {
-        private IOperationCollection operations;
+        private IOperationCollection _operations;
 
         public readonly WTree Tree;
         public readonly Locator Locator;
         public volatile bool IsModified;
 
-        public readonly object SyncRoot = new object();
+        public readonly object SyncRoot = new();
 
         //public event Apply.ReadOperationDelegate PendingRead;
 
@@ -23,7 +23,7 @@ namespace CatDb.Database
             Tree = tree;
             Locator = locator;
 
-            operations = locator.OperationCollectionFactory.Create(256);
+            _operations = locator.OperationCollectionFactory.Create(256);
 
             //((Apply)Path.DataDescriptor.Apply).ReadCallback += new Apply.ReadOperationDelegate(Apply_ReadCallback);
         }
@@ -53,14 +53,14 @@ namespace CatDb.Database
             {
                 IsModified = true;
 
-                if (operations.Capacity == 0)
+                if (_operations.Capacity == 0)
                 {
                     Tree.Execute(Locator, operation);
                     return;
                 }
 
-                operations.Add(operation);
-                if (operations.Count == operations.Capacity)
+                _operations.Add(operation);
+                if (_operations.Count == _operations.Capacity)
                     Flush();
             }
         }
@@ -69,12 +69,12 @@ namespace CatDb.Database
         {
             lock (SyncRoot)
             {
-                if (operations.Count == 0)
+                if (_operations.Count == 0)
                     return;
 
-                Tree.Execute(operations);
+                Tree.Execute(_operations);
 
-                operations.Clear();
+                _operations.Clear();
             }
         }
 
@@ -84,8 +84,7 @@ namespace CatDb.Database
         {
             get
             {
-                IData record;
-                if (!TryGet(key, out record))
+                if (!TryGet(key, out var record))
                     throw new KeyNotFoundException(key.ToString());
 
                 return record;
@@ -120,8 +119,7 @@ namespace CatDb.Database
 
         public bool Exists(IData key)
         {
-            IData record;
-            return TryGet(key, out record);
+            return TryGet(key, out _);
         }
 
         public bool TryGet(IData key, out IData record)
@@ -130,11 +128,9 @@ namespace CatDb.Database
             {
                 Flush();
 
-                WTree.FullKey nearFullKey;
-                bool hasNearLocator;
                 var lastVisitedFullKey = default(WTree.FullKey);
 
-                var records = Tree.FindData(Locator, Locator, key, Direction.Forward, out nearFullKey, out hasNearLocator, ref lastVisitedFullKey);
+                var records = Tree.FindData(Locator, Locator, key, Direction.Forward, out _, out _, ref lastVisitedFullKey);
                 if (records == null)
                 {
                     record = default(IData);
@@ -150,16 +146,14 @@ namespace CatDb.Database
 
         public IData Find(IData key)
         {
-            IData record;
-            TryGet(key, out record);
+            TryGet(key, out var record);
 
             return record;
         }
 
         public IData TryGetOrDefault(IData key, IData defaultRecord)
         {
-            IData record;
-            if (!TryGet(key, out record))
+            if (!TryGet(key, out var record))
                 return defaultRecord;
 
             return record;
@@ -239,12 +233,10 @@ namespace CatDb.Database
 
                 Flush();
 
-                WTree.FullKey nearFullKey;
-                bool hasNearFullKey;
                 var lastVisitedFullKey = default(WTree.FullKey);
                 IOrderedSet<IData, IData> records;
 
-                records = Tree.FindData(Locator, Locator, hasFrom ? from : null, Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
+                records = Tree.FindData(Locator, Locator, hasFrom ? from : null, Direction.Forward, out var nearFullKey, out var hasNearFullKey, ref lastVisitedFullKey);
 
                 if (records == null)
                 {
@@ -303,12 +295,10 @@ namespace CatDb.Database
 
                 Flush();
 
-                WTree.FullKey nearFullKey;
-                bool hasNearFullKey;
                 IOrderedSet<IData, IData> records;
 
                 var lastVisitedFullKey = new WTree.FullKey(Locator, to);
-                records = Tree.FindData(Locator, Locator, hasTo ? to : null, Direction.Backward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
+                records = Tree.FindData(Locator, Locator, hasTo ? to : null, Direction.Backward, out var nearFullKey, out var hasNearFullKey, ref lastVisitedFullKey);
 
                 if (records == null)
                     yield break;
@@ -392,7 +382,7 @@ namespace CatDb.Database
             get
             {
                 lock (SyncRoot)
-                    return operations.Capacity;
+                    return _operations.Capacity;
             }
             set
             {
@@ -400,7 +390,7 @@ namespace CatDb.Database
                 {
                     Flush();
 
-                    operations = Locator.OperationCollectionFactory.Create(value);
+                    _operations = Locator.OperationCollectionFactory.Create(value);
                 }
             }
         }

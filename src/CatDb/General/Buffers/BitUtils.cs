@@ -4,12 +4,12 @@
     {
         private const int CACHE_SIZE = 2048; //2^11
 
-        private static int[] cache = new int[CACHE_SIZE];
+        private static readonly int[] Cache = new int[CACHE_SIZE];
 
         static BitUtils()
         {
             for (var i = 0; i < CACHE_SIZE; i++)
-                cache[i] = GetBitBoundsClassic((ulong)i);
+                Cache[i] = GetBitBoundsClassic((ulong)i);
         }
 
         private static int GetBitBoundsClassic(ulong value)
@@ -27,7 +27,7 @@
                 bits += 11;
             }
 
-            return bits + cache[value];
+            return bits + Cache[value];
         }
 
         public static int GetBit(byte map, int bitIndex)

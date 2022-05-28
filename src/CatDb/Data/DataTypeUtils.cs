@@ -7,10 +7,10 @@ namespace CatDb.Data
     public static class DataTypeUtils
     {
         //dataType -> anonymous type
-        private static readonly ConcurrentDictionary<DataType, Type> cacheAnonymousTypes = new ConcurrentDictionary<DataType, Type>();
+        private static readonly ConcurrentDictionary<DataType, Type> CacheAnonymousTypes = new();
 
         //Type -> true/false
-        private static readonly ConcurrentDictionary<Type, bool> cacheIsAnonymousTypes = new ConcurrentDictionary<Type, bool>();
+        private static readonly ConcurrentDictionary<Type, bool> CacheIsAnonymousTypes = new();
 
         public static IEnumerable<MemberInfo> GetPublicMembers(Type type, Func<Type, MemberInfo, int> membersOrder = null)
         {
@@ -81,7 +81,7 @@ namespace CatDb.Data
             if (membersOrder != null)
                 return InternalIsAnonymousType(type, membersOrder);
 
-            return cacheIsAnonymousTypes.GetOrAdd(type, (x) => InternalIsAnonymousType(x, null));
+            return CacheIsAnonymousTypes.GetOrAdd(type, (x) => InternalIsAnonymousType(x, null));
         }
 
         public static Type Anonymous(Type type, Func<Type, MemberInfo, int> membersOrder = null)
@@ -182,7 +182,7 @@ namespace CatDb.Data
             if (dataType.IsPrimitive)
                 return dataType.PrimitiveType;
 
-            return cacheAnonymousTypes.GetOrAdd(dataType, (x) => InternalBuildType(x));
+            return CacheAnonymousTypes.GetOrAdd(dataType, (x) => InternalBuildType(x));
         }
     }
 }

@@ -10,15 +10,15 @@ namespace CatDb.WaterfallTree
             public Branch Branch;
             public volatile bool IsExpiredFromCache;
 #if DEBUG
-            public volatile int TaskID;
+            public volatile int TaskId;
 #endif
-            private static long globalTouchID = 0;
-            private long touchID;
+            private static long _globalTouchId = 0;
+            private long _touchId;
 
-            public long TouchID
+            public long TouchId
             {
-                get => Interlocked.Read(ref touchID);
-                set => Interlocked.Exchange(ref touchID, value);
+                get => Interlocked.Read(ref _touchId);
+                set => Interlocked.Exchange(ref _touchId, value);
             }
 
             public Node(Branch branch)
@@ -39,7 +39,7 @@ namespace CatDb.WaterfallTree
             public void Touch(long count)
             {
                 Debug.Assert(count > 0);
-                touchID = Interlocked.Add(ref globalTouchID, count);
+                _touchId = Interlocked.Add(ref _globalTouchId, count);
 
                 //IsExpiredFromCache = false;
             }
@@ -47,7 +47,7 @@ namespace CatDb.WaterfallTree
             //only for speed reason
             public NodeType Type => Branch.NodeType;
 
-            public bool IsRoot => ReferenceEquals(Branch.Tree.RootBranch, Branch);
+            public bool IsRoot => ReferenceEquals(Branch.Tree._rootBranch, Branch);
 
             public NodeState State
             {
@@ -65,50 +65,42 @@ namespace CatDb.WaterfallTree
 
             public void Store()
             {
-                using (var stream = new MemoryStream())
-                {
-                    Store(stream);
+                using var stream = new MemoryStream();
+                Store(stream);
 
-                    //int recordCount = 0;
-                    //string type = "";
-                    //if (this is InternalNode)
-                    //{
-                    //    recordCount = ((InternalNode)this).Branch.Cache.OperationCount;
-                    //    type = "Internal";
-                    //}
-                    //else
-                    //{
-                    //    recordCount = ((LeafNode)this).RecordCount;
-                    //    type = "Leaf";
-                    //}
-                    //double sizeInMB = Math.Round(stream.Length / (1024.0 * 1024), 2);
-                    //Console.WriteLine("{0} {1}, Records {2}, Size {3} MB", type, Branch.NodeHandle, recordCount, sizeInMB);
+                //int recordCount = 0;
+                //string type = "";
+                //if (this is InternalNode)
+                //{
+                //    recordCount = ((InternalNode)this).Branch.Cache.OperationCount;
+                //    type = "Internal";
+                //}
+                //else
+                //{
+                //    recordCount = ((LeafNode)this).RecordCount;
+                //    type = "Leaf";
+                //}
+                //double sizeInMB = Math.Round(stream.Length / (1024.0 * 1024), 2);
+                //Console.WriteLine("{0} {1}, Records {2}, Size {3} MB", type, Branch.NodeHandle, recordCount, sizeInMB);
 
-                    Branch.Tree.heap.Write(Branch.NodeHandle, stream.GetBuffer(), 0, (int)stream.Length);
-                }
+                Branch.Tree._heap.Write(Branch.NodeHandle, stream.GetBuffer(), 0, (int)stream.Length);
             }
 
             public void Load()
             {
-                var heap = Branch.Tree.heap;
+                var heap = Branch.Tree._heap;
                 var buffer = heap.Read(Branch.NodeHandle);
                 Load(new MemoryStream(buffer));
             }
 
             public static Node Create(Branch branch)
             {
-                Node node;
-                switch (branch.NodeType)
+                Node node = branch.NodeType switch
                 {
-                    case NodeType.Leaf:
-                        node = new LeafNode(branch, true);
-                        break;
-                    case NodeType.Internal:
-                        node = new InternalNode(branch, new BranchCollection(), true);
-                        break;
-                    default:
-                        throw new NotSupportedException();
-                }
+                    NodeType.Leaf => new LeafNode(branch, true),
+                    NodeType.Internal => new InternalNode(branch, new BranchCollection(), true),
+                    _ => throw new NotSupportedException()
+                };
 
                 branch.Tree.Packet(node.Branch.NodeHandle, node);
                 return node;

@@ -8,13 +8,13 @@ namespace CatDb.WaterfallTree
 {
     public partial class WTree : IDisposable
     {
-        public int INTERNAL_NODE_MIN_BRANCHES = 2; //default values
-        public int INTERNAL_NODE_MAX_BRANCHES = 5;
-        public int INTERNAL_NODE_MAX_OPERATIONS_IN_ROOT = 8 * 1024;
-        public int INTERNAL_NODE_MIN_OPERATIONS = 32 * 1024;
-        public int INTERNAL_NODE_MAX_OPERATIONS = 64 * 1024;
-        public int LEAF_NODE_MIN_RECORDS = 8 * 1024;
-        public int LEAF_NODE_MAX_RECORDS = 64 * 1024;
+        private int _internalNodeMinBranches = 2; //default values
+        private int _internalNodeMaxBranches = 5;
+        private int _internalNodeMaxOperationsInRoot = 8 * 1024;
+        private int _internalNodeMinOperations = 32 * 1024;
+        private int _internalNodeMaxOperations = 64 * 1024;
+        private int _leafNodeMinRecords = 8 * 1024;
+        private int _leafNodeMaxRecords = 64 * 1024;
 
         //reserved handles
         private const long HANDLE_SETTINGS = 0;
@@ -22,36 +22,36 @@ namespace CatDb.WaterfallTree
         private const long HANDLE_ROOT = 2;
         private const long HANDLE_RESERVED = 3;
 
-        private readonly Countdown WorkingFallCount = new Countdown();
-        private readonly Branch RootBranch;
-        private bool isRootCacheLoaded;
+        private readonly Countdown _workingFallCount = new();
+        private readonly Branch _rootBranch;
+        private bool _isRootCacheLoaded;
 
-        private volatile bool disposed = false;
-        private volatile bool Shutdown = false;
-        private int Depth = 1;
+        private volatile bool _disposed = false;
+        private volatile bool _shutdown = false;
+        private int _depth = 1;
 
-        private long globalVersion;
+        private long _globalVersion;
 
         public long GlobalVersion
         {
-            get => Interlocked.Read(ref globalVersion);
-            set => Interlocked.Exchange(ref globalVersion, value);
+            get => Interlocked.Read(ref _globalVersion);
+            set => Interlocked.Exchange(ref _globalVersion, value);
         }
 
-        private readonly Scheme scheme;
-        public readonly IHeap heap;
+        private readonly Scheme _scheme;
+        private readonly IHeap _heap;
 
         public WTree(IHeap heap)
         {
             if (heap == null)
                 throw new NullReferenceException("heap");
 
-            this.heap = heap;
+            this._heap = heap;
 
             if (heap.Exists(HANDLE_SETTINGS))
             {
                 //create root branch with dummy handle
-                RootBranch = new Branch(this, NodeType.Leaf, 0);
+                _rootBranch = new Branch(this, NodeType.Leaf, 0);
 
                 //read settings - settings will set the RootBranch.NodeHandle
                 using (var ms = new MemoryStream(heap.Read(HANDLE_SETTINGS)))
@@ -59,12 +59,12 @@ namespace CatDb.WaterfallTree
 
                 //read scheme
                 using (var ms = new MemoryStream(heap.Read(HANDLE_SCHEME)))
-                    scheme = Scheme.Deserialize(new BinaryReader(ms));
+                    _scheme = Scheme.Deserialize(new BinaryReader(ms));
 
                 ////load branch cache
                 //using (MemoryStream ms = new MemoryStream(Heap.Read(HANDLE_ROOT)))
                 //    RootBranch.Cache.Load(this, new BinaryReader(ms));
-                isRootCacheLoaded = false;
+                _isRootCacheLoaded = false;
             }
             else
             {
@@ -73,7 +73,7 @@ namespace CatDb.WaterfallTree
                 if (handle != HANDLE_SETTINGS)
                     throw new Exception("Logical error.");
 
-                scheme = new Scheme();
+                _scheme = new Scheme();
                 handle = heap.ObtainNewHandle();
                 if (handle != HANDLE_SCHEME)
                     throw new Exception("Logical error.");
@@ -86,68 +86,68 @@ namespace CatDb.WaterfallTree
                 if (handle != HANDLE_RESERVED)
                     throw new Exception("Logical error.");
 
-                RootBranch = new Branch(this, NodeType.Leaf); //the constructor will invoke Heap.ObtainHandle()
+                _rootBranch = new Branch(this, NodeType.Leaf); //the constructor will invoke Heap.ObtainHandle()
 
-                isRootCacheLoaded = true;
+                _isRootCacheLoaded = true;
             }
 
-            CacheThread = new Thread(DoCache);
-            CacheThread.Start();
+            _cacheThread = new Thread(DoCache);
+            _cacheThread.Start();
         }
 
         private void LoadRootCache()
         {
-            using (var ms = new MemoryStream(heap.Read(HANDLE_ROOT)))
-                RootBranch.Cache.Load(this, new BinaryReader(ms));
+            using (var ms = new MemoryStream(_heap.Read(HANDLE_ROOT)))
+                _rootBranch.Cache.Load(this, new BinaryReader(ms));
 
-            isRootCacheLoaded = true;
+            _isRootCacheLoaded = true;
         }
 
         private void Sink()
         {
-            RootBranch.WaitFall();
+            _rootBranch.WaitFall();
 
-            if (RootBranch.NodeState != NodeState.None)
+            if (_rootBranch.NodeState != NodeState.None)
             {
-                var token = new Token(CacheSemaphore, new CancellationTokenSource().Token);
-                RootBranch.MaintenanceRoot(token);
-                RootBranch.Node.Touch(Depth + 1);
+                var token = new Token(_cacheSemaphore, new CancellationTokenSource().Token);
+                _rootBranch.MaintenanceRoot(token);
+                _rootBranch.Node.Touch(_depth + 1);
                 token.CountdownEvent.Wait();
             }
 
-            RootBranch.Fall(Depth + 1, new Token(CacheSemaphore, CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true));
+            _rootBranch.Fall(_depth + 1, new Token(_cacheSemaphore, CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true));
         }
 
         public void Execute(IOperationCollection operations)
         {
-            if (disposed)
+            if (_disposed)
                 throw new ObjectDisposedException("WTree");
 
-            lock (RootBranch)
+            lock (_rootBranch)
             {
-                if (!isRootCacheLoaded)
+                if (!_isRootCacheLoaded)
                     LoadRootCache();
                 
-                RootBranch.ApplyToCache(operations);
+                _rootBranch.ApplyToCache(operations);
 
-                if (RootBranch.Cache.OperationCount > INTERNAL_NODE_MAX_OPERATIONS_IN_ROOT)
+                if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
                     Sink();
             }
         }
 
         public void Execute(Locator locator, IOperation operation)
         {
-            if (disposed)
+            if (_disposed)
                 throw new ObjectDisposedException("WTree");
 
-            lock (RootBranch)
+            lock (_rootBranch)
             {
-                if (!isRootCacheLoaded)
+                if (!_isRootCacheLoaded)
                     LoadRootCache();
                 
-                RootBranch.ApplyToCache(locator, operation);
+                _rootBranch.ApplyToCache(locator, operation);
 
-                if (RootBranch.Cache.OperationCount > INTERNAL_NODE_MAX_OPERATIONS_IN_ROOT)
+                if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
                     Sink();
             }
         }
@@ -157,16 +157,16 @@ namespace CatDb.WaterfallTree
         /// </summary>
         public IOrderedSet<IData, IData> FindData(Locator originalLocator, Locator locator, IData key, Direction direction, out FullKey nearFullKey, out bool hasNearFullKey, ref FullKey lastVisitedFullKey)
         {
-            if (disposed)
+            if (_disposed)
                 throw new ObjectDisposedException("WTree");
 
             nearFullKey = default(FullKey);
             hasNearFullKey = false;
 
-            var branch = RootBranch;
+            var branch = _rootBranch;
             Monitor.Enter(branch);
 
-            if (!isRootCacheLoaded)
+            if (!_isRootCacheLoaded)
                 LoadRootCache();
 
             Params param;
@@ -174,20 +174,15 @@ namespace CatDb.WaterfallTree
                 param = new Params(WalkMethod.Cascade, WalkAction.None, null, true, locator, key);
             else
             {
-                switch (direction)
+                param = direction switch
                 {
-                    case Direction.Forward:
-                        param = new Params(WalkMethod.CascadeFirst, WalkAction.None, null, true, locator);
-                        break;
-                    case Direction.Backward:
-                        param = new Params(WalkMethod.CascadeLast, WalkAction.None, null, true, locator);
-                        break;
-                    default:
-                        throw new NotSupportedException(direction.ToString());
-                }
+                    Direction.Forward => new Params(WalkMethod.CascadeFirst, WalkAction.None, null, true, locator),
+                    Direction.Backward => new Params(WalkMethod.CascadeLast, WalkAction.None, null, true, locator),
+                    _ => throw new NotSupportedException(direction.ToString())
+                };
             }
 
-            branch.Fall(Depth + 1, new Token(CacheSemaphore, CancellationToken.None), param);
+            branch.Fall(_depth + 1, new Token(_cacheSemaphore, CancellationToken.None), param);
             branch.WaitFall();
 
             switch (direction)
@@ -209,7 +204,7 @@ namespace CatDb.WaterfallTree
                     break;
                 case Direction.Backward:
                     {
-                        var depth = Depth;
+                        var depth = _depth;
                         var newBranch = default(KeyValuePair<FullKey, Branch>);
                         while (branch.NodeType == NodeType.Internal)
                         {
@@ -246,7 +241,7 @@ namespace CatDb.WaterfallTree
                             newBranch.Value.WaitFall();
                             if (newBranch.Value.Cache.Contains(originalLocator))
                             {
-                                newBranch.Value.Fall(depth + 1, new Token(CacheSemaphore, CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true, originalLocator));
+                                newBranch.Value.Fall(depth + 1, new Token(_cacheSemaphore, CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true, originalLocator));
                                 newBranch.Value.WaitFall();
                             }
                             Debug.Assert(!newBranch.Value.Cache.Contains(originalLocator));
@@ -278,7 +273,7 @@ namespace CatDb.WaterfallTree
 
         private void Commit(CancellationToken cancellationToken, Locator locator = default(Locator), bool hasLocator = false, IData fromKey = null, IData toKey = null)
         {
-            if (disposed)
+            if (_disposed)
                 throw new ObjectDisposedException("WTree");
 
             Params param;
@@ -297,13 +292,13 @@ namespace CatDb.WaterfallTree
                 }
             }
 
-            lock (RootBranch)
+            lock (_rootBranch)
             {
-                if (!isRootCacheLoaded)
+                if (!_isRootCacheLoaded)
                     LoadRootCache();
                 
-                var token = new Token(CacheSemaphore, cancellationToken);
-                RootBranch.Fall(Depth + 1, token, param);
+                var token = new Token(_cacheSemaphore, cancellationToken);
+                _rootBranch.Fall(_depth + 1, token, param);
 
                 token.CountdownEvent.Signal();
                 token.CountdownEvent.Wait();
@@ -312,24 +307,24 @@ namespace CatDb.WaterfallTree
                 using (var ms = new MemoryStream())
                 {
                     Settings.Serialize(this, ms);
-                    heap.Write(HANDLE_SETTINGS, ms.GetBuffer(), 0, (int)ms.Length);
+                    _heap.Write(HANDLE_SETTINGS, ms.GetBuffer(), 0, (int)ms.Length);
                 }
 
                 //write scheme
                 using (var ms = new MemoryStream())
                 {
-                    scheme.Serialize(new BinaryWriter(ms));
-                    heap.Write(HANDLE_SCHEME, ms.GetBuffer(), 0, (int)ms.Length);
+                    _scheme.Serialize(new BinaryWriter(ms));
+                    _heap.Write(HANDLE_SCHEME, ms.GetBuffer(), 0, (int)ms.Length);
                 }
 
                 //write root cache
                 using (var ms = new MemoryStream())
                 {
-                    RootBranch.Cache.Store(this, new BinaryWriter(ms));
-                    heap.Write(HANDLE_ROOT, ms.GetBuffer(), 0, (int)ms.Length);
+                    _rootBranch.Cache.Store(this, new BinaryWriter(ms));
+                    _heap.Write(HANDLE_ROOT, ms.GetBuffer(), 0, (int)ms.Length);
                 }
 
-                heap.Commit();
+                _heap.Commit();
             }
         }
 
@@ -338,39 +333,39 @@ namespace CatDb.WaterfallTree
             Commit(CancellationToken.None);
         }
 
-        public IHeap Heap => heap;
+        public IHeap Heap => _heap;
 
         #region Locator
 
-        private Locator MinLocator => Locator.MIN;
+        private Locator MinLocator => Locator.Min;
 
         protected Locator CreateLocator(string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType)
         {
-            return scheme.Create(name, structureType, keyDataType, recordDataType, keyType, recordType);
+            return _scheme.Create(name, structureType, keyDataType, recordDataType, keyType, recordType);
         }
 
         protected Locator GetLocator(long id)
         {
-            return scheme[id];
+            return _scheme[id];
         }
 
         protected IEnumerable<Locator> GetAllLocators()
         {
-            return scheme.Select(kv => kv.Value);
+            return _scheme.Select(kv => kv.Value);
         }
 
         private void SerializeLocator(BinaryWriter writer, Locator locator)
         {
-            writer.Write(locator.ID);
+            writer.Write(locator.Id);
         }
 
         private Locator DeserializeLocator(BinaryReader reader)
         {
             var id = reader.ReadInt64();
-            if (id == Locator.MIN.ID)
-                return Locator.MIN;
+            if (id == Locator.Min.Id)
+                return Locator.Min;
 
-            var locator = scheme[id];
+            var locator = _scheme[id];
 
             if (!locator.IsReady)
                 locator.Prepare();
@@ -388,93 +383,91 @@ namespace CatDb.WaterfallTree
         /// <summary>
         /// Branch.NodeID -> node
         /// </summary>
-        private readonly ConcurrentDictionary<long, Node> Cache = new ConcurrentDictionary<long, Node>();
-        private Thread CacheThread;
+        private readonly ConcurrentDictionary<long, Node> _cache = new();
+        private readonly Thread _cacheThread;
 
-        private SemaphoreSlim CacheSemaphore = new SemaphoreSlim(int.MaxValue, int.MaxValue);
+        private SemaphoreSlim _cacheSemaphore = new(int.MaxValue, int.MaxValue);
 
-        private int cacheSize = 32;
+        private int _cacheSize = 32;
 
         public int CacheSize
         {
-            get => cacheSize;
+            get => _cacheSize;
             set
             {
                 if (value <= 0)
                     throw new ArgumentException("Cache size is invalid.");
 
-                cacheSize = value;
+                _cacheSize = value;
 
-                if (Cache.Count > CacheSize * 1.1)
+                if (_cache.Count > CacheSize * 1.1)
                 {
-                    lock (Cache)
-                        Monitor.Pulse(Cache);
+                    lock (_cache)
+                        Monitor.Pulse(_cache);
                 }
             }
         }
 
         private void Packet(long id, Node node)
         {
-            Debug.Assert(!Cache.ContainsKey(id));
-            Cache[id] = node;
+            Debug.Assert(!_cache.ContainsKey(id));
+            _cache[id] = node;
 
-            if (Cache.Count > CacheSize * 1.1)
+            if (_cache.Count > CacheSize * 1.1)
             {
-                lock (Cache)
-                    Monitor.Pulse(Cache);
+                lock (_cache)
+                    Monitor.Pulse(_cache);
             }
         }
 
         private Node Retrieve(long id)
         {
-            Node node;
-            Cache.TryGetValue(id, out node);
+            _cache.TryGetValue(id, out var node);
 
             return node;
         }
 
         private Node Exclude(long id)
         {
-            Node node;
-            Cache.TryRemove(id, out node);
+            _cache.TryRemove(id, out var node);
             //Debug.Assert(node != null);
 
-            var delta = (int)(CacheSize * 1.1 - Cache.Count);
+            var delta = (int)(CacheSize * 1.1 - _cache.Count);
             if (delta > 0)
-                CacheSemaphore.Release(delta);
+                _cacheSemaphore.Release(delta);
 
             return node;
         }
 
         private void DoCache()
         {
-            while (!Shutdown)
+            while (!_shutdown)
             {
-                while (Cache.Count > CacheSize * 1.1)
+                while (_cache.Count > CacheSize * 1.1)
                 {
-                    var kvs = Cache.Select(s => new KeyValuePair<long, Node>(s.Key, s.Value)).ToArray();
+                    var kvs = _cache.Select(s => new KeyValuePair<long, Node>(s.Key, s.Value)).ToArray();
 
-                    foreach (var kv in kvs.Where(x => !x.Value.IsRoot).OrderBy(x => x.Value.TouchID).Take(Cache.Count - CacheSize))
+                    foreach (var kv in kvs.Where(x => !x.Value.IsRoot).OrderBy(x => x.Value.TouchId).Take(_cache.Count - CacheSize))
                         kv.Value.IsExpiredFromCache = true;
                     //Debug.WriteLine(Cache.Count);
                     Token token;
-                    lock (RootBranch)
+                    lock (_rootBranch)
                     {
-                        token = new Token(CacheSemaphore, CancellationToken.None);
-                        CacheSemaphore = new SemaphoreSlim(0, int.MaxValue);
+                        token = new Token(_cacheSemaphore, CancellationToken.None);
+                        _cacheSemaphore = new SemaphoreSlim(0, int.MaxValue);
                         var param = new Params(WalkMethod.CascadeButOnlyLoaded, WalkAction.CacheFlush, null, false);
-                        RootBranch.Fall(Depth + 1, token, param);
+                        _rootBranch.Fall(_depth + 1, token, param);
                     }
 
                     token.CountdownEvent.Signal();
                     token.CountdownEvent.Wait();
-                    CacheSemaphore.Release(int.MaxValue / 2);
+                    _cacheSemaphore.Release(int.MaxValue / 2);
                 }
 
-                lock (Cache)
+                lock (_cache)
                 {
-                    if (Cache.Count <= CacheSize * 1.1)
-                        Monitor.Wait(Cache, 1);
+                    if (_cache.Count <= CacheSize * 1.1)
+                        Monitor.Wait(_cache, 1);
                 }
             }
         }
@@ -485,20 +478,20 @@ namespace CatDb.WaterfallTree
 
         private void Dispose(bool disposing)
         {
-            if (!disposed)
+            if (!_disposed)
             {
                 if (disposing)
                 {
-                    Shutdown = true;
-                    if (CacheThread != null)
-                        CacheThread.Join();
+                    _shutdown = true;
+                    if (_cacheThread != null)
+                        _cacheThread.Join();
 
-                    WorkingFallCount.Wait();
+                    _workingFallCount.Wait();
 
-                    heap.Close();
+                    _heap.Close();
                 }
 
-                disposed = true;
+                _disposed = true;
             }
         }
 
@@ -523,22 +516,22 @@ namespace CatDb.WaterfallTree
 
         public int GetMinimumlWTreeDepth(long recordCount)
         {
-            var b = INTERNAL_NODE_MAX_BRANCHES;
-            var R = INTERNAL_NODE_MAX_OPERATIONS_IN_ROOT;
-            var I = INTERNAL_NODE_MAX_OPERATIONS;
-            var L = LEAF_NODE_MAX_RECORDS;
+            var b = _internalNodeMaxBranches;
+            var r = _internalNodeMaxOperationsInRoot;
+            var I = _internalNodeMaxOperations;
+            var l = _leafNodeMaxRecords;
 
-            var depth = Math.Log(((recordCount - R) * (b - 1) + b * I) / (L * (b - 1) + I), b) + 1;
+            var depth = Math.Log(((recordCount - r) * (b - 1) + b * I) / (l * (b - 1) + I), b) + 1;
 
             return (int)Math.Ceiling(depth);
         }
 
         public int GetMaximumWTreeDepth(long recordCount)
         {
-            var b = INTERNAL_NODE_MAX_BRANCHES;
-            var L = LEAF_NODE_MAX_RECORDS;
+            var b = _internalNodeMaxBranches;
+            var l = _leafNodeMaxRecords;
 
-            var depth = Math.Log(recordCount / L, b) + 1;
+            var depth = Math.Log(recordCount / l, b) + 1;
 
             return (int)Math.Ceiling(depth);
         }

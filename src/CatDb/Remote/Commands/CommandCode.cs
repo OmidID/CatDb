@@ -1,6 +1,6 @@
 ﻿namespace CatDb.Remote.Commands
 {
-    public class CommandCode
+    public static class CommandCode
     {
         public const int UNDEFINED = 0;
 

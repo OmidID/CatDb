@@ -6,7 +6,7 @@
     /// </summary>
     public class OptimizedFileStream : FileStream
     {
-        private long length = long.MinValue;
+        private long _length = long.MinValue;
 
         public OptimizedFileStream(string path, FileMode mode, FileAccess access, FileShare share, int bufferSize)
             : base(path, mode, access, share, bufferSize)
@@ -40,11 +40,11 @@
                 base.Write(array, offset, count);
 
                 if (Position > Length)
-                    length = Position;
+                    _length = Position;
             }
             catch (Exception exc)
             {
-                length = long.MinValue;
+                _length = long.MinValue;
                 throw exc;
             }
         }
@@ -56,11 +56,11 @@
                 base.WriteByte(value);
 
                 if (Position > Length)
-                    length = Position;
+                    _length = Position;
             }
             catch (Exception exc)
             {
-                length = long.MinValue;
+                _length = long.MinValue;
                 throw exc;
             }
         }
@@ -69,10 +69,10 @@
         {
             get
             {
-                if (length == long.MinValue)
-                    length = base.Length;
+                if (_length == long.MinValue)
+                    _length = base.Length;
 
-                return length;
+                return _length;
             }
         }
 
@@ -82,11 +82,11 @@
             {
                 base.SetLength(value);
 
-                length = value;
+                _length = value;
             }
             catch (Exception exc)
             {
-                length = long.MinValue;
+                _length = long.MinValue;
 
                 throw exc;
             }

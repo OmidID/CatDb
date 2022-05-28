@@ -70,15 +70,15 @@ namespace CatDb.Remote.Commands
         public int Code => CommandCode.STORAGE_ENGINE_EXISTS;
     }
 
-    public class StorageEngineFindByIDCommand : ICommand
+    public class StorageEngineFindByIdCommand : ICommand
     {
         public IDescriptor Descriptor;
-        public long ID;
+        public long Id;
 
-        public StorageEngineFindByIDCommand(IDescriptor descriptor, long id)
+        public StorageEngineFindByIdCommand(IDescriptor descriptor, long id)
         {
             Descriptor = descriptor;
-            ID = id;
+            Id = id;
         }
 
         public bool IsSynchronous => true;
@@ -109,7 +109,7 @@ namespace CatDb.Remote.Commands
 
     public class StorageEngineOpenXIndexCommand : ICommand
     {
-        public long ID;
+        public long Id;
         public string Name;
 
         public DataType KeyType;
@@ -119,12 +119,12 @@ namespace CatDb.Remote.Commands
 
         public StorageEngineOpenXIndexCommand(long id)
         {
-            ID = id;
+            Id = id;
         }
 
         public StorageEngineOpenXIndexCommand(string name, DataType keyType, DataType recordType, DateTime createTime)
         {
-            ID = -1;
+            Id = -1;
             Name = name;
 
             KeyType = keyType;
@@ -145,7 +145,7 @@ namespace CatDb.Remote.Commands
 
     public class StorageEngineOpenXFileCommand : ICommand
     {
-        public long ID;
+        public long Id;
         public string Name;
 
         public StorageEngineOpenXFileCommand(string name)
@@ -155,7 +155,7 @@ namespace CatDb.Remote.Commands
 
         public StorageEngineOpenXFileCommand(long id)
         {
-            ID = id;
+            Id = id;
         }
 
         public bool IsSynchronous => true;

@@ -9,43 +9,45 @@ namespace CatDb.WaterfallTree
 {
     public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
     {
-        public const byte VERSION = 40;
+        private const byte VERSION = 40;
 
-        private byte[] serializationData;
+        private byte[] _serializationData;
 
-        private int hashCode;
+        private readonly int _hashCode;
 
-        private bool isDeleted;
+        private bool _isDeleted;
 
-        private string name;
+        private string _name;
 
-        private Type keyType;
-        private Type recordType;
+        private Type _keyType;
+        private Type _recordType;
 
-        private Dictionary<string, int> keyMembers;
-        private Dictionary<string, int> recordMembers;
+        private Dictionary<string, int> _keyMembers;
+        private Dictionary<string, int> _recordMembers;
 
-        private IComparer<IData> keyComparer;
-        private IEqualityComparer<IData> keyEqualityComparer;
-        private IPersist<IData> keyPersist;
-        private IPersist<IData> recordPersist;
-        private IIndexerPersist<IData> keyIndexerPersist;
-        private IIndexerPersist<IData> recordIndexerPersist;
+        private IComparer<IData> _keyComparer;
+        private IEqualityComparer<IData> _keyEqualityComparer;
+        private IPersist<IData> _keyPersist;
+        private IPersist<IData> _recordPersist;
+        private IIndexerPersist<IData> _keyIndexerPersist;
+        private IIndexerPersist<IData> _recordIndexerPersist;
 
-        private DateTime createTime;
-        private DateTime modifiedTime;
-        private DateTime accessTime;
+        private DateTime _createTime;
+        private DateTime _modifiedTime;
+        private DateTime _accessTime;
 
-        private byte[] tag;
+        private byte[] _tag;
 
-        public readonly object SyncRoot = new object();
+        private readonly object _syncRoot = new();
 
-        internal static readonly Locator MIN;
+        internal static readonly Locator Min;
 
         static Locator()
         {
-            MIN = new Locator(0, null, CatDb.Database.StructureType.RESERVED, DataType.Boolean, DataType.Boolean, null, null);
-            MIN.keyPersist = SentinelPersistKey.Instance;
+            Min = new Locator(0, null, CatDb.Database.StructureType.RESERVED, DataType.Boolean, DataType.Boolean, null, null)
+                {
+                    _keyPersist = SentinelPersistKey.Instance
+                };
         }
 
         public IOperationCollectionFactory OperationCollectionFactory;
@@ -58,18 +60,19 @@ namespace CatDb.WaterfallTree
             if (recordDataType == null)
                 throw new ArgumentException("recordDataType");
 
-            ID = id;
+            Id = id;
             Name = name;
             StructureType = structureType;
 
-            hashCode = ID.GetHashCode();
+            _hashCode = Id.GetHashCode();
 
             //apply
-            switch (structureType)
+            Apply = structureType switch
             {
-                case CatDb.Database.StructureType.XTABLE: Apply = new XTableApply(this); break;
-                case CatDb.Database.StructureType.XFILE: Apply = new XStreamApply(this); break;
-            }
+                CatDb.Database.StructureType.XTABLE => new XTableApply(this),
+                CatDb.Database.StructureType.XFILE => new XStreamApply(this),
+                _ => Apply
+            };
 
             KeyDataType = keyDataType;
             RecordDataType = recordDataType;
@@ -124,12 +127,12 @@ namespace CatDb.WaterfallTree
 
         private void InternalSerialize(BinaryWriter writer)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
                 writer.Write(VERSION);
 
-                writer.Write(ID);
-                if (ID == MIN.ID)
+                writer.Write(Id);
+                if (Id == Min.Id)
                     return;
 
                 writer.Write(IsDeleted);
@@ -153,8 +156,8 @@ namespace CatDb.WaterfallTree
                     writer.Write("");
 
                 //key & record members
-                WriteMembers(writer, keyMembers);
-                WriteMembers(writer, recordMembers);
+                WriteMembers(writer, _keyMembers);
+                WriteMembers(writer, _recordMembers);
 
                 //times
                 writer.Write(CreateTime.Ticks);
@@ -175,18 +178,16 @@ namespace CatDb.WaterfallTree
 
         public void Serialize(BinaryWriter writer)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                if (serializationData == null)
+                if (_serializationData == null)
                 {
-                    using (var ms = new MemoryStream())
-                    {
-                        InternalSerialize(new BinaryWriter(ms));
-                        serializationData = ms.ToArray();
-                    }
+                    using var ms = new MemoryStream();
+                    InternalSerialize(new BinaryWriter(ms));
+                    _serializationData = ms.ToArray();
                 }
 
-                writer.Write(serializationData);
+                writer.Write(_serializationData);
             }
         }
 
@@ -196,8 +197,8 @@ namespace CatDb.WaterfallTree
                 throw new Exception("Invalid Locator version.");
 
             var id = reader.ReadInt64();
-            if (id == MIN.ID)
-                return MIN;
+            if (id == Min.Id)
+                return Min;
 
             var isDeleted = reader.ReadBoolean();
 
@@ -227,26 +228,24 @@ namespace CatDb.WaterfallTree
             //tag
             var tag = reader.ReadBoolean() ? reader.ReadBytes((int)CountCompression.Deserialize(reader)) : null;
 
-            var locator = new Locator(id, name, structureType, keyDataType, recordDataType, keyType, recordType);
-
-            locator.IsDeleted = isDeleted;
-
-            locator.keyMembers = keyMembers;
-            locator.recordMembers = recordMembers;
-
-            locator.CreateTime = createTime;
-            locator.ModifiedTime = modifiedTime;
-            locator.AccessTime = accessTime;
-
-            locator.Tag = tag;
+            var locator = new Locator(id, name, structureType, keyDataType, recordDataType, keyType, recordType)
+                {
+                    IsDeleted = isDeleted,
+                    _keyMembers = keyMembers,
+                    _recordMembers = recordMembers,
+                    CreateTime = createTime,
+                    ModifiedTime = modifiedTime,
+                    AccessTime = accessTime,
+                    Tag = tag
+                };
 
             return locator;
         }
 
         public bool IsReady { get; private set; }
 
-        private TypeEngine keyEngine;
-        private TypeEngine recEngine;
+        private TypeEngine _keyEngine;
+        private TypeEngine _recEngine;
 
         private void DoPrepare()
         {
@@ -256,33 +255,28 @@ namespace CatDb.WaterfallTree
             //keys
             if (KeyComparer == null || KeyEqualityComparer == null || (KeyPersist == null || KeyIndexerPersist == null))
             {
-                if (keyEngine == null)
-                    keyEngine = TypeEngine.Default(KeyType);
+                _keyEngine ??= TypeEngine.Default(KeyType);
 
-                if (KeyComparer == null)
-                    KeyComparer = keyEngine.Comparer;
+                KeyComparer ??= _keyEngine.Comparer;
 
-                if (KeyEqualityComparer == null)
-                    KeyEqualityComparer = keyEngine.EqualityComparer;
+                KeyEqualityComparer ??= _keyEngine.EqualityComparer;
 
-                if (KeyPersist == null)
-                    KeyPersist = keyEngine.Persist;
+                KeyPersist ??= _keyEngine.Persist;
 
-                if (KeyIndexerPersist == null)
-                    KeyIndexerPersist = keyEngine.IndexerPersist;
+                KeyIndexerPersist ??= _keyEngine.IndexerPersist;
             }
 
             //records
             if (RecordPersist == null || RecordIndexerPersist == null)
             {
-                if (recEngine == null)
-                    recEngine = TypeEngine.Default(RecordType);
+                if (_recEngine == null)
+                    _recEngine = TypeEngine.Default(RecordType);
 
                 if (RecordPersist == null)
-                    RecordPersist = recEngine.Persist;
+                    RecordPersist = _recEngine.Persist;
 
                 if (RecordIndexerPersist == null)
-                    RecordIndexerPersist = recEngine.IndexerPersist;
+                    RecordIndexerPersist = _recEngine.IndexerPersist;
             }
 
             //container
@@ -307,12 +301,12 @@ namespace CatDb.WaterfallTree
 
         public int CompareTo(Locator other)
         {
-            return ID.CompareTo(other.ID);
+            return Id.CompareTo(other.Id);
         }
 
         public bool Equals(Locator other)
         {
-            return ID == other.ID;
+            return Id == other.Id;
         }
 
         public override bool Equals(object obj)
@@ -325,7 +319,7 @@ namespace CatDb.WaterfallTree
 
         public override int GetHashCode()
         {
-            return hashCode;
+            return _hashCode;
         }
 
         public override string ToString()
@@ -361,18 +355,18 @@ namespace CatDb.WaterfallTree
         {
             get
             {
-                lock (SyncRoot)
-                    return isDeleted;
+                lock (_syncRoot)
+                    return _isDeleted;
             }
 
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    if (value != isDeleted)
+                    if (value != _isDeleted)
                     {
-                        isDeleted = value;
-                        serializationData = null;
+                        _isDeleted = value;
+                        _serializationData = null;
                     }
                 }
             }
@@ -380,17 +374,17 @@ namespace CatDb.WaterfallTree
 
         #region IDescription
 
-        public long ID { get; private set; }
+        public long Id { get; private set; }
 
         public string Name
         {
-            get => name;
+            get => _name;
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    name = value;
-                    serializationData = null;
+                    _name = value;
+                    _serializationData = null;
                 }
             }
         }
@@ -402,22 +396,22 @@ namespace CatDb.WaterfallTree
 
         public Type KeyType
         {
-            get => keyType;
+            get => _keyType;
             set
             {
-                if (keyType == value)
+                if (_keyType == value)
                     return;
 
                 if (value != null && DataTypeUtils.BuildDataType(value) != KeyDataType)
                     throw new Exception($"The type {value} is not compatible with anonymous type {KeyDataType}.");
                 
-                keyType = value;
-                keyEngine = null;
+                _keyType = value;
+                _keyEngine = null;
 
-                keyComparer = null;
-                keyEqualityComparer = null;
-                keyPersist = null;
-                keyIndexerPersist = null;
+                _keyComparer = null;
+                _keyEqualityComparer = null;
+                _keyPersist = null;
+                _keyIndexerPersist = null;
 
                 OrderedSetPersist = null;
                 OperationsPersist = null;
@@ -428,20 +422,20 @@ namespace CatDb.WaterfallTree
 
         public Type RecordType
         {
-            get => recordType;
+            get => _recordType;
             set
             {
-                if (recordType == value)
+                if (_recordType == value)
                     return;
 
                 if (value != null && DataTypeUtils.BuildDataType(value) != RecordDataType)
                     throw new Exception($"The type {value} is not compatible with anonymous type {RecordDataType}.");
 
-                recordType = value;
-                recEngine = null;
+                _recordType = value;
+                _recEngine = null;
 
-                recordPersist = null;
-                recordIndexerPersist = null;
+                _recordPersist = null;
+                _recordIndexerPersist = null;
 
                 OrderedSetPersist = null;
                 OperationsPersist = null;
@@ -454,14 +448,14 @@ namespace CatDb.WaterfallTree
         {
             get
             { 
-                lock (SyncRoot)
-                    return keyComparer; 
+                lock (_syncRoot)
+                    return _keyComparer; 
             }
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    keyComparer = value;
+                    _keyComparer = value;
                     IsReady = false;
                 }
             }
@@ -471,14 +465,14 @@ namespace CatDb.WaterfallTree
         {
             get
             { 
-                lock (SyncRoot)
-                    return keyEqualityComparer; 
+                lock (_syncRoot)
+                    return _keyEqualityComparer; 
             }
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    keyEqualityComparer = value;
+                    _keyEqualityComparer = value;
                     IsReady = false;
                 }
             }
@@ -488,14 +482,14 @@ namespace CatDb.WaterfallTree
         {
             get
             {
-                lock (SyncRoot)
-                    return keyPersist; 
+                lock (_syncRoot)
+                    return _keyPersist; 
             }
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    keyPersist = value;
+                    _keyPersist = value;
 
                     OrderedSetPersist = null;
                     OperationsPersist = null;
@@ -509,14 +503,14 @@ namespace CatDb.WaterfallTree
         {
             get
             { 
-                lock (SyncRoot)
-                    return recordPersist; 
+                lock (_syncRoot)
+                    return _recordPersist; 
             }
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    recordPersist = value;
+                    _recordPersist = value;
 
                     OrderedSetPersist = null;
                     OperationsPersist = null;
@@ -530,14 +524,14 @@ namespace CatDb.WaterfallTree
         {
             get
             { 
-                lock (SyncRoot)
-                    return keyIndexerPersist; 
+                lock (_syncRoot)
+                    return _keyIndexerPersist; 
             }
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    keyIndexerPersist = value;
+                    _keyIndexerPersist = value;
                     OrderedSetPersist = null;
 
                     IsReady = false;
@@ -549,14 +543,14 @@ namespace CatDb.WaterfallTree
         {
             get
             {
-                lock (SyncRoot)
-                    return recordIndexerPersist; 
+                lock (_syncRoot)
+                    return _recordIndexerPersist; 
             }
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    recordIndexerPersist = value;
+                    _recordIndexerPersist = value;
                     OrderedSetPersist = null;
 
                     IsReady = false;
@@ -568,7 +562,7 @@ namespace CatDb.WaterfallTree
         {
             if (!IsReady)
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                     DoPrepare();
             }
         }
@@ -577,15 +571,15 @@ namespace CatDb.WaterfallTree
         {
             get
             {
-                lock (SyncRoot)
-                    return createTime;
+                lock (_syncRoot)
+                    return _createTime;
             }
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    createTime = value;
-                    serializationData = null;
+                    _createTime = value;
+                    _serializationData = null;
                 }
             }
         }
@@ -594,15 +588,15 @@ namespace CatDb.WaterfallTree
         {
             get
             {
-                lock (SyncRoot)
-                    return modifiedTime;
+                lock (_syncRoot)
+                    return _modifiedTime;
             }
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    modifiedTime = value;
-                    serializationData = null;
+                    _modifiedTime = value;
+                    _serializationData = null;
                 }
             }
         }
@@ -611,15 +605,15 @@ namespace CatDb.WaterfallTree
         {
             get
             {
-                lock (SyncRoot)
-                    return accessTime;
+                lock (_syncRoot)
+                    return _accessTime;
             }
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    accessTime = value;
-                    serializationData = null;
+                    _accessTime = value;
+                    _serializationData = null;
                 }
             }
         }
@@ -628,15 +622,15 @@ namespace CatDb.WaterfallTree
         {
             get
             { 
-                lock (SyncRoot)
-                    return tag; 
+                lock (_syncRoot)
+                    return _tag; 
             }
             set
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
-                    tag = value;
-                    serializationData = null;
+                    _tag = value;
+                    _serializationData = null;
                 }
             }
         }

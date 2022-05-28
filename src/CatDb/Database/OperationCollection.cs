@@ -8,7 +8,7 @@ namespace CatDb.Database
 {
     public class OperationCollection : List<IOperation>, IOperationCollection
     {
-        public IOperation[] Array => this.GetArray();
+        private IOperation[] Array => this.GetArray();
 
         public OperationCollection(Locator locator, IOperation[] operations, int commonAction, bool areAllMonotoneAndPoint)
         {

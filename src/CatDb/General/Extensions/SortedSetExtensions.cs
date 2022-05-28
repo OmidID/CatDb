@@ -6,7 +6,7 @@ namespace CatDb.General.Extensions
 {
     public class SortedSetHelper<T>
     {
-        public static readonly SortedSetHelper<T> Instance = new SortedSetHelper<T>();
+        public static readonly SortedSetHelper<T> Instance = new();
 
         private KeyValuePair<bool, T> Find(SortedSet<T> set, T key)
         {
@@ -19,35 +19,35 @@ namespace CatDb.General.Extensions
 
         public void ConstructFromSortedArray(SortedSet<T> set, T[] array, int index, int count)
         {
-            set.root = SortedSet<T>.ConstructRootFromSortedArray(array, index, index + count - 1, null); //private method invocation..
-            set.count = count;
-            set.version++;
+            set.Root = SortedSet<T>.ConstructRootFromSortedArray(array, index, index + count - 1, null); //private method invocation..
+            set.Count = count;
+            set.Version++;
         }
 
         public bool Replace(SortedSet<T> set, T item, Func<T, T, T> onExist)
         {
-            if (set.root == null)
+            if (set.Root == null)
             {
-                set.root = new SortedSet<T>.Node(item, NodeColor.Black);
-                set.count = 1;
-                set.version++;
+                set.Root = new SortedSet<T>.Node(item, NodeColor.Black);
+                set.Count = 1;
+                set.Version++;
                 return false;
             }
 
-            var root = set.root;
+            var root = set.Root;
             SortedSet<T>.Node node = null;
             SortedSet<T>.Node grandParent = null;
             SortedSet<T>.Node greatGrandParent = null;
-            set.version++;
+            set.Version++;
             var cmp = 0;
-            var comparer = set.comparer;
+            var comparer = set.Comparer;
 
             while (root != null)
             {
                 cmp = comparer.Compare(item, root.Item);
                 if (cmp == 0)
                 {
-                    set.root.Color = NodeColor.Black;
+                    set.Root.Color = NodeColor.Black;
                     root.Item = onExist != null ? onExist(root.Item, item) : item;
                     return true;
                 }
@@ -74,8 +74,8 @@ namespace CatDb.General.Extensions
             if (node.IsRed)
                 set.InsertionBalance(current, ref node, grandParent, greatGrandParent);
 
-            set.root.Color = NodeColor.Black;
-            set.count++;
+            set.Root.Color = NodeColor.Black;
+            set.Count++;
             return false;
         }
         public SortedSet<T> GetViewBetween(SortedSet<T> set, T lowerValue, T upperValue, bool lowerBoundActive, bool upperBoundActive)
@@ -90,11 +90,11 @@ namespace CatDb.General.Extensions
         {
             int cmp;
             SortedSet<T>.Node next = null;
-            var node = set.root;
+            var node = set.Root;
 
             while (node != null)
             {
-                cmp = set.comparer.Compare(item, node.Item);
+                cmp = set.Comparer.Compare(item, node.Item);
 
                 if (cmp == 0)
                     return new KeyValuePair<bool, T>(true, node.Item);
@@ -118,11 +118,11 @@ namespace CatDb.General.Extensions
         {
             int cmp;
             SortedSet<T>.Node prev = null;
-            var node = set.root;
+            var node = set.Root;
 
             while (node != null)
             {
-                cmp = set.comparer.Compare(item, node.Item);
+                cmp = set.Comparer.Compare(item, node.Item);
 
                 if (cmp == 0)
                     return new KeyValuePair<bool, T>(true, node.Item);
@@ -146,11 +146,11 @@ namespace CatDb.General.Extensions
         {
             int cmp;
             SortedSet<T>.Node next = null;
-            var node = set.root;
+            var node = set.Root;
 
             while (node != null)
             {
-                cmp = set.comparer.Compare(item, node.Item);
+                cmp = set.Comparer.Compare(item, node.Item);
 
                 if (cmp == 0)
                 {
@@ -187,11 +187,11 @@ namespace CatDb.General.Extensions
         {
             int cmp;
             SortedSet<T>.Node prev = null;
-            var node = set.root;
+            var node = set.Root;
 
             while (node != null)
             {
-                cmp = set.comparer.Compare(item, node.Item);
+                cmp = set.Comparer.Compare(item, node.Item);
 
                 if (cmp == 0)
                 {
@@ -240,35 +240,35 @@ namespace CatDb.General.Extensions
 
     }
 
-    public class SortedSetHelperAA<T>
+    public class SortedSetHelperAa<T>
     {
-        public static readonly SortedSetHelper<T> Instance = new SortedSetHelper<T>();
+        public static readonly SortedSetHelper<T> Instance = new();
 
-        private Func<SortedSet<T>, T, KeyValuePair<bool, T>> find;
-        private Action<SortedSet<T>, T[], int, int> constructFromSortedArray;
-        private Func<SortedSet<T>, T, Func<T, T, T>, bool> replace;
-        private Func<SortedSet<T>, T, T, bool, bool, SortedSet<T>> getViewBetween;
+        private readonly Func<SortedSet<T>, T, KeyValuePair<bool, T>> _find;
+        private readonly Action<SortedSet<T>, T[], int, int> _constructFromSortedArray;
+        private readonly Func<SortedSet<T>, T, Func<T, T, T>, bool> _replace;
+        private readonly Func<SortedSet<T>, T, T, bool, bool, SortedSet<T>> _getViewBetween;
 
-        private Func<SortedSet<T>, T, KeyValuePair<bool, T>> findNext;
-        private Func<SortedSet<T>, T, KeyValuePair<bool, T>> findPrev;
-        private Func<SortedSet<T>, T, KeyValuePair<bool, T>> findAfter;
-        private Func<SortedSet<T>, T, KeyValuePair<bool, T>> findBefore;
+        private readonly Func<SortedSet<T>, T, KeyValuePair<bool, T>> _findNext;
+        private readonly Func<SortedSet<T>, T, KeyValuePair<bool, T>> _findPrev;
+        private readonly Func<SortedSet<T>, T, KeyValuePair<bool, T>> _findAfter;
+        private readonly Func<SortedSet<T>, T, KeyValuePair<bool, T>> _findBefore;
 
-        public SortedSetHelperAA()
+        public SortedSetHelperAa()
         {
             var lambdaFind = CreateFindMethod();
             var lambdaConstructFromSortedArray = CreateConstructFromSortedArrayMethod();
             var lambdaReplace = CreateReplaceMethod();
             var lambdaGetViewBetween = CreateGetViewBetweenMethod();
 
-            find = lambdaFind.Compile();
-            constructFromSortedArray = lambdaConstructFromSortedArray.Compile();
-            replace = lambdaReplace.Compile();
-            getViewBetween = lambdaGetViewBetween.Compile();
-            findNext = CreateFindNextMethod().Compile();
-            findPrev = CreateFindPrevMethod().Compile();
-            findAfter = CreateFindAfterMethod().Compile();
-            findBefore = CreateFindBeforeMethod().Compile();
+            _find = lambdaFind.Compile();
+            _constructFromSortedArray = lambdaConstructFromSortedArray.Compile();
+            _replace = lambdaReplace.Compile();
+            _getViewBetween = lambdaGetViewBetween.Compile();
+            _findNext = CreateFindNextMethod().Compile();
+            _findPrev = CreateFindPrevMethod().Compile();
+            _findAfter = CreateFindAfterMethod().Compile();
+            _findBefore = CreateFindBeforeMethod().Compile();
         }
 
         public Expression<Func<SortedSet<T>, T, KeyValuePair<bool, T>>> CreateFindMethod()
@@ -361,14 +361,15 @@ namespace CatDb.General.Extensions
 
             var rootField = Expression.Field(set, "root");
 
-            var list = new List<Expression>();
-
-            list.Add(Expression.IfThen(Expression.Equal(rootField, Expression.Constant(null)),
-                Expression.Block(
-                    Expression.Assign(rootField, Expression.New(nodeType.GetConstructor(new[] { typeof(T), typeof(bool) }), item, Expression.Constant(false, typeof(bool)))),
-                    Expression.Assign(Expression.Field(set, "count"), Expression.Constant(1)),
-                    Expression.AddAssign(Expression.Field(set, "version"), Expression.Constant(1)),
-                    Expression.Return(exitPoint, Expression.Constant(false)))));
+            var list = new List<Expression>
+            {
+                Expression.IfThen(Expression.Equal(rootField, Expression.Constant(null)),
+                    Expression.Block(
+                        Expression.Assign(rootField, Expression.New(nodeType.GetConstructor(new[] { typeof(T), typeof(bool) }), item, Expression.Constant(false, typeof(bool)))),
+                        Expression.Assign(Expression.Field(set, "count"), Expression.Constant(1)),
+                        Expression.AddAssign(Expression.Field(set, "version"), Expression.Constant(1)),
+                        Expression.Return(exitPoint, Expression.Constant(false))))
+            };
 
             var root = Expression.Variable(nodeType, "root");
             var node = Expression.Variable(nodeType, "node");
@@ -580,10 +581,11 @@ namespace CatDb.General.Extensions
 
             var returnLabel = Expression.Label(typeof(KeyValuePair<bool, T>));
 
-            var list = new List<Expression>();
-
-            list.Add(Expression.Assign(next, Expression.Constant(null, nodeType)));
-            list.Add(Expression.Assign(node, Expression.Field(set, "root")));
+            var list = new List<Expression>
+            {
+                Expression.Assign(next, Expression.Constant(null, nodeType)),
+                Expression.Assign(node, Expression.Field(set, "root"))
+            };
 
             var nodeItem = Expression.PropertyOrField(node, "Item");
             var nodeLeft = Expression.PropertyOrField(node, "Left");
@@ -656,10 +658,11 @@ namespace CatDb.General.Extensions
 
             var returnLabel = Expression.Label(typeof(KeyValuePair<bool, T>));
 
-            var list = new List<Expression>();
-
-            list.Add(Expression.Assign(prev, Expression.Constant(null, nodeType)));
-            list.Add(Expression.Assign(node, Expression.Field(set, "root")));
+            var list = new List<Expression>
+            {
+                Expression.Assign(prev, Expression.Constant(null, nodeType)),
+                Expression.Assign(node, Expression.Field(set, "root"))
+            };
 
             var nodeItem = Expression.PropertyOrField(node, "Item");
             var nodeLeft = Expression.PropertyOrField(node, "Left");
@@ -733,10 +736,11 @@ namespace CatDb.General.Extensions
 
             var returnLabel = Expression.Label(typeof(KeyValuePair<bool, T>));
 
-            var list = new List<Expression>();
-
-            list.Add(Expression.Assign(after, Expression.Constant(null, nodeType)));
-            list.Add(Expression.Assign(node, Expression.Field(set, "root")));
+            var list = new List<Expression>
+            {
+                Expression.Assign(after, Expression.Constant(null, nodeType)),
+                Expression.Assign(node, Expression.Field(set, "root"))
+            };
 
             var nodeItem = Expression.PropertyOrField(node, "Item");
             var nodeLeft = Expression.PropertyOrField(node, "Left");
@@ -827,10 +831,11 @@ namespace CatDb.General.Extensions
 
             var returnLabel = Expression.Label(typeof(KeyValuePair<bool, T>));
 
-            var list = new List<Expression>();
-
-            list.Add(Expression.Assign(before, Expression.Constant(null, nodeType)));
-            list.Add(Expression.Assign(node, Expression.Field(set, "root")));
+            var list = new List<Expression>
+            {
+                Expression.Assign(before, Expression.Constant(null, nodeType)),
+                Expression.Assign(node, Expression.Field(set, "root"))
+            };
 
             var nodeItem = Expression.PropertyOrField(node, "Item");
             var nodeLeft = Expression.PropertyOrField(node, "Left");
@@ -925,7 +930,7 @@ namespace CatDb.General.Extensions
 
         public bool TryGetValue(SortedSet<T> set, T key, out T value)
         {
-            var kv = find(set, key);
+            var kv = _find(set, key);
 
             if (!kv.Key)
             {
@@ -939,37 +944,37 @@ namespace CatDb.General.Extensions
 
         public void ConstructFromSortedArray(SortedSet<T> set, T[] array, int index, int count)
         {
-            constructFromSortedArray(set, array, index, count);
+            _constructFromSortedArray(set, array, index, count);
         }
 
         public bool Replace(SortedSet<T> set, T item, Func<T, T, T> onExist)
         {
-            return replace(set, item, onExist);
+            return _replace(set, item, onExist);
         }
 
         public SortedSet<T> GetViewBetween(SortedSet<T> set, T lowerValue, T upperValue, bool lowerBoundActive, bool upperBoundActive)
         {
-            return getViewBetween(set, lowerValue, upperValue, lowerBoundActive, upperBoundActive);
+            return _getViewBetween(set, lowerValue, upperValue, lowerBoundActive, upperBoundActive);
         }
 
         public KeyValuePair<bool, T> FindNext(SortedSet<T> set, T key)
         {
-            return findNext(set, key);
+            return _findNext(set, key);
         }
 
         public KeyValuePair<bool, T> FindPrev(SortedSet<T> set, T key)
         {
-            return findPrev(set, key);
+            return _findPrev(set, key);
         }
 
         public KeyValuePair<bool, T> FindAfter(SortedSet<T> set, T key)
         {
-            return findAfter(set, key);
+            return _findAfter(set, key);
         }
 
         public KeyValuePair<bool, T> FindBefore(SortedSet<T> set, T key)
         {
-            return findBefore(set, key);
+            return _findBefore(set, key);
         }
     }
 

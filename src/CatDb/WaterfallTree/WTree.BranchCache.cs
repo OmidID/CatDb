@@ -7,8 +7,8 @@ namespace CatDb.WaterfallTree
     {
         private class BranchCache : IEnumerable<KeyValuePair<Locator, IOperationCollection>>
         {
-            private Dictionary<Locator, IOperationCollection> cache;
-            private IOperationCollection Operations;
+            private Dictionary<Locator, IOperationCollection> _cache;
+            private IOperationCollection _operations;
 
             /// <summary>
             /// Number of all operations in cache
@@ -23,7 +23,7 @@ namespace CatDb.WaterfallTree
 
             public BranchCache(IOperationCollection operations)
             {
-                Operations = operations;
+                _operations = operations;
                 Count = 1;
                 OperationCount = operations.Count;
             }
@@ -32,29 +32,31 @@ namespace CatDb.WaterfallTree
             {
                 if (Count == 0)
                 {
-                    Operations = locator.OperationCollectionFactory.Create(0);
-                    Debug.Assert(cache == null);
+                    _operations = locator.OperationCollectionFactory.Create(0);
+                    Debug.Assert(_cache == null);
                     Count++;
                 }
                 else
                 {
-                    if (!Operations.Locator.Equals(locator))
+                    if (!_operations.Locator.Equals(locator))
                     {
-                        if (cache == null)
+                        if (_cache == null)
                         {
-                            cache = new Dictionary<Locator, IOperationCollection>();
-                            cache[Operations.Locator] = Operations;
+                            _cache = new Dictionary<Locator, IOperationCollection>
+                            {
+                                [_operations.Locator] = _operations
+                            };
                         }
 
-                        if (!cache.TryGetValue(locator, out Operations))
+                        if (!_cache.TryGetValue(locator, out _operations))
                         {
-                            cache[locator] = Operations = locator.OperationCollectionFactory.Create(0);
+                            _cache[locator] = _operations = locator.OperationCollectionFactory.Create(0);
                             Count++;
                         }
                     }
                 }
 
-                return Operations;
+                return _operations;
             }
 
             public void Apply(Locator locator, IOperation operation)
@@ -75,8 +77,8 @@ namespace CatDb.WaterfallTree
 
             public void Clear()
             {
-                cache = null;
-                Operations = null;
+                _cache = null;
+                _operations = null;
                 Count = 0;
                 OperationCount = 0;
             }
@@ -87,10 +89,10 @@ namespace CatDb.WaterfallTree
                     return false;
 
                 if (Count == 1)
-                    return Operations.Locator.Equals(locator);
+                    return _operations.Locator.Equals(locator);
 
-                if (cache != null)
-                    return cache.ContainsKey(locator);
+                if (_cache != null)
+                    return _cache.ContainsKey(locator);
 
                 return false;
             }
@@ -102,27 +104,27 @@ namespace CatDb.WaterfallTree
 
                 IOperationCollection operations;
 
-                if (!Operations.Locator.Equals(locator))
+                if (!_operations.Locator.Equals(locator))
                 {
-                    if (cache == null || !cache.TryGetValue(locator, out operations))
+                    if (_cache == null || !_cache.TryGetValue(locator, out operations))
                         return null;
 
-                    cache.Remove(locator);
-                    if (cache.Count == 1)
-                        cache = null;
+                    _cache.Remove(locator);
+                    if (_cache.Count == 1)
+                        _cache = null;
                 }
                 else
                 {
-                    operations = Operations;
+                    operations = _operations;
 
                     if (Count == 1)
-                        Operations = null;
+                        _operations = null;
                     else
                     {
-                        cache.Remove(locator);
-                        Operations = cache.First().Value;
-                        if (cache.Count == 1)
-                            cache = null;
+                        _cache.Remove(locator);
+                        _operations = _cache.First().Value;
+                        if (_cache.Count == 1)
+                            _cache = null;
                     }
                 }
 
@@ -139,9 +141,9 @@ namespace CatDb.WaterfallTree
                 if (Count == 0)
                     enumerable = Enumerable.Empty<KeyValuePair<Locator, IOperationCollection>>();
                 else if (Count == 1)
-                    enumerable = new[] { new KeyValuePair<Locator, IOperationCollection>(Operations.Locator, Operations) };
+                    enumerable = new[] { new KeyValuePair<Locator, IOperationCollection>(_operations.Locator, _operations) };
                 else
-                    enumerable = cache.Select(s => new KeyValuePair<Locator, IOperationCollection>(s.Key, s.Value));
+                    enumerable = _cache.Select(s => new KeyValuePair<Locator, IOperationCollection>(s.Key, s.Value));
 
                 return enumerable.GetEnumerator();
             }
@@ -193,16 +195,18 @@ namespace CatDb.WaterfallTree
             {
                 if (Count > 0)
                 {
-                    if (cache == null)
+                    if (_cache == null)
                     {
-                        cache = new Dictionary<Locator, IOperationCollection>();
-                        cache[Operations.Locator] = Operations;
+                        _cache = new Dictionary<Locator, IOperationCollection>
+                        {
+                            [_operations.Locator] = _operations
+                        };
                     }
 
-                    cache.Add(locator, operations);
+                    _cache.Add(locator, operations);
                 }
 
-                Operations = operations;
+                _operations = operations;
 
                 OperationCount += operations.Count;
                 Count++;

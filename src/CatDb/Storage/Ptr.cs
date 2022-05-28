@@ -6,7 +6,7 @@ namespace CatDb.Storage
     [StructLayout(LayoutKind.Sequential)]
     public struct Ptr : IEquatable<Ptr>, IComparable<Ptr>
     {
-        public static readonly Ptr NULL = new Ptr(0, 0);
+        public static readonly Ptr NULL = new(0, 0);
 
         public long Position;
         public long Size;
@@ -41,10 +41,7 @@ namespace CatDb.Storage
 
         public override bool Equals(object obj)
         {
-            if (obj is Ptr)
-                return Equals((Ptr)obj);
-
-            return false;
+            return obj is Ptr && Equals((Ptr)obj);
         }
 
         public override int GetHashCode()

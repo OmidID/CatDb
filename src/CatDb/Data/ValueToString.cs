@@ -8,14 +8,14 @@ namespace CatDb.Data
 {
     public class ValueToString<T> : IToString<T>
     {
-        public readonly Func<T, string> to;
-        public readonly Func<string, T> from;
+        private readonly Func<T, string> _to;
+        private readonly Func<string, T> _from;
 
-        public readonly Type Type;
-        public readonly int StringBuilderCapacity;
-        public readonly IFormatProvider[] Providers;
-        public readonly char[] Delimiters;
-        public readonly Func<Type, MemberInfo, int> MembersOrder;
+        private readonly Type _type;
+        private readonly int _stringBuilderCapacity;
+        private readonly IFormatProvider[] _providers;
+        private readonly char[] _delimiters;
+        private readonly Func<Type, MemberInfo, int> _membersOrder;
 
         public ValueToString(int stringBuilderCapacity, IFormatProvider[] providers, char[] delimiters, Func<Type, MemberInfo, int> membersOrder = null)
         {
@@ -31,14 +31,14 @@ namespace CatDb.Data
             if (providers.Length != countOfType)
                 throw new ArgumentException("providers.Length != dataType.Length");
 
-            Type = typeof(T);
-            MembersOrder = membersOrder;
-            StringBuilderCapacity = stringBuilderCapacity;
-            Providers = providers;
-            Delimiters = delimiters;
+            _type = typeof(T);
+            _membersOrder = membersOrder;
+            _stringBuilderCapacity = stringBuilderCapacity;
+            _providers = providers;
+            _delimiters = delimiters;
 
-            to = CreateToMethod().Compile();
-            from = CreateFromMethod().Compile();
+            _to = CreateToMethod().Compile();
+            _from = CreateFromMethod().Compile();
         }
 
         public ValueToString(int stringBuilderCapacity, char[] delimiters, Func<Type, MemberInfo, int> membersOrder = null)
@@ -55,7 +55,7 @@ namespace CatDb.Data
         {
             var item = Expression.Parameter(typeof(T));
 
-            return Expression.Lambda<Func<T, string>>(ValueToStringHelper.CreateToStringBody(item, StringBuilderCapacity, Providers, Delimiters[0], MembersOrder), new[] { item });
+            return Expression.Lambda<Func<T, string>>(ValueToStringHelper.CreateToStringBody(item, _stringBuilderCapacity, _providers, _delimiters[0], _membersOrder), new[] { item });
         }
 
         public Expression<Func<string, T>> CreateFromMethod()
@@ -63,13 +63,13 @@ namespace CatDb.Data
             var stringParam = Expression.Parameter(typeof(string), "item");
             var list = new List<Expression>();
 
-            var item = Expression.Variable(Type);
+            var item = Expression.Variable(_type);
 
-            if (!DataType.IsPrimitiveType(Type))
-                list.Add(Expression.Assign(item, Expression.New(Type.GetConstructor(new Type[] { }))));
+            if (!DataType.IsPrimitiveType(_type))
+                list.Add(Expression.Assign(item, Expression.New(_type.GetConstructor(new Type[] { }))));
 
-            list.Add(ValueToStringHelper.CreateParseBody(item, stringParam, Providers, Delimiters, MembersOrder));
-            list.Add(Expression.Label(Expression.Label(Type), item));
+            list.Add(ValueToStringHelper.CreateParseBody(item, stringParam, _providers, _delimiters, _membersOrder));
+            list.Add(Expression.Label(Expression.Label(_type), item));
 
             var body = Expression.Block(new[] { item }, list);
 
@@ -78,12 +78,12 @@ namespace CatDb.Data
 
         public string To(T value1)
         {
-            return to(value1);
+            return _to(value1);
         }
 
         public T From(string value2)
         {
-            return from(value2);
+            return _from(value2);
         }
     }
 
@@ -115,11 +115,13 @@ namespace CatDb.Data
                     callToString = Expression.Call(member, toStringProvider, Expression.Constant(providers[0], typeof(IFormatProvider)));
                 }
 
-                return Expression.Label(Expression.Label(typeof(string)), member.Type == typeof(string) ? (Expression)member : (Expression)callToString);
+                return Expression.Label(Expression.Label(typeof(string)), member.Type == typeof(string) ? member : callToString);
             }
 
-            var list = new List<Expression>();
-            list.Add(Expression.Assign(stringBuilder, Expression.New(stringBuilder.Type.GetConstructor(new[] { typeof(int) }), Expression.Constant(stringBuilderCapacity))));
+            var list = new List<Expression>
+            {
+                Expression.Assign(stringBuilder, Expression.New(stringBuilder.Type.GetConstructor(new[] { typeof(int) }), Expression.Constant(stringBuilderCapacity)))
+            };
 
             var i = 0;
             foreach (var member in DataTypeUtils.GetPublicMembers(item.Type, membersOrder))
@@ -157,7 +159,7 @@ namespace CatDb.Data
             }
 
             var apendMethod = typeof(StringBuilder).GetMethod("Append", new[] { typeof(String) });
-            var callAppend = Expression.Call(stringBuilder, apendMethod, member.Type == typeof(string) ? (Expression)member : (Expression)callToString);
+            var callAppend = Expression.Call(stringBuilder, apendMethod, member.Type == typeof(string) ? member : callToString);
 
             return callAppend;
         }
@@ -200,8 +202,10 @@ namespace CatDb.Data
                 return Expression.Assign(member, value);
             }
 
-            var list = new List<Expression>();
-            list.Add(Expression.Assign(array, Expression.Call(stringParam, typeof(string).GetMethod("Split", new[] { typeof(char[]) }), new Expression[] { Expression.Constant(delimiters) })));
+            var list = new List<Expression>
+            {
+                Expression.Assign(array, Expression.Call(stringParam, typeof(string).GetMethod("Split", new[] { typeof(char[]) }), new Expression[] { Expression.Constant(delimiters) }))
+            };
 
             var i = 0;
             foreach (var member in DataTypeUtils.GetPublicMembers(item.Type, membersOrder))
@@ -264,18 +268,22 @@ namespace CatDb.Data
                 type == typeof(double) ||
                 type == typeof(decimal))
             {
-                var numberFormat = new NumberFormatInfo();
-                numberFormat.CurrencyDecimalSeparator = ".";
+                var numberFormat = new NumberFormatInfo
+                {
+                    CurrencyDecimalSeparator = "."
+                };
 
                 return numberFormat;
             }
             else if (type == typeof(DateTime) || type == typeof(TimeSpan))
             {
-                var dateTimeFormat = new DateTimeFormatInfo();
-                dateTimeFormat.DateSeparator = "-";
-                dateTimeFormat.TimeSeparator = ":";
-                dateTimeFormat.ShortDatePattern = "yyyy-MM-dd";
-                dateTimeFormat.ShortTimePattern = "HH:mm:ss.fff";
+                var dateTimeFormat = new DateTimeFormatInfo
+                {
+                    DateSeparator = "-",
+                    TimeSeparator = ":",
+                    ShortDatePattern = "yyyy-MM-dd",
+                    ShortTimePattern = "HH:mm:ss.fff"
+                };
                 dateTimeFormat.LongDatePattern = dateTimeFormat.ShortDatePattern;
                 dateTimeFormat.LongTimePattern = dateTimeFormat.ShortTimePattern;
 

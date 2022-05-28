@@ -9,9 +9,9 @@ namespace CatDb.WaterfallTree
     {
         private sealed partial class InternalNode : Node
         {
-            public const byte VERSION = 40;
+            private const byte VERSION = 40;
 
-            private readonly BranchesOptimizator Optimizator = new BranchesOptimizator();
+            private readonly BranchesOptimizator _optimizator = new();
 
             public readonly BranchCollection Branches;
 
@@ -44,7 +44,7 @@ namespace CatDb.WaterfallTree
                     return;
                 }
 
-                var range = Optimizator.FindRange(locator);
+                var range = _optimizator.FindRange(locator);
 
                 if (!range.IsBaseLocator)
                 {
@@ -107,7 +107,7 @@ namespace CatDb.WaterfallTree
                 }
 
                 var locator = operations.Locator;
-                var range = Optimizator.FindRange(locator);
+                var range = _optimizator.FindRange(locator);
 
                 foreach (var operation in operations)
                 {
@@ -117,16 +117,16 @@ namespace CatDb.WaterfallTree
                     {
                         case OperationScope.Point:
                             {
-                                firstIndex = lastIndex = Optimizator.FindIndex(range, locator, operation.FromKey);
+                                firstIndex = lastIndex = _optimizator.FindIndex(range, locator, operation.FromKey);
                                 Debug.Assert(firstIndex >= 0);
                             }
                             break;
                         case OperationScope.Range:
                             {
-                                firstIndex = Optimizator.FindIndex(range, locator, operation.FromKey);
+                                firstIndex = _optimizator.FindIndex(range, locator, operation.FromKey);
                                 if (firstIndex < 0)
                                     firstIndex = 0;
-                                lastIndex = Optimizator.FindIndex(range, locator, operation.ToKey);
+                                lastIndex = _optimizator.FindIndex(range, locator, operation.ToKey);
                             }
                             break;
                         case OperationScope.Overall:
@@ -173,7 +173,7 @@ namespace CatDb.WaterfallTree
                 RebuildOptimizator();
                 rightNode.RebuildOptimizator();
 
-                rightNode.TouchID = TouchID;
+                rightNode.TouchId = TouchId;
 
                 IsModified = true;
 
@@ -188,8 +188,8 @@ namespace CatDb.WaterfallTree
                 RebuildOptimizator();
                 rightNode.RebuildOptimizator();
 
-                if (TouchID < node.TouchID)
-                    TouchID = node.TouchID;
+                if (TouchId < node.TouchId)
+                    TouchId = node.TouchId;
 
                 IsModified = true;
             }
@@ -204,10 +204,10 @@ namespace CatDb.WaterfallTree
                 }
                 else
                 {
-                    var range = Optimizator.FindRange(param.Path);
+                    var range = _optimizator.FindRange(param.Path);
                     if (param.IsPoint)
                     {
-                        firstIndex = lastIndex = Optimizator.FindIndex(range, param.Path, param.FromKey);
+                        firstIndex = lastIndex = _optimizator.FindIndex(range, param.Path, param.FromKey);
                         Debug.Assert(firstIndex >= 0);
                     }
                     else if (param.IsOverall)
@@ -220,31 +220,21 @@ namespace CatDb.WaterfallTree
                     }
                     else
                     {
-                        firstIndex = Optimizator.FindIndex(range, param.Path, param.FromKey);
+                        firstIndex = _optimizator.FindIndex(range, param.Path, param.FromKey);
                         if (firstIndex < 0)
                             firstIndex = 0;
-                        lastIndex = Optimizator.FindIndex(range, param.Path, param.ToKey);
+                        lastIndex = _optimizator.FindIndex(range, param.Path, param.ToKey);
                     }
                 }
 
-                IEnumerable<KeyValuePair<FullKey, Branch>> branches;
-                switch (param.WalkMethod)
+                IEnumerable<KeyValuePair<FullKey, Branch>> branches = param.WalkMethod switch
                 {
-                    case WalkMethod.CascadeFirst:
-                        branches = Branches.Range(firstIndex, firstIndex);
-                        break;
-                    case WalkMethod.CascadeLast:
-                        branches = Branches.Range(lastIndex, lastIndex);
-                        break;
-                    case WalkMethod.Cascade:
-                        branches = Branches.Range(firstIndex, lastIndex);
-                        break;
-                    case WalkMethod.CascadeButOnlyLoaded:
-                        branches = Branches.Range(firstIndex, lastIndex);
-                        break;
-                    default:
-                        throw new NotSupportedException(param.WalkMethod.ToString());
-                }
+                    WalkMethod.CascadeFirst => Branches.Range(firstIndex, firstIndex),
+                    WalkMethod.CascadeLast => Branches.Range(lastIndex, lastIndex),
+                    WalkMethod.Cascade => Branches.Range(firstIndex, lastIndex),
+                    WalkMethod.CascadeButOnlyLoaded => Branches.Range(firstIndex, lastIndex),
+                    _ => throw new NotSupportedException(param.WalkMethod.ToString())
+                };
 
                 var taskCreationOptions = TaskCreationOptions.None;
                 //if ((param.WalkAction & WalkAction.Store) == WTree<TPath>.WalkAction.Store)
@@ -267,7 +257,7 @@ namespace CatDb.WaterfallTree
                     });
             }
 
-            public override bool IsOverflow => Branches.Count > Branch.Tree.INTERNAL_NODE_MAX_BRANCHES;
+            public override bool IsOverflow => Branches.Count > Branch.Tree._internalNodeMaxBranches;
 
             public override bool IsUnderflow
             {
@@ -276,7 +266,7 @@ namespace CatDb.WaterfallTree
                     if (IsRoot)
                         return Branches.Count < 2;
 
-                    return Branches.Count < Branch.Tree.INTERNAL_NODE_MIN_BRANCHES;
+                    return Branches.Count < Branch.Tree._internalNodeMinBranches;
                 }
             }
 
@@ -349,7 +339,7 @@ namespace CatDb.WaterfallTree
 
             public Branch FindLastBranch(Locator locator, ref FullKey nearFullKey, ref bool hasNearFullKey)
             {
-                var range = Optimizator.FindRange(locator);
+                var range = _optimizator.FindRange(locator);
                 var idx = range.LastIndex; //no matter of range.IsBaseLocator
 
                 if (idx > 0)
@@ -366,22 +356,19 @@ namespace CatDb.WaterfallTree
             /// </summary>
             public KeyValuePair<FullKey, Branch> FindBranch(Locator locator, IData key, Direction direction, ref FullKey nearFullKey, ref bool hasNearFullKey)
             {
-                var range = Optimizator.FindRange(locator);
+                var range = _optimizator.FindRange(locator);
                 
                 if (key == null)
                 {
-                    switch (direction)
+                    return direction switch
                     {
-                        case Direction.Forward:
-                            return FindFirstBranch(range, ref nearFullKey, ref hasNearFullKey);
-                        case Direction.Backward:
-                            return FindLastBranch(range, ref nearFullKey, ref hasNearFullKey);
-                        default:
-                            throw new NotSupportedException(direction.ToString());
-                    }
+                        Direction.Forward => FindFirstBranch(range, ref nearFullKey, ref hasNearFullKey),
+                        Direction.Backward => FindLastBranch(range, ref nearFullKey, ref hasNearFullKey),
+                        _ => throw new NotSupportedException(direction.ToString())
+                    };
                 }
 
-                var idx = Optimizator.FindIndex(range, locator, key);
+                var idx = _optimizator.FindIndex(range, locator, key);
                 Debug.Assert(idx >= 0);
 
                 switch (direction)
@@ -411,7 +398,7 @@ namespace CatDb.WaterfallTree
 
             public void RebuildOptimizator()
             {
-                Optimizator.Rebuild(Branches);
+                _optimizator.Rebuild(Branches);
             }
         }
     }

@@ -7,32 +7,32 @@ namespace CatDb.Database
 {
     public class OrderedSetPersist : IPersist<IOrderedSet<IData, IData>>
     {
-        public const byte VERSION = 40;
+        private const byte VERSION = 40;
 
-        private IIndexerPersist<IData> keyIndexerPersist;
-        private IIndexerPersist<IData> recordIndexerPersist;
+        private readonly IIndexerPersist<IData> _keyIndexerPersist;
+        private readonly IIndexerPersist<IData> _recordIndexerPersist;
 
-        private IPersist<IData> keyPersist;
-        private IPersist<IData> recordPersist;
+        private readonly IPersist<IData> _keyPersist;
+        private readonly IPersist<IData> _recordPersist;
 
-        private IOrderedSetFactory orderedSetFactory;
+        private readonly IOrderedSetFactory _orderedSetFactory;
 
-        private bool verticalCompression;
+        private readonly bool _verticalCompression;
 
         public OrderedSetPersist(IIndexerPersist<IData> keyIndexerPersist, IIndexerPersist<IData> recordIndexerPersist, IOrderedSetFactory orderedSetFactory)
         {
-            this.keyIndexerPersist = keyIndexerPersist;
-            this.recordIndexerPersist = recordIndexerPersist;
-            this.orderedSetFactory = orderedSetFactory;
-            verticalCompression = true;
+            this._keyIndexerPersist = keyIndexerPersist;
+            this._recordIndexerPersist = recordIndexerPersist;
+            this._orderedSetFactory = orderedSetFactory;
+            _verticalCompression = true;
         }
 
         public OrderedSetPersist(IPersist<IData> keyPersist, IPersist<IData> recordPersist, IOrderedSetFactory orderedSetFactory)
         {
-            this.keyPersist = keyPersist;
-            this.recordPersist = recordPersist;
-            this.orderedSetFactory = orderedSetFactory;
-            verticalCompression = false;
+            this._keyPersist = keyPersist;
+            this._recordPersist = recordPersist;
+            this._orderedSetFactory = orderedSetFactory;
+            _verticalCompression = false;
         }
 
         private void WriteRaw(BinaryWriter writer, IOrderedSet<IData, IData> data)
@@ -44,8 +44,8 @@ namespace CatDb.Database
 
                 foreach (var kv in data.InternalEnumerate())
                 {
-                    keyPersist.Write(writer, kv.Key);
-                    recordPersist.Write(writer, kv.Value);
+                    _keyPersist.Write(writer, kv.Key);
+                    _recordPersist.Write(writer, kv.Value);
                 }
             }
         }
@@ -55,14 +55,14 @@ namespace CatDb.Database
             var count = reader.ReadInt32();
             var isOrdered = reader.ReadBoolean();
 
-            var data = orderedSetFactory.Create();
+            var data = _orderedSetFactory.Create();
 
             var array = new KeyValuePair<IData, IData>[count];
 
             for (var i = 0; i < count; i++)
             {
-                var key = keyPersist.Read(reader);
-                var record = recordPersist.Read(reader);
+                var key = _keyPersist.Read(reader);
+                var record = _recordPersist.Read(reader);
                 array[i] = new KeyValuePair<IData, IData>(key, record);
             }
 
@@ -96,13 +96,13 @@ namespace CatDb.Database
             actions[0] = () =>
             {
                 streams[0] = new MemoryStream();
-                keyIndexerPersist.Store(new BinaryWriter(streams[0]), (idx) => { return rows[idx].Key; }, rows.Length);
+                _keyIndexerPersist.Store(new BinaryWriter(streams[0]), (idx) => { return rows[idx].Key; }, rows.Length);
             };
 
             actions[1] = () =>
             {
                 streams[1] = new MemoryStream();
-                recordIndexerPersist.Store(new BinaryWriter(streams[1]), (idx) => { return rows[idx].Value; }, rows.Length);
+                _recordIndexerPersist.Store(new BinaryWriter(streams[1]), (idx) => { return rows[idx].Value; }, rows.Length);
             };
 
             Parallel.Invoke(actions);
@@ -134,21 +134,21 @@ namespace CatDb.Database
 
             actions[0] = () =>
             {
-                using (var ms = new MemoryStream(buffers[0]))
-                    keyIndexerPersist.Load(new BinaryReader(ms), (idx, value) => { array[idx].SetKey(value); }, count);
+                using var ms = new MemoryStream(buffers[0]);
+                _keyIndexerPersist.Load(new BinaryReader(ms), (idx, value) => { array[idx].SetKey(value); }, count);
             };
 
             actions[1] = () =>
             {
-                using (var ms = new MemoryStream(buffers[1]))
-                    recordIndexerPersist.Load(new BinaryReader(ms), (idx, value) => { array[idx].SetValue(value); }, count);
+                using var ms = new MemoryStream(buffers[1]);
+                _recordIndexerPersist.Load(new BinaryReader(ms), (idx, value) => { array[idx].SetValue(value); }, count);
             };
 
             var task = Task.Factory.StartNew(actions[1]);
             actions[0]();
             task.Wait();
 
-            var data = orderedSetFactory.Create();
+            var data = _orderedSetFactory.Create();
             data.LoadFrom(array, count, isOrdered);
 
             return data;
@@ -158,7 +158,7 @@ namespace CatDb.Database
         {
             writer.Write(VERSION);
 
-            if (verticalCompression)
+            if (_verticalCompression)
                 WriteVertical(writer, item);
             else
                 WriteRaw(writer, item);
@@ -169,7 +169,7 @@ namespace CatDb.Database
             if (reader.ReadByte() != VERSION)
                 throw new Exception("Invalid DataContainerPersist version.");
 
-            if (verticalCompression)
+            if (_verticalCompression)
                 return ReadVertical(reader);
             else
                 return ReadRaw(reader);

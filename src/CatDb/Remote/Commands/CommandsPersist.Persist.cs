@@ -158,13 +158,13 @@ namespace CatDb.Remote.Commands
 
         private FindNextCommand ReadFindNextCommand(BinaryReader reader)
         {
-            var Key = KeyPersist.Read(reader);
+            var firstKey = KeyPersist.Read(reader);
 
             var hasValue = reader.ReadBoolean();
             var key = hasValue ? KeyPersist.Read(reader) : null;
             var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-            return new FindNextCommand(Key, hasValue ? (KeyValuePair<IData, IData>?)new KeyValuePair<IData, IData>(key, rec) : null);
+            return new FindNextCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
         }
 
         private void WriteFindAfterCommand(BinaryWriter writer, ICommand command)
@@ -183,13 +183,13 @@ namespace CatDb.Remote.Commands
 
         private FindAfterCommand ReadFindAfterCommand(BinaryReader reader)
         {
-            var Key = KeyPersist.Read(reader);
+            var firstKey = KeyPersist.Read(reader);
 
             var hasValue = (reader.ReadBoolean());
             var key = hasValue ? KeyPersist.Read(reader) : null;
             var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-            return new FindAfterCommand(Key, hasValue ? (KeyValuePair<IData, IData>?)new KeyValuePair<IData, IData>(key, rec) : null);
+            return new FindAfterCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
         }
 
         private void WriteFindPrevCommand(BinaryWriter writer, ICommand command)
@@ -208,13 +208,13 @@ namespace CatDb.Remote.Commands
 
         private FindPrevCommand ReadFindPrevCommand(BinaryReader reader)
         {
-            var Key = KeyPersist.Read(reader);
+            var firstKey = KeyPersist.Read(reader);
 
             var hasValue = (reader.ReadBoolean());
             var key = hasValue ? KeyPersist.Read(reader) : null;
             var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-            return new FindPrevCommand(Key, hasValue ? (KeyValuePair<IData, IData>?)new KeyValuePair<IData, IData>(key, rec) : null);
+            return new FindPrevCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
         }
 
         private void WriteFindBeforeCommand(BinaryWriter writer, ICommand command)
@@ -233,13 +233,13 @@ namespace CatDb.Remote.Commands
 
         private FindBeforeCommand ReadFindBeforeCommand(BinaryReader reader)
         {
-            var Key = KeyPersist.Read(reader);
+            var firstKey = KeyPersist.Read(reader);
 
             var hasValue = (reader.ReadBoolean());
             var key = hasValue ? KeyPersist.Read(reader) : null;
             var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-            return new FindBeforeCommand(Key, hasValue ? (KeyValuePair<IData, IData>?)new KeyValuePair<IData, IData>(key, rec) : null);
+            return new FindBeforeCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
         }
 
         private void WriteFirstRowCommand(BinaryWriter writer, ICommand command)
@@ -260,7 +260,7 @@ namespace CatDb.Remote.Commands
             var key = hasValue ? KeyPersist.Read(reader) : null;
             var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-            return new FirstRowCommand(hasValue ? (KeyValuePair<IData, IData>?)new KeyValuePair<IData, IData>(key, rec) : null);
+            return new FirstRowCommand(hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
         }
 
         private void WriteLastRowCommand(BinaryWriter writer, ICommand command)
@@ -281,7 +281,7 @@ namespace CatDb.Remote.Commands
             var key = hasValue ? KeyPersist.Read(reader) : null;
             var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-            return new LastRowCommand(hasValue ? (KeyValuePair<IData, IData>?)new KeyValuePair<IData, IData>(key, rec) : null);
+            return new LastRowCommand(hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
         }
 
         private void WriteCountCommand(BinaryWriter writer, ICommand command)
@@ -416,31 +416,31 @@ namespace CatDb.Remote.Commands
             return new StorageEngineExistsCommand(exist, name);
         }
 
-        private void WriteStorageEngineFindByIDCommand(BinaryWriter writer, ICommand command)
+        private void WriteStorageEngineFindByIdCommand(BinaryWriter writer, ICommand command)
         {
-            var cmd = (StorageEngineFindByIDCommand)command;
+            var cmd = (StorageEngineFindByIdCommand)command;
 
-            writer.Write(cmd.ID);
+            writer.Write(cmd.Id);
 
             writer.Write(cmd.Descriptor != null);
             if (cmd.Descriptor != null)
                 SerializeDescriptor(writer, cmd.Descriptor);
         }
 
-        private StorageEngineFindByIDCommand ReadStorageEngineFindByIDCommand(BinaryReader reader)
+        private StorageEngineFindByIdCommand ReadStorageEngineFindByIdCommand(BinaryReader reader)
         {
             var id = reader.ReadInt64();
             var schemeRecord = reader.ReadBoolean() ? DeserializeDescriptor(reader) : null;
 
-            return new StorageEngineFindByIDCommand(schemeRecord, id);
+            return new StorageEngineFindByIdCommand(schemeRecord, id);
         }
 
         private void WriteStorageEngineOpenXIndexCommand(BinaryWriter writer, ICommand command)
         {
             var cmd = (StorageEngineOpenXIndexCommand)command;
 
-            writer.Write(cmd.ID);
-            if (cmd.ID < 0)
+            writer.Write(cmd.Id);
+            if (cmd.Id < 0)
             {
                 cmd.KeyType.Serialize(writer);
                 cmd.RecordType.Serialize(writer);
@@ -472,7 +472,7 @@ namespace CatDb.Remote.Commands
 
             writer.Write(cmd.Name == null);
             if (cmd.Name == null)
-                writer.Write(cmd.ID);
+                writer.Write(cmd.Id);
             else
                 writer.Write(cmd.Name);
         }
@@ -825,7 +825,7 @@ namespace CatDb.Remote.Commands
 
         private void SerializeDescriptor(BinaryWriter writer, IDescriptor description)
         {
-            CountCompression.Serialize(writer, (ulong)description.ID);
+            CountCompression.Serialize(writer, (ulong)description.Id);
             writer.Write(description.Name);
 
             CountCompression.Serialize(writer, (ulong)description.StructureType);

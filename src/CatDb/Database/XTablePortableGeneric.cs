@@ -94,8 +94,7 @@ namespace CatDb.Database
         {
             var ikey = KeyTransformer.To(key);
 
-            IData irec;
-            if (!Table.TryGet(ikey, out irec))
+            if (!Table.TryGet(ikey, out var irec))
             {
                 record = default(TRecord);
                 return false;

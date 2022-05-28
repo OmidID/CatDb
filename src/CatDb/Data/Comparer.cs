@@ -8,21 +8,21 @@ namespace CatDb.Data
 {
     public class Comparer<T> : IComparer<T>
     {
-        public readonly Func<T, T, int> compare;
+        private readonly Func<T, T, int> _compare;
 
-        private readonly Type Type;
-        public readonly CompareOption[] CompareOptions;
-        public readonly Func<Type, MemberInfo, int> MembersOrder;
+        private readonly Type _type;
+        private readonly CompareOption[] _compareOptions;
+        private readonly Func<Type, MemberInfo, int> _membersOrder;
 
         public Comparer(CompareOption[] compareOptions, Func<Type, MemberInfo, int> membersOrder = null)
         {
-            Type = typeof(T);
-            CompareOptions = compareOptions;
-            MembersOrder = membersOrder;
+            _type = typeof(T);
+            _compareOptions = compareOptions;
+            _membersOrder = membersOrder;
 
-            CompareOption.CheckCompareOptions(Type, compareOptions, membersOrder);
+            CompareOption.CheckCompareOptions(_type, compareOptions, membersOrder);
 
-            compare = CreateCompareMethod().Compile();
+            _compare = CreateCompareMethod().Compile();
         }
 
         public Comparer(Func<Type, MemberInfo, int> memberOrder = null)
@@ -35,12 +35,12 @@ namespace CatDb.Data
             var x = Expression.Parameter(typeof(T));
             var y = Expression.Parameter(typeof(T));
 
-            return Expression.Lambda<Func<T, T, int>>(ComparerHelper.CreateComparerBody(null, null, x, y, CompareOptions, MembersOrder), x, y);
+            return Expression.Lambda<Func<T, T, int>>(ComparerHelper.CreateComparerBody(null, null, x, y, _compareOptions, _membersOrder), x, y);
         }
 
         public int Compare(T x, T y)
         {
-            return compare(x, y);
+            return _compare(x, y);
         }
     }
 
@@ -213,9 +213,9 @@ namespace CatDb.Data
             }
             else if (type == typeof(Decimal))
             {
-                var type_ = typeof(System.Collections.Generic.Comparer<>).MakeGenericType(typeof(decimal));
-                var @default = Expression.Property(null, type_, "Default");
-                var compare = type_.GetProperty("Default").PropertyType.GetMethod("Compare", new[] { typeof(decimal), typeof(decimal) });
+                var comparerGenericType = typeof(System.Collections.Generic.Comparer<>).MakeGenericType(typeof(decimal));
+                var @default = Expression.Property(null, comparerGenericType, "Default");
+                var compare = comparerGenericType.GetProperty("Default").PropertyType.GetMethod("Compare", new[] { typeof(decimal), typeof(decimal) });
                 var call = !invertCompare ? Expression.Call(@default, compare, field1, field2) : Expression.Call(@default, compare, field2, field1);
 
                 if (!isLastCompare)
@@ -237,8 +237,8 @@ namespace CatDb.Data
             }
             else if (type == typeof(String))
             {
-                var type_ = typeof(string);
-                var compare = type_.GetMethod("Compare", new[] { typeof(string), typeof(string), typeof(bool) });
+                var comparerGenericType = typeof(string);
+                var compare = comparerGenericType.GetMethod("Compare", new[] { typeof(string), typeof(string), typeof(bool) });
                 var optionIgnoreCase = compareOption.IgnoreCase;
 
                 var ignoreCase = optionIgnoreCase ? Expression.Constant(optionIgnoreCase) : Expression.Constant(false);

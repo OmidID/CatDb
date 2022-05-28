@@ -7,19 +7,19 @@ namespace CatDb.Storage
 {
     public class Heap : IHeap
     {
-        private readonly object SyncRoot = new object();
-        private AtomicHeader header;
-        private readonly Space space;
+        private readonly object _syncRoot = new();
+        private readonly AtomicHeader _header;
+        private readonly Space _space;
 
         //updated every time after Serialize() invocation.
-        private long maxPositionPlusSize;
+        private long _maxPositionPlusSize;
 
         //handle -> pointer
-        private readonly Dictionary<long, Pointer> used;
-        private readonly Dictionary<long, Pointer> reserved;
+        private readonly Dictionary<long, Pointer> _used;
+        private readonly Dictionary<long, Pointer> _reserved;
 
-        private long currentVersion;
-        private long maxHandle;
+        private long _currentVersion;
+        private long _maxHandle;
 
         public Stream Stream { get; private set; }
 
@@ -27,13 +27,13 @@ namespace CatDb.Storage
         {
             get
             {
-                lock (SyncRoot)
-                    return space.Strategy;
+                lock (_syncRoot)
+                    return _space.Strategy;
             }
             set
             {
-                lock (SyncRoot)
-                    space.Strategy = value;
+                lock (_syncRoot)
+                    _space.Strategy = value;
             }
         }
 
@@ -43,32 +43,34 @@ namespace CatDb.Storage
 
             Stream = stream;
 
-            space = new Space();
+            _space = new Space();
 
-            used = new Dictionary<long, Pointer>();
-            reserved = new Dictionary<long, Pointer>();
+            _used = new Dictionary<long, Pointer>();
+            _reserved = new Dictionary<long, Pointer>();
 
             if (stream.Length < AtomicHeader.SIZE) //create new
             {
-                header = new AtomicHeader();
-                header.UseCompression = useCompression;
-                space.Add(new Ptr(AtomicHeader.SIZE, long.MaxValue - AtomicHeader.SIZE));
+                _header = new AtomicHeader
+                {
+                    UseCompression = useCompression
+                };
+                _space.Add(new Ptr(AtomicHeader.SIZE, long.MaxValue - AtomicHeader.SIZE));
             }
             else //open exist (ignore the useCompression flag)
             {
-                header = AtomicHeader.Deserialize(Stream);
-                stream.Seek(header.SystemData.Position, SeekOrigin.Begin);
+                _header = AtomicHeader.Deserialize(Stream);
+                stream.Seek(_header.SystemData.Position, SeekOrigin.Begin);
                 Deserialize(new BinaryReader(stream));
 
                 //manual alloc header.SystemData
-                var ptr = space.Alloc(header.SystemData.Size);
-                if (ptr.Position != header.SystemData.Position)
+                var ptr = _space.Alloc(_header.SystemData.Size);
+                if (ptr.Position != _header.SystemData.Position)
                     throw new Exception("Logical error.");
             }
 
             Strategy = strategy;
 
-            currentVersion++;
+            _currentVersion++;
         }
 
         public Heap(string fileName, bool useCompression = false, AllocationStrategy strategy = AllocationStrategy.FromTheCurrentBlock)
@@ -80,19 +82,19 @@ namespace CatDb.Storage
         {
             var forRemove = new List<long>();
 
-            foreach (var kv in reserved)
+            foreach (var kv in _reserved)
             {
                 var handle = kv.Key;
                 var pointer = kv.Value;
                 if (pointer.RefCount > 0)
                     continue;
 
-                space.Free(pointer.Ptr);
+                _space.Free(pointer.Ptr);
                 forRemove.Add(handle);
             }
 
             foreach (var handle in forRemove)
-                reserved.Remove(handle);
+                _reserved.Remove(handle);
         }
 
         private void InternalWrite(long position, int originalCount, byte[] buffer, int index, int count)
@@ -134,46 +136,46 @@ namespace CatDb.Storage
 
         private void Serialize(BinaryWriter writer)
         {
-            maxPositionPlusSize = AtomicHeader.SIZE;
+            _maxPositionPlusSize = AtomicHeader.SIZE;
 
-            writer.Write(maxHandle);
-            writer.Write(currentVersion);
+            writer.Write(_maxHandle);
+            writer.Write(_currentVersion);
 
             //write free
-            space.Serialize(writer);
+            _space.Serialize(writer);
 
             //write used
-            writer.Write(used.Count);
-            foreach (var kv in used)
+            writer.Write(_used.Count);
+            foreach (var kv in _used)
             {
                 writer.Write(kv.Key);
                 kv.Value.Serialize(writer);
 
                 var posPlusSize = kv.Value.Ptr.PositionPlusSize;
-                if (posPlusSize > maxPositionPlusSize)
-                    maxPositionPlusSize = posPlusSize;
+                if (posPlusSize > _maxPositionPlusSize)
+                    _maxPositionPlusSize = posPlusSize;
             }
 
             //write reserved
-            writer.Write(reserved.Count);
-            foreach (var kv in reserved)
+            writer.Write(_reserved.Count);
+            foreach (var kv in _reserved)
             {
                 writer.Write(kv.Key);
                 kv.Value.Serialize(writer);
 
                 var posPlusSize = kv.Value.Ptr.PositionPlusSize;
-                if (posPlusSize > maxPositionPlusSize)
-                    maxPositionPlusSize = posPlusSize;
+                if (posPlusSize > _maxPositionPlusSize)
+                    _maxPositionPlusSize = posPlusSize;
             }
         }
 
         private void Deserialize(BinaryReader reader)
         {
-            maxHandle = reader.ReadInt64();
-            currentVersion = reader.ReadInt64();
+            _maxHandle = reader.ReadInt64();
+            _currentVersion = reader.ReadInt64();
 
             //read free
-            space.Deserealize(reader);
+            _space.Deserealize(reader);
 
             //read used
             var count = reader.ReadInt32();
@@ -181,7 +183,7 @@ namespace CatDb.Storage
             {
                 var handle = reader.ReadInt64();
                 var pointer = Pointer.Deserialize(reader);
-                used.Add(handle, pointer);
+                _used.Add(handle, pointer);
             }
 
             //read reserved
@@ -190,7 +192,7 @@ namespace CatDb.Storage
             {
                 var handle = reader.ReadInt64();
                 var pointer = Pointer.Deserialize(reader);
-                reserved.Add(handle, pointer);
+                _reserved.Add(handle, pointer);
             }
         }
 
@@ -198,46 +200,45 @@ namespace CatDb.Storage
         {
             get
             {
-                lock (SyncRoot)
-                    return header.Tag;
+                lock (_syncRoot)
+                    return _header.Tag;
             }
             set
             {
-                lock (SyncRoot)
-                    header.Tag = value;
+                lock (_syncRoot)
+                    _header.Tag = value;
             }
         }
 
         public long ObtainNewHandle()
         {
-            lock (SyncRoot)
-                return maxHandle++;
+            lock (_syncRoot)
+                return _maxHandle++;
         }
 
         public void Release(long handle)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                Pointer pointer;
-                if (!used.TryGetValue(handle, out pointer))
+                if (!_used.TryGetValue(handle, out var pointer))
                     return; //throw new ArgumentException("handle");
 
-                if (pointer.Version == currentVersion)
-                    space.Free(pointer.Ptr);
+                if (pointer.Version == _currentVersion)
+                    _space.Free(pointer.Ptr);
                 else
                 {
                     pointer.IsReserved = true;
-                    reserved.Add(handle, pointer);
+                    _reserved.Add(handle, pointer);
                 }
 
-                used.Remove(handle);
+                _used.Remove(handle);
             }
         }
 
         public bool Exists(long handle)
         {
-            lock (SyncRoot)
-                return used.ContainsKey(handle);
+            lock (_syncRoot)
+                return _used.ContainsKey(handle);
         }
 
         /// <summary>
@@ -251,37 +252,34 @@ namespace CatDb.Storage
 
             if (UseCompression)
             {
-                using (var stream = new MemoryStream())
-                {
-                    using (var compress = new DeflateStream(stream, CompressionMode.Compress, true))
-                        compress.Write(buffer, index, count);
+                using var stream = new MemoryStream();
+                using (var compress = new DeflateStream(stream, CompressionMode.Compress, true))
+                    compress.Write(buffer, index, count);
 
-                    buffer = stream.GetBuffer();
-                    index = 0;
-                    count = (int)stream.Length;
-                }
+                buffer = stream.GetBuffer();
+                index = 0;
+                count = (int)stream.Length;
             }
 
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                if (handle >= maxHandle)
+                if (handle >= _maxHandle)
                     throw new ArgumentException("Invalid handle.");
 
-                Pointer pointer;
-                if (used.TryGetValue(handle, out pointer))
+                if (_used.TryGetValue(handle, out var pointer))
                 {
-                    if (pointer.Version == currentVersion)
-                        space.Free(pointer.Ptr);
+                    if (pointer.Version == _currentVersion)
+                        _space.Free(pointer.Ptr);
                     else
                     {
                         pointer.IsReserved = true;
-                        reserved.Add(handle, pointer);
+                        _reserved.Add(handle, pointer);
                     }
                 }
 
                 long size = UseCompression ? sizeof(int) + count : count;
-                var ptr = space.Alloc(size);
-                used[handle] = pointer = new Pointer(currentVersion, ptr);
+                var ptr = _space.Alloc(size);
+                _used[handle] = pointer = new Pointer(_currentVersion, ptr);
 
                 InternalWrite(ptr.Position, originalCount, buffer, index, count);
             }
@@ -289,10 +287,9 @@ namespace CatDb.Storage
 
         public byte[] Read(long handle)
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                Pointer pointer;
-                if (!used.TryGetValue(handle, out pointer))
+                if (!_used.TryGetValue(handle, out var pointer))
                     throw new ArgumentException("No such handle or data exists.");
 
                 var ptr = pointer.Ptr;
@@ -304,7 +301,7 @@ namespace CatDb.Storage
 
         public void Commit()
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
                 Stream.Flush();
 
@@ -312,31 +309,31 @@ namespace CatDb.Storage
 
                 using (var ms = new MemoryStream())
                 {
-                    if (header.SystemData != Ptr.NULL)
-                        space.Free(header.SystemData);
+                    if (_header.SystemData != Ptr.NULL)
+                        _space.Free(_header.SystemData);
 
                     Serialize(new BinaryWriter(ms));
 
-                    var ptr = space.Alloc(ms.Length);
+                    var ptr = _space.Alloc(ms.Length);
                     Stream.Seek(ptr.Position, SeekOrigin.Begin);
                     Stream.Write(ms.GetBuffer(), 0, (int)ms.Length);
 
-                    header.SystemData = ptr;
+                    _header.SystemData = ptr;
 
                     //atomic write
-                    header.Serialize(Stream);
+                    _header.Serialize(Stream);
 
-                    if (ptr.PositionPlusSize > maxPositionPlusSize)
-                        maxPositionPlusSize = ptr.PositionPlusSize;
+                    if (ptr.PositionPlusSize > _maxPositionPlusSize)
+                        _maxPositionPlusSize = ptr.PositionPlusSize;
                 }
 
                 Stream.Flush();
 
                 //try to truncate the stream
-                if (Stream.Length > maxPositionPlusSize)
-                    Stream.SetLength(maxPositionPlusSize);
+                if (Stream.Length > _maxPositionPlusSize)
+                    Stream.SetLength(_maxPositionPlusSize);
 
-                currentVersion++;
+                _currentVersion++;
             }
         }
 
@@ -344,8 +341,8 @@ namespace CatDb.Storage
         {
             get
             {
-                lock (SyncRoot)
-                    return used.Sum(kv => kv.Value.Ptr.Size);
+                lock (_syncRoot)
+                    return _used.Sum(kv => kv.Value.Ptr.Size);
             }
         }
 
@@ -353,7 +350,7 @@ namespace CatDb.Storage
         {
             get
             {
-                lock (SyncRoot)
+                lock (_syncRoot)
                     return Stream.Length;
             }
         }
@@ -362,14 +359,14 @@ namespace CatDb.Storage
         {
             get
             {
-                lock (SyncRoot)
-                    return header.UseCompression;
+                lock (_syncRoot)
+                    return _header.UseCompression;
             }
         }
 
         public void Close()
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
                 Stream.Close();
         }
 
@@ -377,14 +374,14 @@ namespace CatDb.Storage
         {
             var list = new List<KeyValuePair<long, Pointer>>();
 
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                foreach (var kv in used.Union(reserved))
+                foreach (var kv in _used.Union(_reserved))
                 {
                     var handle = kv.Key;
                     var pointer = kv.Value;
 
-                    if (pointer.Version >= atVersion && pointer.Version < currentVersion)
+                    if (pointer.Version >= atVersion && pointer.Version < _currentVersion)
                     {
                         list.Add(new KeyValuePair<long, Pointer>(handle, pointer));
                         pointer.RefCount++;
@@ -398,14 +395,14 @@ namespace CatDb.Storage
                 var pointer = kv.Value;
 
                 byte[] buffer;
-                lock (SyncRoot)
+                lock (_syncRoot)
                 {
                     buffer = InternalRead(pointer.Ptr.Position, pointer.Ptr.Size);
                     pointer.RefCount--;
                     if (pointer.IsReserved && pointer.RefCount <= 0)
                     {
-                        space.Free(pointer.Ptr);
-                        reserved.Remove(handle);
+                        _space.Free(pointer.Ptr);
+                        _reserved.Remove(handle);
                     }
                 }
 
@@ -415,12 +412,12 @@ namespace CatDb.Storage
 
         public KeyValuePair<long, Ptr>[] GetUsedSpace()
         {
-            lock (SyncRoot)
+            lock (_syncRoot)
             {
-                var array = new KeyValuePair<long, Ptr>[used.Count + reserved.Count];
+                var array = new KeyValuePair<long, Ptr>[_used.Count + _reserved.Count];
 
                 var idx = 0;
-                foreach (var kv in used.Union(reserved))
+                foreach (var kv in _used.Union(_reserved))
                     array[idx++] = new KeyValuePair<long, Ptr>(kv.Value.Version, kv.Value.Ptr);
 
                 return array;
@@ -431,8 +428,8 @@ namespace CatDb.Storage
         {
             get
             {
-                lock (SyncRoot)
-                    return currentVersion;
+                lock (_syncRoot)
+                    return _currentVersion;
             }
         }
     }

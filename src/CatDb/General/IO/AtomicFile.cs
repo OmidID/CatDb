@@ -4,56 +4,56 @@ namespace CatDb.General.IO
 {
     public class AtomicFile
     {
-        private byte[] HEADER = new byte[512];
-        private CommonArray commonArray = new CommonArray();
+        private readonly byte[] _header = new byte[512];
+        private readonly CommonArray _commonArray = new();
 
-        private Stream stream;
+        private readonly Stream _stream;
         public string FileName { get; private set; }
 
         public AtomicFile(string fileName)
         {
-            commonArray.ByteArray = HEADER;
+            _commonArray.ByteArray = _header;
 
-            stream = new FileStream(fileName, FileMode.OpenOrCreate, FileAccess.ReadWrite);
+            _stream = new FileStream(fileName, FileMode.OpenOrCreate, FileAccess.ReadWrite);
             FileName = fileName;
 
-            if (stream.Length < HEADER.Length)
+            if (_stream.Length < _header.Length)
             {
-                Pos = HEADER.Length;
+                Pos = _header.Length;
                 Size = 0;
-                stream.Write(HEADER, 0, HEADER.Length);
+                _stream.Write(_header, 0, _header.Length);
             }
             else
-                stream.Read(HEADER, 0, HEADER.Length);
+                _stream.Read(_header, 0, _header.Length);
         }
 
         private long Pos
         {
-            get => commonArray.Int64Array[0];
-            set => commonArray.Int64Array[0] = value;
+            get => _commonArray.Int64Array[0];
+            set => _commonArray.Int64Array[0] = value;
         }
 
         public int Size
         {
-            get => (int)commonArray.Int64Array[1];
-            private set => commonArray.Int64Array[1] = value;
+            get => (int)_commonArray.Int64Array[1];
+            private set => _commonArray.Int64Array[1] = value;
         }
 
         public void Write(byte[] buffer, int index, int count)
         {
-            if (Pos - 1 - HEADER.Length >= count)
-                Pos = HEADER.Length;
+            if (Pos - 1 - _header.Length >= count)
+                Pos = _header.Length;
             else
                 Pos = Pos + Size;
 
             Size = count;
 
-            stream.Seek(Pos, SeekOrigin.Begin);
-            stream.Write(buffer, index, count);
+            _stream.Seek(Pos, SeekOrigin.Begin);
+            _stream.Write(buffer, index, count);
 
-            stream.Seek(0, SeekOrigin.Begin);
-            stream.Write(HEADER, 0, 2 * sizeof(long)); //HEADER.Length
-            stream.Flush();
+            _stream.Seek(0, SeekOrigin.Begin);
+            _stream.Write(_header, 0, 2 * sizeof(long)); //HEADER.Length
+            _stream.Flush();
         }
 
         public void Write(byte[] buffer)
@@ -63,10 +63,10 @@ namespace CatDb.General.IO
 
         public byte[] Read()
         {
-            stream.Seek(Pos, SeekOrigin.Begin);
+            _stream.Seek(Pos, SeekOrigin.Begin);
 
             var buffer = new byte[Size];
-            var readed = stream.Read(buffer, 0, buffer.Length);
+            var readed = _stream.Read(buffer, 0, buffer.Length);
 
             if (readed != buffer.Length)
                 throw new IOException(); //should never happen
@@ -76,12 +76,12 @@ namespace CatDb.General.IO
 
         public void Close()
         {
-            if (Pos + Size < stream.Length)
-                stream.SetLength(Pos + Size);
+            if (Pos + Size < _stream.Length)
+                _stream.SetLength(Pos + Size);
 
-            stream.Close();
+            _stream.Close();
         }
 
-        public long Length => stream.Length;
+        public long Length => _stream.Length;
     }
 }

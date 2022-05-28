@@ -5,7 +5,7 @@
         private partial class Branch
         {
             public readonly WTree Tree;
-            public BranchCache Cache = new BranchCache();
+            public BranchCache Cache = new();
 
             /// <summary>
             /// on load
@@ -21,9 +21,9 @@
             /// on brand new branch
             /// </summary>
             public Branch(WTree tree, NodeType nodeType)
-                : this(tree, nodeType, tree.heap.ObtainNewHandle())
+                : this(tree, nodeType, tree._heap.ObtainNewHandle())
             {
-                node = Node.Create(this);
+                _node = Node.Create(this);
             }
 
             public override string ToString()
@@ -43,34 +43,34 @@
             
             public volatile NodeState NodeState;
 
-            public bool IsNodeLoaded => node != null;
+            public bool IsNodeLoaded => _node != null;
 
-            private Node node;
+            private Node _node;
 
             public Node Node
             {
                 get
                 {
-                    if (node != null)
-                        return node;
+                    if (_node != null)
+                        return _node;
 
-                    node = Tree.Retrieve(NodeHandle);
+                    _node = Tree.Retrieve(NodeHandle);
 
-                    if (node != null)
+                    if (_node != null)
                     {
-                        node.Branch.WaitFall();
-                        node.Branch = this;
-                        Tree.Packet(NodeHandle, node);
+                        _node.Branch.WaitFall();
+                        _node.Branch = this;
+                        Tree.Packet(NodeHandle, _node);
                     }
                     else
                     {
-                        node = Node.Create(this);
-                        node.Load();
+                        _node = Node.Create(this);
+                        _node.Load();
                     }
 
-                    return node;
+                    return _node;
                 }
-                set => node = value;
+                set => _node = value;
             }
 
             #endregion

@@ -6,13 +6,13 @@ namespace CatDb.General.Communication
 {
     public class TcpServer
     {
-        private Thread Worker;
+        private Thread _worker;
 
         public BlockingCollection<KeyValuePair<ServerConnection, Packet>> RecievedPackets;
         public CancellationTokenSource ShutdownTokenSource { get; private set; }
 
-        public readonly ConcurrentQueue<KeyValuePair<DateTime, Exception>> Errors = new ConcurrentQueue<KeyValuePair<DateTime, Exception>>();
-        public readonly ConcurrentDictionary<ServerConnection, ServerConnection> ServerConnections = new ConcurrentDictionary<ServerConnection, ServerConnection>();
+        public readonly ConcurrentQueue<KeyValuePair<DateTime, Exception>> Errors = new();
+        public readonly ConcurrentDictionary<ServerConnection, ServerConnection> ServerConnections = new();
 
         public int Port { get; private set; }
 
@@ -33,8 +33,8 @@ namespace CatDb.General.Communication
 
             ShutdownTokenSource = new CancellationTokenSource();
 
-            Worker = new Thread(DoWork);
-            Worker.Start();
+            _worker = new Thread(DoWork);
+            _worker.Start();
         }
 
         public void Stop()
@@ -47,7 +47,7 @@ namespace CatDb.General.Communication
 
             DisconnectConnections();
 
-            var thread = Worker;
+            var thread = _worker;
             if (thread != null)
             {
                 if (!thread.Join(5000))
@@ -55,7 +55,7 @@ namespace CatDb.General.Communication
             }
         }
 
-        public bool IsWorking => Worker != null;
+        public bool IsWorking => _worker != null;
 
         private void DoWork()
         {
@@ -93,7 +93,7 @@ namespace CatDb.General.Communication
                 if (listener != null)
                     listener.Stop();
 
-                Worker = null;
+                _worker = null;
             }
         }
 
@@ -101,8 +101,7 @@ namespace CatDb.General.Communication
         {
             while (Errors.Count > 100)
             {
-                KeyValuePair<DateTime, Exception> err;
-                Errors.TryDequeue(out err);
+                Errors.TryDequeue(out _);
             }
 
             Errors.Enqueue(new KeyValuePair<DateTime, Exception>(DateTime.Now, exc));

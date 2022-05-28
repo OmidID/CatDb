@@ -5,17 +5,17 @@ namespace CatDb.General.Communication
 {
     public class ClientConnection
     {
-        private long ID = 0;
+        private long _id = 0;
 
         public TcpClient TcpClient { get; private set; }
 
         public BlockingCollection<Packet> PendingPackets;
         public ConcurrentDictionary<long, Packet> SentPackets;
 
-        private CancellationTokenSource ShutdownTokenSource;
+        private CancellationTokenSource _shutdownTokenSource;
 
-        private Thread SendWorker;
-        private Thread RecieveWorker;
+        private Thread _sendWorker;
+        private Thread _recieveWorker;
 
         public readonly string MachineName;
         public readonly int Port;
@@ -31,8 +31,8 @@ namespace CatDb.General.Communication
             if (!IsWorking)
                 throw new Exception("Client connection is not started.");
 
-            packet.ID = Interlocked.Increment(ref ID);
-            PendingPackets.Add(packet, ShutdownTokenSource.Token);
+            packet.Id = Interlocked.Increment(ref _id);
+            PendingPackets.Add(packet, _shutdownTokenSource.Token);
         }
 
         public void Start(int boundedCapacity = 64, int recieveTimeout = 0, int sendTimeout = 0)
@@ -42,7 +42,7 @@ namespace CatDb.General.Communication
 
             PendingPackets = new BlockingCollection<Packet>(boundedCapacity);
             SentPackets = new ConcurrentDictionary<long, Packet>();
-            ShutdownTokenSource = new CancellationTokenSource();
+            _shutdownTokenSource = new CancellationTokenSource();
 
             TcpClient = new TcpClient();
             TcpClient.ReceiveTimeout = recieveTimeout;
@@ -50,11 +50,11 @@ namespace CatDb.General.Communication
             TcpClient.Connect(MachineName, Port);
             var networkStream = TcpClient.GetStream();
 
-            SendWorker = new Thread(new ParameterizedThreadStart(DoSend));
-            RecieveWorker = new Thread(new ParameterizedThreadStart(DoRecieve));
+            _sendWorker = new Thread(new ParameterizedThreadStart(DoSend));
+            _recieveWorker = new Thread(new ParameterizedThreadStart(DoRecieve));
 
-            SendWorker.Start(networkStream);
-            RecieveWorker.Start(networkStream);
+            _sendWorker.Start(networkStream);
+            _recieveWorker.Start(networkStream);
         }
 
         public void Stop()
@@ -62,16 +62,16 @@ namespace CatDb.General.Communication
             if (!IsWorking)
                 return;
 
-            ShutdownTokenSource.Cancel(false);
+            _shutdownTokenSource.Cancel(false);
 
-            var thread = RecieveWorker;
+            var thread = _recieveWorker;
             if (thread != null)
             {
                 if (thread.Join(2000))
                     thread.Abort();
             }
 
-            thread = SendWorker;
+            thread = _sendWorker;
             if (thread != null)
             {
                 if (thread.Join(2000))
@@ -80,10 +80,10 @@ namespace CatDb.General.Communication
 
             PendingPackets = null;
             SetException(new Exception("Client stopped"));
-            ShutdownTokenSource = null;
+            _shutdownTokenSource = null;
         }
 
-        public bool IsWorking => SendWorker != null || RecieveWorker != null;
+        public bool IsWorking => _sendWorker != null || _recieveWorker != null;
 
         private void DoSend(object state)
         {
@@ -95,7 +95,7 @@ namespace CatDb.General.Communication
                 {
                     var packet = PendingPackets.Take(Shutdown);
 
-                    SentPackets.TryAdd(packet.ID, packet);
+                    SentPackets.TryAdd(packet.Id, packet);
                     packet.Write(writer, packet.Request);
                     writer.Flush();
                 }
@@ -106,7 +106,7 @@ namespace CatDb.General.Communication
             }
             finally
             {
-                SendWorker = null;
+                _sendWorker = null;
             }
         }
 
@@ -136,7 +136,7 @@ namespace CatDb.General.Communication
             }
             finally
             {
-                RecieveWorker = null;
+                _recieveWorker = null;
             }
         }
 
@@ -154,7 +154,7 @@ namespace CatDb.General.Communication
             }
         }
 
-        private CancellationToken Shutdown => ShutdownTokenSource.Token;
+        private CancellationToken Shutdown => _shutdownTokenSource.Token;
 
         public int BoundedCapacity
         {

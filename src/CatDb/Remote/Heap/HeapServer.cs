@@ -5,11 +5,11 @@ namespace CatDb.Remote.Heap
 {
     public class HeapServer
     {
-        private CancellationTokenSource ShutdownTokenSource;
-        private Thread Worker;
+        private CancellationTokenSource _shutdownTokenSource;
+        private Thread _worker;
 
-        public readonly IHeap Heap;
-        public readonly TcpServer TcpServer;
+        private readonly IHeap _heap;
+        private readonly TcpServer _tcpServer;
 
         public HeapServer(IHeap heap, TcpServer tcpServer)
         {
@@ -18,8 +18,8 @@ namespace CatDb.Remote.Heap
             if (tcpServer == null)
                 throw new ArgumentNullException("tcpServer");
 
-            Heap = heap;
-            TcpServer = tcpServer;
+            _heap = heap;
+            _tcpServer = tcpServer;
         }
 
         public HeapServer(IHeap heap, int port = 7183)
@@ -31,10 +31,10 @@ namespace CatDb.Remote.Heap
         {
             Stop();
 
-            ShutdownTokenSource = new CancellationTokenSource();
+            _shutdownTokenSource = new CancellationTokenSource();
 
-            Worker = new Thread(DoWork);
-            Worker.Start();
+            _worker = new Thread(DoWork);
+            _worker.Start();
         }
 
         public void Stop()
@@ -42,28 +42,28 @@ namespace CatDb.Remote.Heap
             if (!IsWorking)
                 return;
 
-            ShutdownTokenSource.Cancel(false);
+            _shutdownTokenSource.Cancel(false);
 
-            var thread = Worker;
+            var thread = _worker;
             if (thread != null)
             {
                 if (!thread.Join(5000))
                     thread.Abort();
             }
-            Heap.Close();
+            _heap.Close();
         }
 
         private void DoWork()
         {
             try
             {
-                TcpServer.Start();
+                _tcpServer.Start();
 
-                while (!ShutdownTokenSource.Token.IsCancellationRequested)
+                while (!_shutdownTokenSource.Token.IsCancellationRequested)
                 {
                     try
                     {
-                        var order = TcpServer.RecievedPackets.Take(ShutdownTokenSource.Token);
+                        var order = _tcpServer.RecievedPackets.Take(_shutdownTokenSource.Token);
 
                         var reader = new BinaryReader(order.Value.Request);
                         var ms = new MemoryStream();
@@ -74,57 +74,57 @@ namespace CatDb.Remote.Heap
                         switch (code)
                         {
                             case RemoteHeapCommandCodes.ObtainHandle:
-                                ObtainHandleCommand.WriteResponse(writer, Heap.ObtainNewHandle());
+                                ObtainHandleCommand.WriteResponse(writer, _heap.ObtainNewHandle());
                                 break;
 
                             case RemoteHeapCommandCodes.ReleaseHandle:
                                 {
                                     var handle = ReleaseHandleCommand.ReadRequest(reader).Handle;
-                                    Heap.Release(handle);
+                                    _heap.Release(handle);
                                     break;
                                 }
 
                             case RemoteHeapCommandCodes.HandleExist:
                                 {
                                     var handle = HandleExistCommand.ReadRequest(reader).Handle;
-                                    HandleExistCommand.WriteResponse(writer, Heap.Exists(handle));
+                                    HandleExistCommand.WriteResponse(writer, _heap.Exists(handle));
                                     break;
                                 }
 
                             case RemoteHeapCommandCodes.WriteCommand:
                                 var cmd = WriteCommand.ReadRequest(reader);
-                                Heap.Write(cmd.Handle, cmd.Buffer, cmd.Index, cmd.Count);
+                                _heap.Write(cmd.Handle, cmd.Buffer, cmd.Index, cmd.Count);
                                 break;
 
                             case RemoteHeapCommandCodes.ReadCommand:
                                 {
                                     var handle = ReadCommand.ReadRequest(reader).Handle;
-                                    ReadCommand.WriteResponse(writer, Heap.Read(handle));
+                                    ReadCommand.WriteResponse(writer, _heap.Read(handle));
                                     break;
                                 }
 
                             case RemoteHeapCommandCodes.CommitCommand:
-                                Heap.Commit();
+                                _heap.Commit();
                                 break;
 
                             case RemoteHeapCommandCodes.CloseCommand:
-                                Heap.Close();
+                                _heap.Close();
                                 break;
 
                             case RemoteHeapCommandCodes.SetTag:
-                                Heap.Tag = SetTagCommand.ReadRequest(reader).Tag;
+                                _heap.Tag = SetTagCommand.ReadRequest(reader).Tag;
                                 break;
 
                             case RemoteHeapCommandCodes.GetTag:
-                                GetTagCommand.WriteResponse(writer, Heap.Tag);
+                                GetTagCommand.WriteResponse(writer, _heap.Tag);
                                 break;
 
                             case RemoteHeapCommandCodes.Size:
-                                SizeCommand.WriteResponse(writer, Heap.Size);
+                                SizeCommand.WriteResponse(writer, _heap.Size);
                                 break;
 
                             case RemoteHeapCommandCodes.DataBaseSize:
-                                DataBaseSizeCommand.WriteResponse(writer, Heap.DataSize);
+                                DataBaseSizeCommand.WriteResponse(writer, _heap.DataSize);
                                 break;
 
                             default:
@@ -141,23 +141,23 @@ namespace CatDb.Remote.Heap
                     }
                     catch (Exception exc)
                     {
-                        TcpServer.LogError(exc);
+                        _tcpServer.LogError(exc);
                     }
                 }
             }
             catch (Exception exc)
             {
-                TcpServer.LogError(exc);
+                _tcpServer.LogError(exc);
             }
             finally
             {
-                TcpServer.Stop();
-                Worker = null;
+                _tcpServer.Stop();
+                _worker = null;
             }
         }
 
-        public bool IsWorking => Worker != null;
+        public bool IsWorking => _worker != null;
 
-        public int ClientsCount => TcpServer.ServerConnections.Count;
+        public int ClientsCount => _tcpServer.ServerConnections.Count;
     }
 }

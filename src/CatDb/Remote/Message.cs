@@ -24,7 +24,7 @@ namespace CatDb.Remote
         public IDescriptor Description { get; private set; }
         public CommandCollection Commands { get; private set; }
 
-        private static KeyValuePair<long, IDescriptor> PreviousRecord = new KeyValuePair<long, IDescriptor>(-1, null);
+        private static KeyValuePair<long, IDescriptor> _previousRecord = new(-1, null);
 
         public Message(IDescriptor description, CommandCollection commands)
         {
@@ -34,11 +34,11 @@ namespace CatDb.Remote
 
         public void Serialize(BinaryWriter writer)
         {
-            var ID = Description.ID;
+            var id = Description.Id;
 
-            writer.Write(ID);
+            writer.Write(id);
 
-            var persist = ID > 0 ? new CommandPersist(new DataPersist(Description.KeyType, null, AllowNull.OnlyMembers), new DataPersist(Description.RecordType, null, AllowNull.OnlyMembers)) : new CommandPersist(null, null);
+            var persist = id > 0 ? new CommandPersist(new DataPersist(Description.KeyType, null, AllowNull.OnlyMembers), new DataPersist(Description.RecordType, null, AllowNull.OnlyMembers)) : new CommandPersist(null, null);
             var commandsPersist = new CommandCollectionPersist(persist);
 
             commandsPersist.Write(writer, Commands);
@@ -46,16 +46,16 @@ namespace CatDb.Remote
 
         public static Message Deserialize(BinaryReader reader, Func<long, IDescriptor> find)
         {
-            var ID = reader.ReadInt64();
+            var id = reader.ReadInt64();
 
             IDescriptor description = null;
             var persist = new CommandPersist(null, null);
 
-            if (ID > 0)
+            if (id > 0)
             {
                 try
                 {
-                    description = PreviousRecord.Key == ID ? PreviousRecord.Value : find(ID);
+                    description = _previousRecord.Key == id ? _previousRecord.Value : find(id);
                     persist = new CommandPersist(new DataPersist(description.KeyType, null, AllowNull.OnlyMembers), new DataPersist(description.RecordType, null, AllowNull.OnlyMembers));
                 }
                 catch (Exception exc)
@@ -63,8 +63,8 @@ namespace CatDb.Remote
                     throw new Exception("Cannot find description with the specified ID");
                 }
 
-                if (PreviousRecord.Key != ID)
-                    PreviousRecord = new KeyValuePair<long, IDescriptor>(ID, description);
+                if (_previousRecord.Key != id)
+                    _previousRecord = new KeyValuePair<long, IDescriptor>(id, description);
             }
             
             var commandsPersist = new CommandCollectionPersist(persist);

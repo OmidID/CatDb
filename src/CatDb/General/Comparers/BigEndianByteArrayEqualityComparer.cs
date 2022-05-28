@@ -4,15 +4,17 @@ namespace CatDb.General.Comparers
 {
     public class BigEndianByteArrayEqualityComparer : IEqualityComparer<byte[]>
     {
-        public static readonly BigEndianByteArrayEqualityComparer Instance = new BigEndianByteArrayEqualityComparer();
+        public static readonly BigEndianByteArrayEqualityComparer Instance = new();
         
         public bool Equals(byte[] x, byte[] y)
         {
             if (x.Length != y.Length)
                 return false;
 
-            var common = new CommonArray();
-            common.ByteArray = x;
+            var common = new CommonArray
+            {
+                ByteArray = x
+            };
             var array1 = common.UInt64Array;
             common.ByteArray = y;
             var array2 = common.UInt64Array;

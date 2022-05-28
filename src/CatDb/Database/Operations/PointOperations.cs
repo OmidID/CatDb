@@ -5,21 +5,21 @@ namespace CatDb.Database.Operations
 {
     public abstract class PointOperation : IOperation
     {
-        private readonly IData key;
+        private readonly IData _key;
 
         protected PointOperation(int action, IData key)
         {
             Code = action;
-            this.key = key;
+            this._key = key;
         }
 
         public int Code { get; private set; }
 
         public OperationScope Scope => OperationScope.Point;
 
-        public IData FromKey => key;
+        public IData FromKey => _key;
 
-        public IData ToKey => key;
+        public IData ToKey => _key;
 
         public override string ToString()
         {

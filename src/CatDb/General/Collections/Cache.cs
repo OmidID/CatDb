@@ -5,25 +5,25 @@ namespace CatDb.General.Collections
     public class Cache<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>
         //where TKey : IEquatable<TKey>//, IComparable<TKey>
     {
-        private readonly IDictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>> Mapping;//mapping between link and element in Items
-        private readonly LinkedList<KeyValuePair<TKey, TValue>> Items = new LinkedList<KeyValuePair<TKey, TValue>>();//The newer and/or most used elements emerges on top(begining)
-        private int capacity;
+        private readonly IDictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>> _mapping;//mapping between link and element in Items
+        private readonly LinkedList<KeyValuePair<TKey, TValue>> _items = new();//The newer and/or most used elements emerges on top(begining)
+        private int _capacity;
 
-        public readonly object SyncRoot = new object();
+        public readonly object SyncRoot = new();
         public event OverflowDelegate Overflow;
 
         //Comparer<TKey>.Default
         public Cache(int capacity, IComparer<TKey> comparer)
         {
-            this.capacity = capacity;
-            Mapping = new SortedDictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>>(comparer);
+            this._capacity = capacity;
+            _mapping = new SortedDictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>>(comparer);
         }
 
         //EqualityComparer<TKey>.Default
         public Cache(int capacity, IEqualityComparer<TKey> comparer)
         {
-            this.capacity = capacity;
-            Mapping = new Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>>(comparer);
+            this._capacity = capacity;
+            _mapping = new Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>>(comparer);
         }
 
         public Cache(int capacity)
@@ -40,8 +40,7 @@ namespace CatDb.General.Collections
         public TValue Packet(TKey key, TValue value)
         {
             TValue result;
-            LinkedListNode<KeyValuePair<TKey, TValue>> node;
-            if (Mapping.TryGetValue(key, out node))
+            if (_mapping.TryGetValue(key, out var node))
             {
                 result = node.Value.Value;
                 node.Value = new KeyValuePair<TKey, TValue>(key, value);
@@ -50,7 +49,7 @@ namespace CatDb.General.Collections
             else
             {
                 result = default(TValue);
-                Mapping[key] = Items.AddFirst(new KeyValuePair<TKey, TValue>(key, value));
+                _mapping[key] = _items.AddFirst(new KeyValuePair<TKey, TValue>(key, value));
                 ClearOverflowItems();
             }
 
@@ -59,8 +58,7 @@ namespace CatDb.General.Collections
 
         public bool TryGetValue(TKey key, out TValue value)
         {
-            LinkedListNode<KeyValuePair<TKey, TValue>> node;
-            if (!Mapping.TryGetValue(key, out node))
+            if (!_mapping.TryGetValue(key, out var node))
             {
                 value = default(TValue);
                 return false;
@@ -73,61 +71,59 @@ namespace CatDb.General.Collections
 
         public TValue Retrieve(TKey key)
         {
-            TValue value;
-            TryGetValue(key, out value);
+            TryGetValue(key, out var value);
 
             return value;
         }
 
         public TValue Exclude(TKey key)
         {
-            LinkedListNode<KeyValuePair<TKey, TValue>> node;
-            if (!Mapping.TryGetValue(key, out node))
+            if (!_mapping.TryGetValue(key, out var node))
                 return default(TValue);
 
-            Mapping.Remove(key);
-            Items.Remove(node);
+            _mapping.Remove(key);
+            _items.Remove(node);
 
             return node.Value.Value;
         }
 
         public void Clear()
         {
-            Mapping.Clear();
-            Items.Clear();
+            _mapping.Clear();
+            _items.Clear();
         }
 
         private void Refresh(LinkedListNode<KeyValuePair<TKey, TValue>> node)
         {
-            if (node != Items.First)
+            if (node != _items.First)
             {
-                Items.Remove(node);
-                Items.AddFirst(node);
+                _items.Remove(node);
+                _items.AddFirst(node);
             }
         }
 
         public int Capacity
         {
-            get => capacity;
+            get => _capacity;
             set
             {
-                if (capacity == value)
+                if (_capacity == value)
                     return;
 
-                capacity = value;
+                _capacity = value;
                 ClearOverflowItems();
             }
         }
 
-        public int Count => Items.Count;
+        public int Count => _items.Count;
 
-        public bool IsOverflow => (Items.Count > Capacity);
+        public bool IsOverflow => (_items.Count > Capacity);
 
         public KeyValuePair<TKey, TValue> ExcludeLastItem()
         {
-            var item = Items.Last.Value;
-            Mapping.Remove(Items.Last.Value.Key);
-            Items.RemoveLast();
+            var item = _items.Last.Value;
+            _mapping.Remove(_items.Last.Value.Key);
+            _items.RemoveLast();
             return item;
         }
 
@@ -145,7 +141,7 @@ namespace CatDb.General.Collections
 
         public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
         {
-            var node = Items.Last;
+            var node = _items.Last;
             while (node != null)
             {
                 yield return node.Value;

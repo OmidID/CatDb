@@ -6,11 +6,11 @@ namespace CatDb.Data
 {
     public class ValueToObjects<T> : IToObjects<T>
     {
-        public readonly Func<object[], T> from;
-        public readonly Func<T, object[]> to;
+        private readonly Func<object[], T> _from;
+        private readonly Func<T, object[]> _to;
 
-        public readonly Type Type;
-        public readonly Func<Type, MemberInfo, int> MembersOrder;
+        private readonly Type _type;
+        private readonly Func<Type, MemberInfo, int> _membersOrder;
 
         public ValueToObjects(Func<Type, MemberInfo, int> membersOrder = null)
         {
@@ -21,30 +21,30 @@ namespace CatDb.Data
             if (!isSupported)
                 throw new NotSupportedException("Not all types are primitive.");
 
-            Type = typeof(T);
-            MembersOrder = membersOrder;
+            _type = typeof(T);
+            _membersOrder = membersOrder;
 
-            to = CreateToMethod().Compile();
-            from = CreateFromMethod().Compile();
+            _to = CreateToMethod().Compile();
+            _from = CreateFromMethod().Compile();
         }
 
         public Expression<Func<T, object[]>> CreateToMethod()
         {
-            var item = Expression.Parameter(Type);
+            var item = Expression.Parameter(_type);
 
-            return Expression.Lambda<Func<T, object[]>>(ValueToObjectsHelper.ToObjects(item, MembersOrder), item);
+            return Expression.Lambda<Func<T, object[]>>(ValueToObjectsHelper.ToObjects(item, _membersOrder), item);
         }
 
         public Expression<Func<object[], T>> CreateFromMethod()
         {
             var objectArray = Expression.Parameter(typeof(object[]), "item");
-            var item = Expression.Variable(Type);
+            var item = Expression.Variable(_type);
             var list = new List<Expression>();
 
-            if (!DataType.IsPrimitiveType(Type))
+            if (!DataType.IsPrimitiveType(_type))
                 list.Add(Expression.Assign(item, Expression.New(item.Type.GetConstructor(new Type[] { }))));
 
-            list.Add(ValueToObjectsHelper.FromObjects(item, objectArray, MembersOrder));
+            list.Add(ValueToObjectsHelper.FromObjects(item, objectArray, _membersOrder));
             list.Add(Expression.Label(Expression.Label(typeof(T)), item));
 
             var body = Expression.Block(typeof(T), new[] { item }, list);
@@ -54,12 +54,12 @@ namespace CatDb.Data
 
         public object[] To(T value1)
         {
-            return to(value1);
+            return _to(value1);
         }
 
         public T From(object[] value2)
         {
-            return from(value2);
+            return _from(value2);
         }
     }
 

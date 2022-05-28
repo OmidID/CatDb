@@ -8,22 +8,22 @@ namespace CatDb.Data
 {
     public class EqualityComparer<T> : IEqualityComparer<T>
     {
-        public readonly Func<T, T, bool> equals;
-        public readonly Func<T, int> getHashCode;
+        private readonly Func<T, T, bool> _equals;
+        private readonly Func<T, int> _getHashCode;
 
-        public readonly Type Type;
-        public readonly CompareOption[] CompareOptions;
-        public readonly Func<Type, MemberInfo, int> MembersOrder;
+        private readonly Type _type;
+        private readonly CompareOption[] _compareOptions;
+        private readonly Func<Type, MemberInfo, int> _membersOrder;
 
         public EqualityComparer(CompareOption[] compareOptions, Func<Type, MemberInfo, int> membersOrder = null)
         {
             CompareOption.CheckCompareOptions(typeof(T), compareOptions, membersOrder);
-            Type = typeof(T);
-            CompareOptions = compareOptions;
-            MembersOrder = membersOrder;
+            _type = typeof(T);
+            _compareOptions = compareOptions;
+            _membersOrder = membersOrder;
 
-            equals = CreateEquals().Compile();
-            getHashCode = CreateGetHashCode().Compile();
+            _equals = CreateEquals().Compile();
+            _getHashCode = CreateGetHashCode().Compile();
         }
 
         public EqualityComparer(Func<Type, MemberInfo, int> membersOrder = null)
@@ -33,13 +33,13 @@ namespace CatDb.Data
 
         public Expression<Func<T, T, bool>> CreateEquals()
         {
-            var x = Expression.Parameter(Type);
-            var y = Expression.Parameter(Type);
+            var x = Expression.Parameter(_type);
+            var y = Expression.Parameter(_type);
 
-            var list = new List<Expression>();
-            var exitPoint = Expression.Label(typeof(bool));
+            new List<Expression>();
+            Expression.Label(typeof(bool));
 
-            var body = EqualityComparerHelper.CreateEqualsBody(x, y, CompareOptions, MembersOrder);
+            var body = EqualityComparerHelper.CreateEqualsBody(x, y, _compareOptions, _membersOrder);
             var lambda = Expression.Lambda<Func<T, T, bool>>(body, x, y);
 
             return lambda;
@@ -47,9 +47,9 @@ namespace CatDb.Data
 
         public Expression<Func<T, int>> CreateGetHashCode()
         {
-            var obj = Expression.Parameter(Type);
+            var obj = Expression.Parameter(_type);
 
-            var body = EqualityComparerHelper.CreateGetHashCodeBody(obj, MembersOrder);
+            var body = EqualityComparerHelper.CreateGetHashCodeBody(obj, _membersOrder);
             var lambda = Expression.Lambda<Func<T, int>>(body, obj);
 
             return lambda;
@@ -57,12 +57,12 @@ namespace CatDb.Data
 
         public bool Equals(T x, T y)
         {
-            return equals(x, y);
+            return _equals(x, y);
         }
 
         public int GetHashCode(T obj)
         {
-            return getHashCode(obj);
+            return _getHashCode(obj);
         }
     }
 
@@ -150,7 +150,6 @@ namespace CatDb.Data
 
             if (type == typeof(Guid))
             {
-                var equalityComparerType = (compareOption.ByteOrder == ByteOrder.BigEndian) ? typeof(BigEndianByteArrayEqualityComparer) : typeof(LittleEndianByteArrayEqualityComparer);
                 var call = Expression.Call(x, typeof(Guid).GetMethod("Equals", new[] { typeof(Guid) }), y);
 
                 if (isLast)

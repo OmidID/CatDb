@@ -4,30 +4,30 @@ namespace CatDb.General.Diagnostics
 {
     public class MemoryMonitor
     {
-        private Process process;
-        private Task worker;
-        private bool shutDown;
+        private readonly Process _process;
+        private Task _worker;
+        private bool _shutDown;
 
-        private long peakPagedMemorySize64;
-        private long peakWorkingSet64;
-        private long peakVirtualMemorySize64;
+        private long _peakPagedMemorySize64;
+        private long _peakWorkingSet64;
+        private long _peakVirtualMemorySize64;
 
-        public bool MonitorPagedMemorySize64;
-        public bool MonitorWorkingSet64;
-        public bool MonitorVirtualMemorySize64;
-        public int MonitorPeriodInMilliseconds;
+        private readonly bool _monitorPagedMemorySize64;
+        private readonly bool _monitorWorkingSet64;
+        private readonly bool _monitorVirtualMemorySize64;
+        private readonly int _monitorPeriodInMilliseconds;
 
         public MemoryMonitor(bool monitorPagedMemorySize64, bool monitorWorkingSet64, bool monitorVirtualMemorySize64, int monitorPeriodInMilliseconds = 500)
         {
             if (!monitorPagedMemorySize64 && !monitorWorkingSet64 && !monitorVirtualMemorySize64)
                 throw new ArgumentException("At least one flag has to be true.");
 
-            process = Process.GetCurrentProcess();
+            _process = Process.GetCurrentProcess();
 
-            MonitorPagedMemorySize64 = monitorPagedMemorySize64;
-            MonitorWorkingSet64 = monitorWorkingSet64;
-            MonitorVirtualMemorySize64 = monitorVirtualMemorySize64;
-            MonitorPeriodInMilliseconds = monitorPeriodInMilliseconds;
+            _monitorPagedMemorySize64 = monitorPagedMemorySize64;
+            _monitorWorkingSet64 = monitorWorkingSet64;
+            _monitorVirtualMemorySize64 = monitorVirtualMemorySize64;
+            _monitorPeriodInMilliseconds = monitorPeriodInMilliseconds;
         }
 
         public MemoryMonitor(int monitorPeriodInMilliseconds = 500)
@@ -42,25 +42,25 @@ namespace CatDb.General.Diagnostics
 
         private void DoUpate()
         {
-            process.Refresh();
+            _process.Refresh();
 
-            if (MonitorPagedMemorySize64)
+            if (_monitorPagedMemorySize64)
             {
-                var pagedMemorySize64 = process.PagedMemorySize64;
+                var pagedMemorySize64 = _process.PagedMemorySize64;
                 if (pagedMemorySize64 > PeakPagedMemorySize64)
                     PeakPagedMemorySize64 = pagedMemorySize64;
             }
 
-            if (MonitorWorkingSet64)
+            if (_monitorWorkingSet64)
             {
-                var workingSet64 = process.WorkingSet64;
+                var workingSet64 = _process.WorkingSet64;
                 if (workingSet64 > PeakWorkingSet64)
                     PeakWorkingSet64 = workingSet64;
             }
 
-            if (MonitorVirtualMemorySize64)
+            if (_monitorVirtualMemorySize64)
             {
-                var virtualMemorySize64 = process.VirtualMemorySize64;
+                var virtualMemorySize64 = _process.VirtualMemorySize64;
                 if (virtualMemorySize64 > PeakVirtualMemorySize64)
                     PeakVirtualMemorySize64 = virtualMemorySize64;
             }
@@ -68,38 +68,38 @@ namespace CatDb.General.Diagnostics
 
         private void DoMonitor()
         {
-            while (!shutDown)
+            while (!_shutDown)
             {
                 DoUpate();
 
-                SpinWait.SpinUntil(() => shutDown, MonitorPeriodInMilliseconds);
+                SpinWait.SpinUntil(() => _shutDown, _monitorPeriodInMilliseconds);
             }
         }
 
         public void Start()
         {
-            if (worker != null)
+            if (_worker != null)
                 Stop();
 
             DoUpate();
 
-            worker = Task.Factory.StartNew(DoMonitor, TaskCreationOptions.LongRunning);
+            _worker = Task.Factory.StartNew(DoMonitor, TaskCreationOptions.LongRunning);
         }
 
         public void Stop()
         {
-            if (worker == null)
+            if (_worker == null)
                 return;
 
             try
             {
-                shutDown = true;
-                worker.Wait();
+                _shutDown = true;
+                _worker.Wait();
             }
             finally
             {
-                shutDown = false;
-                worker = null;
+                _shutDown = false;
+                _worker = null;
             }
         }
 
@@ -112,20 +112,20 @@ namespace CatDb.General.Diagnostics
 
         public long PeakPagedMemorySize64
         {
-            get => Interlocked.Read(ref peakPagedMemorySize64);
-            private set => Interlocked.Exchange(ref peakPagedMemorySize64, value);
+            get => Interlocked.Read(ref _peakPagedMemorySize64);
+            private set => Interlocked.Exchange(ref _peakPagedMemorySize64, value);
         }
 
         public long PeakWorkingSet64
         {
-            get => Interlocked.Read(ref peakWorkingSet64);
-            private set => Interlocked.Exchange(ref peakWorkingSet64, value);
+            get => Interlocked.Read(ref _peakWorkingSet64);
+            private set => Interlocked.Exchange(ref _peakWorkingSet64, value);
         }
 
         public long PeakVirtualMemorySize64
         {
-            get => Interlocked.Read(ref peakVirtualMemorySize64);
-            private set => Interlocked.Exchange(ref peakVirtualMemorySize64, value);
+            get => Interlocked.Read(ref _peakVirtualMemorySize64);
+            private set => Interlocked.Exchange(ref _peakVirtualMemorySize64, value);
         }
     }
 }

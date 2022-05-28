@@ -8,15 +8,15 @@ namespace CatDb.Remote
 {
     public class StorageEngineServer
     {
-        private CancellationTokenSource ShutdownTokenSource;
-        private Thread Worker;
+        private CancellationTokenSource _shutdownTokenSource;
+        private Thread _worker;
 
-        private Func<XTablePortable, ICommand, ICommand>[] CommandsIIndexExecute;
-        private Func<ICommand, ICommand>[] CommandsStorageEngineExecute;
-        private Func<ICommand, ICommand>[] CommandsHeapExecute;
+        private readonly Func<XTablePortable, ICommand, ICommand>[] _commandsIIndexExecute;
+        private readonly Func<ICommand, ICommand>[] _commandsStorageEngineExecute;
+        private Func<ICommand, ICommand>[] _commandsHeapExecute;
 
-        public readonly IStorageEngine StorageEngine;
-        public readonly TcpServer TcpServer;
+        private readonly IStorageEngine _storageEngine;
+        private readonly TcpServer _tcpServer;
 
         public StorageEngineServer(IStorageEngine storageEngine, TcpServer tcpServer)
         {
@@ -25,62 +25,62 @@ namespace CatDb.Remote
             if (tcpServer == null)
                 throw new ArgumentNullException("tcpServer");
 
-            StorageEngine = storageEngine;
-            TcpServer = tcpServer;
+            _storageEngine = storageEngine;
+            _tcpServer = tcpServer;
 
-            CommandsIIndexExecute = new Func<XTablePortable, ICommand, ICommand>[CommandCode.MAX];
-            CommandsIIndexExecute[CommandCode.REPLACE] = Replace;
-            CommandsIIndexExecute[CommandCode.DELETE] = Delete;
-            CommandsIIndexExecute[CommandCode.DELETE_RANGE] = DeleteRange;
-            CommandsIIndexExecute[CommandCode.INSERT_OR_IGNORE] = InsertOrIgnore;
-            CommandsIIndexExecute[CommandCode.CLEAR] = Clear;
-            CommandsIIndexExecute[CommandCode.TRY_GET] = TryGet;
-            CommandsIIndexExecute[CommandCode.FORWARD] = Forward;
-            CommandsIIndexExecute[CommandCode.BACKWARD] = Backward;
-            CommandsIIndexExecute[CommandCode.FIND_NEXT] = FindNext;
-            CommandsIIndexExecute[CommandCode.FIND_AFTER] = FindAfter;
-            CommandsIIndexExecute[CommandCode.FIND_PREV] = FindPrev;
-            CommandsIIndexExecute[CommandCode.FIND_BEFORE] = FindBefore;
-            CommandsIIndexExecute[CommandCode.FIRST_ROW] = FirstRow;
-            CommandsIIndexExecute[CommandCode.LAST_ROW] = LastRow;
-            CommandsIIndexExecute[CommandCode.COUNT] = Count;
-            CommandsIIndexExecute[CommandCode.XTABLE_DESCRIPTOR_GET] = GetXIndexDescriptor;
-            CommandsIIndexExecute[CommandCode.XTABLE_DESCRIPTOR_SET] = SetXIndexDescriptor;
+            _commandsIIndexExecute = new Func<XTablePortable, ICommand, ICommand>[CommandCode.MAX];
+            _commandsIIndexExecute[CommandCode.REPLACE] = Replace;
+            _commandsIIndexExecute[CommandCode.DELETE] = Delete;
+            _commandsIIndexExecute[CommandCode.DELETE_RANGE] = DeleteRange;
+            _commandsIIndexExecute[CommandCode.INSERT_OR_IGNORE] = InsertOrIgnore;
+            _commandsIIndexExecute[CommandCode.CLEAR] = Clear;
+            _commandsIIndexExecute[CommandCode.TRY_GET] = TryGet;
+            _commandsIIndexExecute[CommandCode.FORWARD] = Forward;
+            _commandsIIndexExecute[CommandCode.BACKWARD] = Backward;
+            _commandsIIndexExecute[CommandCode.FIND_NEXT] = FindNext;
+            _commandsIIndexExecute[CommandCode.FIND_AFTER] = FindAfter;
+            _commandsIIndexExecute[CommandCode.FIND_PREV] = FindPrev;
+            _commandsIIndexExecute[CommandCode.FIND_BEFORE] = FindBefore;
+            _commandsIIndexExecute[CommandCode.FIRST_ROW] = FirstRow;
+            _commandsIIndexExecute[CommandCode.LAST_ROW] = LastRow;
+            _commandsIIndexExecute[CommandCode.COUNT] = Count;
+            _commandsIIndexExecute[CommandCode.XTABLE_DESCRIPTOR_GET] = GetXIndexDescriptor;
+            _commandsIIndexExecute[CommandCode.XTABLE_DESCRIPTOR_SET] = SetXIndexDescriptor;
 
-            CommandsStorageEngineExecute = new Func<ICommand, ICommand>[CommandCode.MAX];
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_COMMIT] = StorageEngineCommit;
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_GET_ENUMERATOR] = StorageEngineGetEnumerator;
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_RENAME] = StorageEngineRename;
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_EXISTS] = StorageEngineExist;
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_FIND_BY_ID] = StorageEngineFindByID;
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_FIND_BY_NAME] = StorageEngineFindByNameCommand;
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_OPEN_XTABLE] = StorageEngineOpenXIndex;
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_OPEN_XFILE] = StorageEngineOpenXFile;
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_DELETE] = StorageEngineDelete;
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_COUNT] = StorageEngineCount;
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_GET_CACHE_SIZE] = StorageEngineGetCacheSize;
-            CommandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_SET_CACHE_SIZE] = StorageEngineSetCacheSize;
-            CommandsStorageEngineExecute[CommandCode.HEAP_OBTAIN_NEW_HANDLE] = HeapObtainNewHandle;
-            CommandsStorageEngineExecute[CommandCode.HEAP_RELEASE_HANDLE] = HeapReleaseHandle;
-            CommandsStorageEngineExecute[CommandCode.HEAP_EXISTS_HANDLE] = HeapExistsHandle;
-            CommandsStorageEngineExecute[CommandCode.HEAP_WRITE] = HeapWrite;
-            CommandsStorageEngineExecute[CommandCode.HEAP_READ] = HeapRead;
-            CommandsStorageEngineExecute[CommandCode.HEAP_COMMIT] = HeapCommit;
-            CommandsStorageEngineExecute[CommandCode.HEAP_CLOSE] = HeapClose;
-            CommandsStorageEngineExecute[CommandCode.HEAP_GET_TAG] = HeapGetTag;
-            CommandsStorageEngineExecute[CommandCode.HEAP_SET_TAG] = HeapSetTag;
-            CommandsStorageEngineExecute[CommandCode.HEAP_DATA_SIZE] = HeapDataSize;
-            CommandsStorageEngineExecute[CommandCode.HEAP_SIZE] = HeapSize;
+            _commandsStorageEngineExecute = new Func<ICommand, ICommand>[CommandCode.MAX];
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_COMMIT] = StorageEngineCommit;
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_GET_ENUMERATOR] = StorageEngineGetEnumerator;
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_RENAME] = StorageEngineRename;
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_EXISTS] = StorageEngineExist;
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_FIND_BY_ID] = StorageEngineFindById;
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_FIND_BY_NAME] = StorageEngineFindByNameCommand;
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_OPEN_XTABLE] = StorageEngineOpenXIndex;
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_OPEN_XFILE] = StorageEngineOpenXFile;
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_DELETE] = StorageEngineDelete;
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_COUNT] = StorageEngineCount;
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_GET_CACHE_SIZE] = StorageEngineGetCacheSize;
+            _commandsStorageEngineExecute[CommandCode.STORAGE_ENGINE_SET_CACHE_SIZE] = StorageEngineSetCacheSize;
+            _commandsStorageEngineExecute[CommandCode.HEAP_OBTAIN_NEW_HANDLE] = HeapObtainNewHandle;
+            _commandsStorageEngineExecute[CommandCode.HEAP_RELEASE_HANDLE] = HeapReleaseHandle;
+            _commandsStorageEngineExecute[CommandCode.HEAP_EXISTS_HANDLE] = HeapExistsHandle;
+            _commandsStorageEngineExecute[CommandCode.HEAP_WRITE] = HeapWrite;
+            _commandsStorageEngineExecute[CommandCode.HEAP_READ] = HeapRead;
+            _commandsStorageEngineExecute[CommandCode.HEAP_COMMIT] = HeapCommit;
+            _commandsStorageEngineExecute[CommandCode.HEAP_CLOSE] = HeapClose;
+            _commandsStorageEngineExecute[CommandCode.HEAP_GET_TAG] = HeapGetTag;
+            _commandsStorageEngineExecute[CommandCode.HEAP_SET_TAG] = HeapSetTag;
+            _commandsStorageEngineExecute[CommandCode.HEAP_DATA_SIZE] = HeapDataSize;
+            _commandsStorageEngineExecute[CommandCode.HEAP_SIZE] = HeapSize;
         }
 
         public void Start()
         {
             Stop();
 
-            ShutdownTokenSource = new CancellationTokenSource();
+            _shutdownTokenSource = new CancellationTokenSource();
 
-            Worker = new Thread(DoWork);
-            Worker.Start();
+            _worker = new Thread(DoWork);
+            _worker.Start();
         }
 
         public void Stop()
@@ -88,9 +88,9 @@ namespace CatDb.Remote
             if (!IsWorking)
                 return;
 
-            ShutdownTokenSource.Cancel(false);
+            _shutdownTokenSource.Cancel(false);
 
-            var thread = Worker;
+            var thread = _worker;
             if (thread != null)
             {
                 if (!thread.Join(5000))
@@ -98,19 +98,19 @@ namespace CatDb.Remote
             }
         }
 
-        public bool IsWorking => Worker != null;
+        public bool IsWorking => _worker != null;
 
         private void DoWork()
         {
             try
             {
-                TcpServer.Start();
+                _tcpServer.Start();
 
-                while (!ShutdownTokenSource.Token.IsCancellationRequested)
+                while (!_shutdownTokenSource.Token.IsCancellationRequested)
                 {
                     try
                     {
-                        var order = TcpServer.RecievedPackets.Take(ShutdownTokenSource.Token);
+                        var order = _tcpServer.RecievedPackets.Take(_shutdownTokenSource.Token);
                         Task.Factory.StartNew(PacketExecute, order);
                     }
                     catch (OperationCanceledException)
@@ -119,19 +119,19 @@ namespace CatDb.Remote
                     }
                     catch (Exception exc)
                     {
-                        TcpServer.LogError(exc);
+                        _tcpServer.LogError(exc);
                     }
                 }
             }
             catch (Exception exc)
             {
-                TcpServer.LogError(exc);
+                _tcpServer.LogError(exc);
             }
             finally
             {
-                TcpServer.Stop();
+                _tcpServer.Stop();
 
-                Worker = null;
+                _worker = null;
             }
         }
 
@@ -142,7 +142,7 @@ namespace CatDb.Remote
                 var order = (KeyValuePair<ServerConnection, Packet>)state;
 
                 var reader = new BinaryReader(order.Value.Request);
-                var msgRequest = Message.Deserialize(reader, (id) => StorageEngine.Find(id));
+                var msgRequest = Message.Deserialize(reader, (id) => _storageEngine.Find(id));
 
                 var clientDescription = msgRequest.Description;
                 var resultCommands = new CommandCollection(1);
@@ -153,16 +153,16 @@ namespace CatDb.Remote
 
                     if (msgRequest.Description != null) // XTable commands
                     {
-                        var table = (XTablePortable)StorageEngine.OpenXTablePortable(clientDescription.Name, clientDescription.KeyDataType, clientDescription.RecordDataType);
+                        var table = (XTablePortable)_storageEngine.OpenXTablePortable(clientDescription.Name, clientDescription.KeyDataType, clientDescription.RecordDataType);
                         table.Descriptor.Tag = clientDescription.Tag;
 
                         for (var i = 0; i < commands.Count - 1; i++)
                         {
                             var command = msgRequest.Commands[i];
-                            CommandsIIndexExecute[command.Code](table, command);
+                            _commandsIIndexExecute[command.Code](table, command);
                         }
 
-                        var resultCommand = CommandsIIndexExecute[msgRequest.Commands[commands.Count - 1].Code](table, msgRequest.Commands[commands.Count - 1]);
+                        var resultCommand = _commandsIIndexExecute[msgRequest.Commands[commands.Count - 1].Code](table, msgRequest.Commands[commands.Count - 1]);
                         if (resultCommand != null)
                             resultCommands.Add(resultCommand);
 
@@ -172,7 +172,7 @@ namespace CatDb.Remote
                     {
                         var command = msgRequest.Commands[commands.Count - 1];
 
-                        var resultCommand = CommandsStorageEngineExecute[command.Code](command);
+                        var resultCommand = _commandsStorageEngineExecute[command.Code](command);
 
                         if (resultCommand != null)
                             resultCommands.Add(resultCommand);
@@ -197,7 +197,7 @@ namespace CatDb.Remote
             }
             catch (Exception exc)
             {
-                TcpServer.LogError(exc);
+                _tcpServer.LogError(exc);
             }
         }
 
@@ -247,7 +247,7 @@ namespace CatDb.Remote
             var cmd = (TryGetCommand)command;
             IData record = null;
 
-            var exist = table.TryGet(cmd.Key, out record);
+            table.TryGet(cmd.Key, out record);
 
             return new TryGetCommand(cmd.Key, record);
         }
@@ -348,7 +348,7 @@ namespace CatDb.Remote
 
         private ICommand StorageEngineCommit(ICommand command)
         {
-            StorageEngine.Commit();
+            _storageEngine.Commit();
 
             return new StorageEngineCommitCommand();
         }
@@ -357,8 +357,8 @@ namespace CatDb.Remote
         {
             var list = new List<IDescriptor>();
 
-            foreach (var locator in StorageEngine)
-                list.Add(new Descriptor(locator.ID, locator.Name, locator.StructureType, locator.KeyDataType, locator.RecordDataType, locator.KeyType, locator.RecordType, locator.CreateTime, locator.ModifiedTime, locator.AccessTime, locator.Tag));
+            foreach (var locator in _storageEngine)
+                list.Add(new Descriptor(locator.Id, locator.Name, locator.StructureType, locator.KeyDataType, locator.RecordDataType, locator.KeyType, locator.RecordType, locator.CreateTime, locator.ModifiedTime, locator.AccessTime, locator.Tag));
 
             return new StorageEngineGetEnumeratorCommand(list);
         }
@@ -366,24 +366,24 @@ namespace CatDb.Remote
         private ICommand StorageEngineExist(ICommand command)
         {
             var cmd = (StorageEngineExistsCommand)command;
-            var exist = StorageEngine.Exists(cmd.Name);
+            var exist = _storageEngine.Exists(cmd.Name);
 
             return new StorageEngineExistsCommand(exist, cmd.Name);
         }
 
-        private ICommand StorageEngineFindByID(ICommand command)
+        private ICommand StorageEngineFindById(ICommand command)
         {
-            var cmd = (StorageEngineFindByIDCommand)command;
+            var cmd = (StorageEngineFindByIdCommand)command;
 
-            var locator = StorageEngine.Find(cmd.ID);
+            var locator = _storageEngine.Find(cmd.Id);
 
-            return new StorageEngineFindByIDCommand(new Descriptor(locator.ID, locator.Name, locator.StructureType, locator.KeyDataType, locator.RecordDataType, locator.KeyType, locator.RecordType, locator.CreateTime, locator.ModifiedTime, locator.AccessTime, locator.Tag), cmd.ID);
+            return new StorageEngineFindByIdCommand(new Descriptor(locator.Id, locator.Name, locator.StructureType, locator.KeyDataType, locator.RecordDataType, locator.KeyType, locator.RecordType, locator.CreateTime, locator.ModifiedTime, locator.AccessTime, locator.Tag), cmd.Id);
         }
 
         private ICommand StorageEngineFindByNameCommand(ICommand command)
         {
             var cmd = (StorageEngineFindByNameCommand)command;
-            cmd.Descriptor = StorageEngine[cmd.Name];
+            cmd.Descriptor = _storageEngine[cmd.Name];
 
             return new StorageEngineFindByNameCommand(cmd.Name, cmd.Descriptor);
         }
@@ -391,27 +391,27 @@ namespace CatDb.Remote
         private ICommand StorageEngineOpenXIndex(ICommand command)
         {
             var cmd = (StorageEngineOpenXIndexCommand)command;
-            StorageEngine.OpenXTablePortable(cmd.Name, cmd.KeyType, cmd.RecordType);
+            _storageEngine.OpenXTablePortable(cmd.Name, cmd.KeyType, cmd.RecordType);
 
-            var locator = StorageEngine[cmd.Name];
+            var locator = _storageEngine[cmd.Name];
 
-            return new StorageEngineOpenXIndexCommand(locator.ID);
+            return new StorageEngineOpenXIndexCommand(locator.Id);
         }
 
         private ICommand StorageEngineOpenXFile(ICommand command)
         {
             var cmd = (StorageEngineOpenXFileCommand)command;
-            StorageEngine.OpenXFile(cmd.Name);
+            _storageEngine.OpenXFile(cmd.Name);
 
-            var locator = StorageEngine[cmd.Name];
+            var locator = _storageEngine[cmd.Name];
 
-            return new StorageEngineOpenXFileCommand(locator.ID);
+            return new StorageEngineOpenXFileCommand(locator.Id);
         }
 
         private ICommand StorageEngineDelete(ICommand command)
         {
             var cmd = (StorageEngineDeleteCommand)command;
-            StorageEngine.Delete(cmd.Name);
+            _storageEngine.Delete(cmd.Name);
 
             return new StorageEngineDeleteCommand(cmd.Name);
         }
@@ -419,22 +419,21 @@ namespace CatDb.Remote
         private ICommand StorageEngineRename(ICommand command)
         {
             var cmd = (StorageEngineRenameCommand)command;
-            StorageEngine.Rename(cmd.Name, cmd.NewName);
+            _storageEngine.Rename(cmd.Name, cmd.NewName);
 
             return new StorageEngineRenameCommand(cmd.Name, cmd.NewName);
         }
 
         private ICommand StorageEngineCount(ICommand command)
         {
-            var cmd = (StorageEngineCountCommand)command;
-            var count = StorageEngine.Count;
+            var count = _storageEngine.Count;
 
             return new StorageEngineCountCommand(count);
         }
 
         private ICommand StorageEngineGetCacheSize(ICommand command)
         {
-            var cacheSize = StorageEngine.CacheSize;
+            var cacheSize = _storageEngine.CacheSize;
 
             return new StorageEngineGetCacheSizeCommand(cacheSize);
         }
@@ -442,7 +441,7 @@ namespace CatDb.Remote
         private ICommand StorageEngineSetCacheSize(ICommand command)
         {
             var cmd = (StorageEngineSetCacheSizeCommand)command;
-            StorageEngine.CacheSize = cmd.CacheSize;
+            _storageEngine.CacheSize = cmd.CacheSize;
 
             return new StorageEngineGetCacheSizeCommand(cmd.CacheSize);
         }
@@ -453,7 +452,7 @@ namespace CatDb.Remote
 
         private ICommand HeapObtainNewHandle(ICommand command)
         {
-            var handle = StorageEngine.Heap.ObtainNewHandle();
+            var handle = _storageEngine.Heap.ObtainNewHandle();
 
             return new HeapObtainNewHandleCommand(handle);
         }
@@ -461,7 +460,7 @@ namespace CatDb.Remote
         private ICommand HeapReleaseHandle(ICommand command)
         {
             var cmd = (HeapReleaseHandleCommand)command;
-            StorageEngine.Heap.Release(cmd.Handle);
+            _storageEngine.Heap.Release(cmd.Handle);
 
             return new HeapReleaseHandleCommand(-1);
         }
@@ -469,7 +468,7 @@ namespace CatDb.Remote
         public ICommand HeapExistsHandle(ICommand command)
         {
             var cmd = (HeapExistsHandleCommand)command;
-            var exists = StorageEngine.Heap.Exists(cmd.Handle);
+            var exists = _storageEngine.Heap.Exists(cmd.Handle);
 
             return new HeapExistsHandleCommand(cmd.Handle, exists);
         }
@@ -477,7 +476,7 @@ namespace CatDb.Remote
         public ICommand HeapWrite(ICommand command)
         {
             var cmd = (HeapWriteCommand)command;
-            StorageEngine.Heap.Write(cmd.Handle, cmd.Buffer, cmd.Index, cmd.Count);
+            _storageEngine.Heap.Write(cmd.Handle, cmd.Buffer, cmd.Index, cmd.Count);
 
             return new HeapWriteCommand();
         }
@@ -485,28 +484,28 @@ namespace CatDb.Remote
         public ICommand HeapRead(ICommand command)
         {
             var cmd = (HeapReadCommand)command;
-            var buffer = StorageEngine.Heap.Read(cmd.Handle);
+            var buffer = _storageEngine.Heap.Read(cmd.Handle);
 
             return new HeapReadCommand(cmd.Handle, buffer);
         }
 
         public ICommand HeapCommit(ICommand command)
         {
-            StorageEngine.Heap.Commit();
+            _storageEngine.Heap.Commit();
 
             return command;
         }
 
         public ICommand HeapClose(ICommand command)
         {
-            StorageEngine.Heap.Close();
+            _storageEngine.Heap.Close();
 
             return command;
         }
 
         public ICommand HeapGetTag(ICommand command)
         {
-            var tag = StorageEngine.Heap.Tag;
+            var tag = _storageEngine.Heap.Tag;
 
             return new HeapGetTagCommand(tag);
         }
@@ -515,21 +514,21 @@ namespace CatDb.Remote
         {
             var cmd = (HeapSetTagCommand)command;
 
-            StorageEngine.Heap.Tag = cmd.Buffer;
+            _storageEngine.Heap.Tag = cmd.Buffer;
 
             return new HeapSetTagCommand();
         }
 
         public ICommand HeapDataSize(ICommand command)
         {
-            var dataSize = StorageEngine.Heap.DataSize;
+            var dataSize = _storageEngine.Heap.DataSize;
 
             return new HeapDataSizeCommand(dataSize);
         }
 
         public ICommand HeapSize(ICommand command)
         {
-            var size = StorageEngine.Heap.Size;
+            var size = _storageEngine.Heap.Size;
 
             return new HeapSizeCommand(size);
         }

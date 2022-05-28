@@ -21,7 +21,7 @@ namespace CatDb.WaterfallTree
 
     public interface IDescriptor
     {
-        long ID { get; }
+        long Id { get; }
         string Name { get; }
         int StructureType { get; }
 

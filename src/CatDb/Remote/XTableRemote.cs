@@ -8,18 +8,18 @@ namespace CatDb.Remote
 {
     public class XTableRemote : ITable<IData, IData>
     {
-        private int PageCapacity = 100000;
-        private CommandCollection Commands;
+        private readonly int _pageCapacity = 100000;
+        private readonly CommandCollection _commands;
 
-        public Descriptor IndexDescriptor;
-        public readonly StorageEngineClient StorageEngine;
+        private Descriptor _indexDescriptor;
+        private readonly StorageEngineClient _storageEngine;
 
         internal XTableRemote(StorageEngineClient storageEngine, Descriptor descriptor)
         {
-            StorageEngine = storageEngine;
-            IndexDescriptor = descriptor;
+            _storageEngine = storageEngine;
+            _indexDescriptor = descriptor;
 
-            Commands = new CommandCollection(100 * 1024);
+            _commands = new CommandCollection(100 * 1024);
         }
 
         ~XTableRemote()
@@ -29,19 +29,18 @@ namespace CatDb.Remote
 
         private void InternalExecute(ICommand command)
         {
-            if (Commands.Capacity == 0)
+            if (_commands.Capacity == 0)
             {
-                var commands = new CommandCollection(1);
-                commands.Add(command);
+                var commands = new CommandCollection(1) { command };
 
-                var resultCommands = StorageEngine.Execute(IndexDescriptor, commands);
+                var resultCommands = _storageEngine.Execute(_indexDescriptor, commands);
                 SetResult(commands, resultCommands);
 
                 return;
             }
 
-            Commands.Add(command);
-            if (Commands.Count == Commands.Capacity || command.IsSynchronous)
+            _commands.Add(command);
+            if (_commands.Count == _commands.Capacity || command.IsSynchronous)
                 Flush();
         }
 
@@ -58,7 +57,7 @@ namespace CatDb.Remote
 
         public void Flush()
         {
-            if (Commands.Count == 0)
+            if (_commands.Count == 0)
             {
                 UpdateDescriptor();
                 return;
@@ -66,10 +65,10 @@ namespace CatDb.Remote
 
             UpdateDescriptor();
 
-            var result = StorageEngine.Execute(IndexDescriptor, Commands);
-            SetResult(Commands, result);
+            var result = _storageEngine.Execute(_indexDescriptor, _commands);
+            SetResult(_commands, result);
 
-            Commands.Clear();
+            _commands.Clear();
         }
 
         #region IIndex<IKey, IRecord>
@@ -78,8 +77,7 @@ namespace CatDb.Remote
         {
             get
             {
-                IData record;
-                if (!TryGet(key, out record))
+                if (!TryGet(key, out var record))
                     throw new KeyNotFoundException(key.ToString());
 
                 return record;
@@ -114,9 +112,7 @@ namespace CatDb.Remote
 
         public bool Exists(IData key)
         {
-            IData record;
-
-            return TryGet(key, out record);
+            return TryGet(key, out _);
         }
 
         public bool TryGet(IData key, out IData record)
@@ -131,16 +127,14 @@ namespace CatDb.Remote
 
         public IData Find(IData key)
         {
-            IData record;
-            TryGet(key, out record);
+            TryGet(key, out var record);
 
             return record;
         }
 
         public IData TryGetOrDefault(IData key, IData defaultRecord)
         {
-            IData record;
-            if (!TryGet(key, out record))
+            if (!TryGet(key, out var record))
                 return defaultRecord;
 
             return record;
@@ -185,7 +179,7 @@ namespace CatDb.Remote
 
         public IEnumerable<KeyValuePair<IData, IData>> Forward(IData from, bool hasFrom, IData to, bool hasTo)
         {
-            if (hasFrom && hasTo && IndexDescriptor.KeyComparer.Compare(from, to) > 0)
+            if (hasFrom && hasTo && _indexDescriptor.KeyComparer.Compare(from, to) > 0)
                 throw new ArgumentException("from > to");
 
             from = hasFrom ? from : default(IData);
@@ -194,16 +188,16 @@ namespace CatDb.Remote
             List<KeyValuePair<IData, IData>> records = null;
             IData nextKey = null;
 
-            var command = new ForwardCommand(PageCapacity, from, to, null);
+            var command = new ForwardCommand(_pageCapacity, from, to, null);
             Execute(command);
 
             records = command.List;
-            nextKey = records != null && records.Count == PageCapacity ? records[records.Count - 1].Key : null;
+            nextKey = records != null && records.Count == _pageCapacity ? records[records.Count - 1].Key : null;
 
             while (records != null)
             {
                 Task task = null;
-                List<KeyValuePair<IData, IData>> _records = null;
+                List<KeyValuePair<IData, IData>> commandRecords = null;
 
                 var returnCount = nextKey != null ? records.Count - 1 : records.Count;
 
@@ -211,11 +205,11 @@ namespace CatDb.Remote
                 {
                     task = Task.Factory.StartNew(() =>
                     {
-                        var _command = new ForwardCommand(PageCapacity, nextKey, to, null);
-                        Execute(_command);
+                        var forwardCommand = new ForwardCommand(_pageCapacity, nextKey, to, null);
+                        Execute(forwardCommand);
 
-                        _records = _command.List;
-                        nextKey = _records != null && _records.Count == PageCapacity ? _records[_records.Count - 1].Key : null;
+                        commandRecords = forwardCommand.List;
+                        nextKey = commandRecords != null && commandRecords.Count == _pageCapacity ? commandRecords[commandRecords.Count - 1].Key : null;
                     });
                 }
 
@@ -227,8 +221,8 @@ namespace CatDb.Remote
                 if (task != null)
                     task.Wait();
 
-                if (_records != null)
-                    records = _records;
+                if (commandRecords != null)
+                    records = commandRecords;
             }
         }
 
@@ -239,7 +233,7 @@ namespace CatDb.Remote
 
         public IEnumerable<KeyValuePair<IData, IData>> Backward(IData to, bool hasTo, IData from, bool hasFrom)
         {
-            if (hasFrom && hasTo && IndexDescriptor.KeyComparer.Compare(from, to) > 0)
+            if (hasFrom && hasTo && _indexDescriptor.KeyComparer.Compare(from, to) > 0)
                 throw new ArgumentException("from > to");
 
             from = hasFrom ? from : default(IData);
@@ -248,16 +242,16 @@ namespace CatDb.Remote
             List<KeyValuePair<IData, IData>> records = null;
             IData nextKey = null;
 
-            var command = new BackwardCommand(PageCapacity, to, from, null);
+            var command = new BackwardCommand(_pageCapacity, to, from, null);
             Execute(command);
 
             records = command.List;
-            nextKey = records != null && records.Count == PageCapacity ? records[records.Count - 1].Key : null;
+            nextKey = records != null && records.Count == _pageCapacity ? records[records.Count - 1].Key : null;
 
             while (records != null)
             {
                 Task task = null;
-                List<KeyValuePair<IData, IData>> _records = null;
+                List<KeyValuePair<IData, IData>> commandRecords = null;
 
                 var returnCount = nextKey != null ? records.Count - 1 : records.Count;
 
@@ -265,11 +259,11 @@ namespace CatDb.Remote
                 {
                     task = Task.Factory.StartNew(() =>
                     {
-                        var _command = new BackwardCommand(PageCapacity, nextKey, from, null);
-                        Execute(_command);
+                        var backwardCommand = new BackwardCommand(_pageCapacity, nextKey, from, null);
+                        Execute(backwardCommand);
 
-                        _records = _command.List;
-                        nextKey = _records != null && _records.Count == PageCapacity ? _records[_records.Count - 1].Key : null;
+                        commandRecords = backwardCommand.List;
+                        nextKey = commandRecords != null && commandRecords.Count == _pageCapacity ? commandRecords[commandRecords.Count - 1].Key : null;
                     });
                 }
 
@@ -281,8 +275,8 @@ namespace CatDb.Remote
                 if (task != null)
                     task.Wait();
 
-                if (_records != null)
-                    records = _records;
+                if (commandRecords != null)
+                    records = commandRecords;
             }
         }
 
@@ -386,18 +380,17 @@ namespace CatDb.Remote
 
         public IDescriptor Descriptor
         {
-            get => IndexDescriptor;
-            set => IndexDescriptor = (Descriptor)value;
+            get => _indexDescriptor;
+            set => _indexDescriptor = (Descriptor)value;
         }
 
         private void GetDescriptor()
         {
             var command = new XTableDescriptorGetCommand(Descriptor);
 
-            var collection = new CommandCollection(1);
-            collection.Add(command);
+            var collection = new CommandCollection(1) { command };
 
-            collection = StorageEngine.Execute(Descriptor, collection);
+            collection = _storageEngine.Execute(Descriptor, collection);
             var resultCommand = (XTableDescriptorGetCommand)collection[0];
 
             Descriptor = resultCommand.Descriptor;
@@ -407,11 +400,9 @@ namespace CatDb.Remote
         {
             var command = new XTableDescriptorSetCommand(Descriptor);
 
-            var collection = new CommandCollection(1);
-            collection.Add(command);
+            var collection = new CommandCollection(1) { command };
 
-            collection = StorageEngine.Execute(Descriptor, collection);
-            var resultCommand = (XTableDescriptorSetCommand)collection[0]; 
+            collection = _storageEngine.Execute(Descriptor, collection);
         }
 
         /// <summary>
@@ -427,14 +418,14 @@ namespace CatDb.Remote
             command = new XTableDescriptorSetCommand(Descriptor);
             collection.Add(command);
 
-            StorageEngine.Execute(Descriptor, collection);
+            _storageEngine.Execute(Descriptor, collection);
 
             // Get the local descriptor
             command = new XTableDescriptorGetCommand(Descriptor);
             collection.Clear();
 
             collection.Add(command);
-            collection = StorageEngine.Execute(Descriptor, collection);
+            collection = _storageEngine.Execute(Descriptor, collection);
 
             var resultCommand = (XTableDescriptorGetCommand)collection[0];
             Descriptor = resultCommand.Descriptor;

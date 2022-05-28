@@ -5,7 +5,7 @@ namespace CatDb.WaterfallTree
 {
     public class SentinelPersistKey : IPersist<IData>
     {
-        public static readonly SentinelPersistKey Instance = new SentinelPersistKey();
+        public static readonly SentinelPersistKey Instance = new();
 
         public void Write(BinaryWriter writer, IData item)
         {

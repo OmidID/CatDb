@@ -5,75 +5,75 @@ namespace CatDb.Data
 {
     public class DataTransformer<T> : ITransformer<T, IData>
     {
-        public readonly Func<T, IData> to;
-        public readonly Func<IData, T> from;
+        private readonly Func<T, IData> _to;
+        private readonly Func<IData, T> _from;
 
-        public readonly Type Type1;
-        public readonly Type Type2;
-        public readonly Func<Type, MemberInfo, int> MembersOrder1;
-        public readonly Func<Type, MemberInfo, int> MembersOrder2;
+        private readonly Type _type1;
+        private readonly Type _type2;
+        private readonly Func<Type, MemberInfo, int> _membersOrder1;
+        private readonly Func<Type, MemberInfo, int> _membersOrder2;
 
         public DataTransformer(Type type2, Func<Type, MemberInfo, int> membersOrder1 = null, Func<Type, MemberInfo, int> membersOrder2 = null)
         {
             if (!TransformerHelper.CheckCompatible(typeof(T), type2, new HashSet<Type>(), membersOrder1, membersOrder2))
                 throw new ArgumentException($"Type {typeof(T)} is not compatible with {type2}");
 
-            Type1 = typeof(T);
-            Type2 = type2;
-            MembersOrder1 = membersOrder1;
-            MembersOrder2 = membersOrder2;
+            _type1 = typeof(T);
+            _type2 = type2;
+            _membersOrder1 = membersOrder1;
+            _membersOrder2 = membersOrder2;
 
-            to = CreateToMethod().Compile();
-            from = CreateFromMethod().Compile();
+            _to = CreateToMethod().Compile();
+            _from = CreateFromMethod().Compile();
         }
 
         public Expression<Func<T, IData>> CreateToMethod()
         {
-            var value = Expression.Parameter(Type1);
-            var data = Expression.Variable(typeof(Data<>).MakeGenericType(Type2));
+            var value = Expression.Parameter(_type1);
+            var data = Expression.Variable(typeof(Data<>).MakeGenericType(_type2));
 
             var list = new List<Expression>();
-            if (TransformerHelper.IsEqualsTypes(Type1, Type2))
-                list.Add(Expression.Label(Expression.Label(typeof(IData)), Expression.New(data.Type.GetConstructor(new[] { Type1 }), value)));
+            if (TransformerHelper.IsEqualsTypes(_type1, _type2))
+                list.Add(Expression.Label(Expression.Label(typeof(IData)), Expression.New(data.Type.GetConstructor(new[] { _type1 }), value)));
             else
             {
                 list.Add(Expression.Assign(data, Expression.New(data.Type.GetConstructor(new Type[] { }))));
-                list.Add(TransformerHelper.BuildBody(data.Value(), value, MembersOrder1, MembersOrder2));
+                list.Add(TransformerHelper.BuildBody(data.Value(), value, _membersOrder1, _membersOrder2));
                 list.Add(Expression.Label(Expression.Label(data.Type), data));
             }
 
-            return Expression.Lambda<Func<T, IData>>(TransformerHelper.IsEqualsTypes(Type1, Type2) ? list[0] : Expression.Block(typeof(IData), new[] { data }, list), value);
+            return Expression.Lambda<Func<T, IData>>(TransformerHelper.IsEqualsTypes(_type1, _type2) ? list[0] : Expression.Block(typeof(IData), new[] { data }, list), value);
         }
 
         public Expression<Func<IData, T>> CreateFromMethod()
         {
             var idata = Expression.Parameter(typeof(IData));
-            var data = Expression.Variable(typeof(Data<>).MakeGenericType(Type2));
+            var data = Expression.Variable(typeof(Data<>).MakeGenericType(_type2));
             var value = Expression.Variable(typeof(T));
 
             var list = new List<Expression>();
 
-            if (TransformerHelper.IsEqualsTypes(Type1, Type2))
-                list.Add(Expression.Label(Expression.Label(Type1), Expression.Convert(idata, data.Type).Value()));
+            if (TransformerHelper.IsEqualsTypes(_type1, _type2))
+                list.Add(Expression.Label(Expression.Label(_type1), Expression.Convert(idata, data.Type).Value()));
             else
             {
                 list.Add(Expression.Assign(data, Expression.Convert(idata, data.Type)));
-                list.Add(TransformerHelper.BuildBody(value, data.Value(), MembersOrder1, MembersOrder2));
-                list.Add(Expression.Label(Expression.Label(Type1), value));
+                list.Add(TransformerHelper.BuildBody(value, data.Value(), _membersOrder1, _membersOrder2));
+                list.Add(Expression.Label(Expression.Label(_type1), value));
             }
 
-            return Expression.Lambda<Func<IData, T>>(TransformerHelper.IsEqualsTypes(Type1, Type2) ? list[0] : Expression.Block(Type1, new[] { data, value }, list), idata);
+            return Expression.Lambda<Func<IData, T>>(TransformerHelper.IsEqualsTypes(_type1, _type2) ? list[0] : Expression.Block(_type1, new[] { data, value }, list), idata);
         }
 
 
         public IData To(T value1)
         {
-            return to(value1);
+            return _to(value1);
         }
 
         public T From(IData value2)
         {
-            return from(value2);
+            return _from(value2);
         }
     }
 

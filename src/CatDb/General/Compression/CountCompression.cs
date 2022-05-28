@@ -4,22 +4,20 @@ namespace CatDb.General.Compression
     {
         private const ulong CACHE_SIZE = 1024 + 1;
 
-        private static byte[][] cache;
+        private static readonly byte[][] Cache;
 
         static CountCompression()
         {
-            cache = new byte[CACHE_SIZE][];
+            Cache = new byte[CACHE_SIZE][];
 
-            using (var ms = new MemoryStream())
+            using var ms = new MemoryStream();
+            var writer = new BinaryWriter(ms);
+
+            for (var i = 0; i < Cache.Length; i++)
             {
-                var writer = new BinaryWriter(ms);
-
-                for (var i = 0; i < cache.Length; i++)
-                {
-                    writer.Seek(0, SeekOrigin.Begin);
-                    InternalSerialize(writer, (ulong)i);
-                    cache[i] = ms.ToArray();
-                }
+                writer.Seek(0, SeekOrigin.Begin);
+                InternalSerialize(writer, (ulong)i);
+                Cache[i] = ms.ToArray();
             }
         }
 
@@ -48,7 +46,7 @@ namespace CatDb.General.Compression
         public static void Serialize(BinaryWriter writer, ulong number)
         {
             if (number < CACHE_SIZE)
-                writer.Write(cache[number]);
+                writer.Write(Cache[number]);
             else
                 InternalSerialize(writer, number);
         }

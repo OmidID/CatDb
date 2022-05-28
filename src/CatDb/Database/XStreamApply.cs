@@ -37,7 +37,7 @@ namespace CatDb.Database
                     case OperationCode.DELETE:
                         {
                             var o = new DeleteRangeOperation(opr.FromKey, opr.FromKey);
-                            if (Delete(data, (DeleteRangeOperation)o))
+                            if (Delete(data, o))
                                 isModified = true;
                         }
                         break;
@@ -70,8 +70,7 @@ namespace CatDb.Database
             Debug.Assert(src.Length <= BLOCK_SIZE);
             Debug.Assert(baseFrom == BLOCK_SIZE * ((from + src.Length - 1) / BLOCK_SIZE));
 
-            IData tmp;
-            if (set.TryGetValue(baseKey, out tmp))
+            if (set.TryGetValue(baseKey, out var tmp))
             {
                 var rec = (Data<byte[]>)tmp;
 
@@ -125,10 +124,9 @@ namespace CatDb.Database
             if (internalFrom <= internalTo)
                 isModified = set.Remove(new Data<long>(internalFrom), true, new Data<long>(internalTo), true);
 
-            IData tmp;
             Data<byte[]> record;
 
-            if (localFrom > 0 && set.TryGetValue(new Data<long>(baseFrom), out tmp))
+            if (localFrom > 0 && set.TryGetValue(new Data<long>(baseFrom), out var tmp))
             {
                 record = (Data<byte[]>)tmp;
                 if (localFrom < record.Value.Length)

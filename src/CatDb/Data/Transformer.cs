@@ -7,111 +7,111 @@ namespace CatDb.Data
 {
     public class Transformer<T1, T2> : ITransformer<T1, T2>
     {
-        public readonly Func<T1, T2> to;
-        public readonly Func<T2, T1> from;
+        private readonly Func<T1, T2> _to;
+        private readonly Func<T2, T1> _from;
 
-        public readonly Type Type1;
-        public readonly Type Type2;
-        public readonly Func<Type, MemberInfo, int> MembersOrder1;
-        public readonly Func<Type, MemberInfo, int> MembersOrder2;
+        private readonly Type _type1;
+        private readonly Type _type2;
+        private readonly Func<Type, MemberInfo, int> _membersOrder1;
+        private readonly Func<Type, MemberInfo, int> _membersOrder2;
 
         public Transformer(Func<Type, MemberInfo, int> membersOrder1 = null, Func<Type, MemberInfo, int> membersOrder2 = null)
         {
             if (!TransformerHelper.CheckCompatible(typeof(T1), typeof(T2), new HashSet<Type>(), membersOrder1, membersOrder2))
                 throw new ArgumentException($"{typeof(T1).ToString()} not compatible with {typeof(T2).ToString()}");
 
-            Type1 = typeof(T1);
-            Type2 = typeof(T2);
-            MembersOrder1 = membersOrder1;
-            MembersOrder2 = membersOrder2;
+            _type1 = typeof(T1);
+            _type2 = typeof(T2);
+            _membersOrder1 = membersOrder1;
+            _membersOrder2 = membersOrder2;
 
-            to = CreateToMethod().Compile();
-            from = CreateFromMethod().Compile();
+            _to = CreateToMethod().Compile();
+            _from = CreateFromMethod().Compile();
         }
 
         public Expression<Func<T1, T2>> CreateToMethod()
         {
-            var value1 = Expression.Parameter(Type1);
-            var value2 = Expression.Variable(Type2);
+            var value1 = Expression.Parameter(_type1);
+            var value2 = Expression.Variable(_type2);
 
             var list = new List<Expression>();
-            if (TransformerHelper.IsEqualsTypes(Type1, Type2))
-                list.Add(Expression.Label(Expression.Label(Type1), value1));
+            if (TransformerHelper.IsEqualsTypes(_type1, _type2))
+                list.Add(Expression.Label(Expression.Label(_type1), value1));
             else
             {
-                list.Add(TransformerHelper.BuildBody(value2, value1, MembersOrder2, MembersOrder1));
-                list.Add(Expression.Label(Expression.Label(Type2), value2));
+                list.Add(TransformerHelper.BuildBody(value2, value1, _membersOrder2, _membersOrder1));
+                list.Add(Expression.Label(Expression.Label(_type2), value2));
             }
 
-            return Expression.Lambda<Func<T1, T2>>(TransformerHelper.IsEqualsTypes(Type1, Type2) ? list[0] : Expression.Block(typeof(T2), new[] { value2 }, list), value1);
+            return Expression.Lambda<Func<T1, T2>>(TransformerHelper.IsEqualsTypes(_type1, _type2) ? list[0] : Expression.Block(typeof(T2), new[] { value2 }, list), value1);
         }
 
         public Expression<Func<T2, T1>> CreateFromMethod()
         {
-            var value2 = Expression.Parameter(Type2);
-            var value1 = Expression.Variable(Type1);
+            var value2 = Expression.Parameter(_type2);
+            var value1 = Expression.Variable(_type1);
 
             var list = new List<Expression>();
-            if (TransformerHelper.IsEqualsTypes(Type1, Type2))
-                list.Add(Expression.Label(Expression.Label(Type2), value2));
+            if (TransformerHelper.IsEqualsTypes(_type1, _type2))
+                list.Add(Expression.Label(Expression.Label(_type2), value2));
             else
             {
-                list.Add(TransformerHelper.BuildBody(value1, value2, MembersOrder1, MembersOrder2));
-                list.Add(Expression.Label(Expression.Label(Type1), value1));
+                list.Add(TransformerHelper.BuildBody(value1, value2, _membersOrder1, _membersOrder2));
+                list.Add(Expression.Label(Expression.Label(_type1), value1));
             }
 
-            return Expression.Lambda<Func<T2, T1>>(TransformerHelper.IsEqualsTypes(Type1, Type2) ? list[0] : Expression.Block(typeof(T1), new[] { value1 }, list), value2);
+            return Expression.Lambda<Func<T2, T1>>(TransformerHelper.IsEqualsTypes(_type1, _type2) ? list[0] : Expression.Block(typeof(T1), new[] { value1 }, list), value2);
         }
 
 
         public T2 To(T1 value1)
         {
-            return to(value1);
+            return _to(value1);
         }
 
         public T1 From(T2 value2)
         {
-            return from(value2);
+            return _from(value2);
         }
     }
 
     public static class TransformerHelper
     {
-        public static Expression BuildBody(Expression Value1, Expression Value2, Func<Type, MemberInfo, int> membersOrder1, Func<Type, MemberInfo, int> membersOrder2)
+        public static Expression BuildBody(Expression value1, Expression value2, Func<Type, MemberInfo, int> membersOrder1, Func<Type, MemberInfo, int> membersOrder2)
         {
-            var type1 = Value1.Type;
-            var type2 = Value2.Type;
+            var type1 = value1.Type;
+            var type2 = value2.Type;
 
             if (type1 == typeof(Guid) || type2 == typeof(Guid))
-                return Expression.Assign(Value1,
+                return Expression.Assign(value1,
                         type1 == typeof(Guid) ?
-                        Value2.Type == typeof(Guid) ? Value2 : Expression.New(type1.GetConstructor(new[] { typeof(byte[]) }), Value2) :
-                            Expression.Call(Value2, type2.GetMethod("ToByteArray"))
+                        value2.Type == typeof(Guid) ? value2 : Expression.New(type1.GetConstructor(new[] { typeof(byte[]) }), value2) :
+                            Expression.Call(value2, type2.GetMethod("ToByteArray"))
                     );
 
             if (type1.IsEnum || type2.IsEnum)
-                return Expression.Assign(Value1, Expression.Convert(Value2, type1));
+                return Expression.Assign(value1, Expression.Convert(value2, type1));
 
             if (IsEqualsTypes(type1, type2))
-                return Expression.Assign(Value1, Value2);
+                return Expression.Assign(value1, value2);
 
             if (IsNumberType(type1) && IsNumberType(type2))
-                return Expression.Assign(Value1, Expression.Convert(Value2, type1));
+                return Expression.Assign(value1, Expression.Convert(value2, type1));
 
             if (type1.IsKeyValuePair())
             {
                 var key = Expression.Variable(type1.GetGenericArguments()[0]);
                 var value = Expression.Variable(type1.GetGenericArguments()[1]);
 
-                return Expression.Assign(Value1,
+                return Expression.Assign(value1,
                     Expression.New((typeof(KeyValuePair<,>).MakeGenericType(key.Type, value.Type)).GetConstructor(new[] { key.Type, value.Type }),
                         Expression.Block(key.Type,
                             new[] { key },
-                            BuildBody(key, Expression.PropertyOrField(Value2, type2.IsKeyValuePair() ? "Key" : DataTypeUtils.GetPublicMembers(Value2.Type, membersOrder2).First().Name), membersOrder1, membersOrder2),
+                            BuildBody(key, Expression.PropertyOrField(value2, type2.IsKeyValuePair() ? "Key" : DataTypeUtils.GetPublicMembers(value2.Type, membersOrder2).First().Name), membersOrder1, membersOrder2),
                             Expression.Label(Expression.Label(key.Type), key)),
                         Expression.Block(value.Type,
                             new[] { value },
-                            BuildBody(value, Expression.PropertyOrField(Value2, type2.IsKeyValuePair() ? "Value" : DataTypeUtils.GetPublicMembers(Value2.Type, membersOrder2).Last().Name), membersOrder1, membersOrder2),
+                            BuildBody(value, Expression.PropertyOrField(value2, type2.IsKeyValuePair() ? "Value" : DataTypeUtils.GetPublicMembers(value2.Type, membersOrder2).Last().Name), membersOrder1, membersOrder2),
                             Expression.Label(Expression.Label(value.Type), value))
                     ));
             }
@@ -121,19 +121,19 @@ namespace CatDb.Data
                 var element = Expression.Variable(type1.IsArray ? type1.GetElementType() : type1.GetGenericArguments()[0]);
 
                 var block = Expression.Block(new[] { element },
-                    Expression.Assign(Value1, Expression.New(Value1.Type.GetConstructor(new[] { typeof(int) }), Expression.PropertyOrField(Value2, type2.IsList() ? "Count" : "Length"))),
-                    Value2.For(i =>
+                    Expression.Assign(value1, Expression.New(value1.Type.GetConstructor(new[] { typeof(int) }), Expression.PropertyOrField(value2, type2.IsList() ? "Count" : "Length"))),
+                    value2.For(i =>
                     {
                         return type2.IsList() ?
-                            (Expression)Expression.Call(Value1, type1.GetMethod("Add"), BuildBody(element, Value2.This(i), membersOrder1, membersOrder2)) :
-                            Expression.Assign(Expression.ArrayAccess(Value1, i), BuildBody(element, Expression.ArrayAccess(Value2, i), membersOrder1, membersOrder2));
+                            Expression.Call(value1, type1.GetMethod("Add"), BuildBody(element, value2.This(i), membersOrder1, membersOrder2)) :
+                            Expression.Assign(Expression.ArrayAccess(value1, i), BuildBody(element, Expression.ArrayAccess(value2, i), membersOrder1, membersOrder2));
                     },
                     Expression.Label())
                     );
 
-                return Expression.IfThenElse(Expression.NotEqual(Value2, Expression.Constant(null)),
+                return Expression.IfThenElse(Expression.NotEqual(value2, Expression.Constant(null)),
                     block,
-                    Expression.Assign(Value1, Expression.Constant(null, Value1.Type)));
+                    Expression.Assign(value1, Expression.Constant(null, value1.Type)));
             }
 
             if (type1.IsDictionary())
@@ -145,55 +145,54 @@ namespace CatDb.Data
                 var value = Expression.Variable(type1.GetGenericArguments()[1]);
 
                 var block = Expression.Block(new[] { key, value },
-                    Expression.Assign(Value1, type2.GetGenericArguments()[0] == typeof(byte[]) ?
-                        Expression.New(type1.GetConstructor(new[] { typeof(int), typeof(IEqualityComparer<byte[]>) }), Expression.PropertyOrField(Value2, "Count"), Expression.Field(null, typeof(BigEndianByteArrayEqualityComparer), "Instance")) :
-                        Expression.New(type1.GetConstructor(new[] { typeof(int) }), Expression.PropertyOrField(Value2, "Count"))),
-                    Value2.ForEach(current =>
-                    Expression.Call(Value1, type1.GetMethod("Add"),
+                    Expression.Assign(value1, type2.GetGenericArguments()[0] == typeof(byte[]) ?
+                        Expression.New(type1.GetConstructor(new[] { typeof(int), typeof(IEqualityComparer<byte[]>) }), Expression.PropertyOrField(value2, "Count"), Expression.Field(null, typeof(BigEndianByteArrayEqualityComparer), "Instance")) :
+                        Expression.New(type1.GetConstructor(new[] { typeof(int) }), Expression.PropertyOrField(value2, "Count"))),
+                    value2.ForEach(current =>
+                    Expression.Call(value1, type1.GetMethod("Add"),
                         BuildBody(key, Expression.Property(current, "Key"), membersOrder1, membersOrder2),
                         BuildBody(value, Expression.Property(current, "Value"), membersOrder1, membersOrder2)),
                     Expression.Label()
                     ));
 
-                return Expression.IfThenElse(Expression.NotEqual(Value2, Expression.Constant(null)),
+                return Expression.IfThenElse(Expression.NotEqual(value2, Expression.Constant(null)),
                     block,
-                    Expression.Assign(Value1, Expression.Constant(null, Value1.Type)));
+                    Expression.Assign(value1, Expression.Constant(null, value1.Type)));
             }
 
             if (type1.IsNullable())
             {
-                var data1Var = Expression.Variable(Value1.Type);
-                var data2Var = Expression.Variable(Value2.Type);
+                var data1Var = Expression.Variable(value1.Type);
+                var data2Var = Expression.Variable(value2.Type);
 
-                var list = new List<Expression>();
+                new List<Expression>();
 
                 var constructParam = Expression.PropertyOrField(data2Var, type2.IsNullable() ? "Value" : DataTypeUtils.GetPublicMembers(type2, membersOrder2).First().Name);
 
                 var block = Expression.Block(new[] { data1Var, data2Var },
-                        Expression.Assign(data2Var, Value2),
+                        Expression.Assign(data2Var, value2),
                         Expression.Assign(data1Var, Expression.New(
                             type1.GetConstructor(new[] { type1.GetGenericArguments()[0] }),
                                 constructParam.GetType() == type1.GetGenericArguments()[0] ?
-                                (Expression)constructParam :
-                                (Expression)Expression.Convert(constructParam, type1.GetGenericArguments()[0]))),
-                        Expression.Assign(Value1, data1Var)
+                                constructParam :
+                                Expression.Convert(constructParam, type1.GetGenericArguments()[0]))),
+                        Expression.Assign(value1, data1Var)
                     );
 
-                return Expression.IfThenElse(Expression.NotEqual(Value2, Expression.Constant(null, type2)),
+                return Expression.IfThenElse(Expression.NotEqual(value2, Expression.Constant(null, type2)),
                         block,
-                        Expression.Assign(Value1, Expression.Constant(null, type1))
+                        Expression.Assign(value1, Expression.Constant(null, type1))
                     );
             }
 
             if (type1.IsClass || type1.IsStruct())
             {
-                var data1Var = Expression.Variable(Value1.Type);
-                var data2Var = Expression.Variable(Value2.Type);
+                var data1Var = Expression.Variable(value1.Type);
+                var data2Var = Expression.Variable(value2.Type);
 
-                var list = new List<Expression>();
-                list.Add(Expression.Assign(data1Var, Expression.New(data1Var.Type)));
+                var list = new List<Expression> { Expression.Assign(data1Var, Expression.New(data1Var.Type)) };
 
-                var members1 = DataTypeUtils.GetPublicMembers(Value1.Type, membersOrder1).ToList();
+                var members1 = DataTypeUtils.GetPublicMembers(value1.Type, membersOrder1).ToList();
 
                 var members2 = new List<MemberInfo>();
                 if (type2.IsKeyValuePair() || type2.IsNullable())
@@ -204,26 +203,26 @@ namespace CatDb.Data
                     members2.Add(type2.GetMember("Value")[0]);
                 }
                 else
-                    members2 = DataTypeUtils.GetPublicMembers(Value2.Type, membersOrder2).ToList();
+                    members2 = DataTypeUtils.GetPublicMembers(value2.Type, membersOrder2).ToList();
 
                 for (var i = 0; i < members1.Count; i++)
                     list.Add(BuildBody(Expression.PropertyOrField(data1Var, members1[i].Name), Expression.PropertyOrField(data2Var, members2[i].Name), membersOrder1, membersOrder2));
 
-                list.Add(Expression.Assign(Value1, data1Var));
+                list.Add(Expression.Assign(value1, data1Var));
 
                 if ((type1.IsStruct() || type2.IsStruct()) && !type2.IsNullable())
                 {
-                    list.Insert(0, Expression.Assign(data2Var, Value2));
-                    list.Add(Expression.Label(Expression.Label(Value1.Type), Value1));
+                    list.Insert(0, Expression.Assign(data2Var, value2));
+                    list.Add(Expression.Label(Expression.Label(value1.Type), value1));
                     return Expression.Block(type1, new[] { data1Var, data2Var }, list);
                 }
 
                 return Expression.Block(type1, new[] { data2Var },
-                    Expression.Assign(data2Var, Value2),
+                    Expression.Assign(data2Var, value2),
                     Expression.IfThenElse(Expression.NotEqual(data2Var, Expression.Constant(null)),
                         Expression.Block(new[] { data1Var }, list),
-                        Expression.Assign(Value1, Expression.Constant(null, type1))),
-                    Expression.Label(Expression.Label(type1), Value1)
+                        Expression.Assign(value1, Expression.Constant(null, type1))),
+                    Expression.Label(Expression.Label(type1), value1)
                     );
             }
 

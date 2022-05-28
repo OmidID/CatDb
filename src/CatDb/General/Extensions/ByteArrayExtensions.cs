@@ -5,15 +5,17 @@ namespace CatDb.General.Extensions
 {
     public static class ByteArrayExtensions
     {
-        private static readonly string[] hexValues = BitConverter.ToString(Enumerable.Range(0, 256).Select(x => (byte)x).ToArray()).Split('-');
+        private static readonly string[] HexValues = BitConverter.ToString(Enumerable.Range(0, 256).Select(x => (byte)x).ToArray()).Split('-');
 
         public static int GetHashCodeEx(this byte[] buffer)
         {
-            const int CONSTANT = 17;
+            const int constant = 17;
             var hashCode = 37;
 
-            var common = new CommonArray();
-            common.ByteArray = buffer;
+            var common = new CommonArray
+            {
+                ByteArray = buffer
+            };
             var array = common.Int32Array;
 
             var length = buffer.Length;
@@ -24,14 +26,14 @@ namespace CatDb.General.Extensions
 
             while (i < len)
             {
-                hashCode = CONSTANT * hashCode + array[i];
+                hashCode = constant * hashCode + array[i];
                 i++;
             }
 
             if (remainder > 0)
             {
                 var shift = sizeof(uint) - remainder;
-                hashCode = CONSTANT * hashCode + ((array[i] << shift) >> shift);
+                hashCode = constant * hashCode + ((array[i] << shift) >> shift);
             }
 
             return hashCode;
@@ -54,8 +56,10 @@ namespace CatDb.General.Extensions
 
             var hash = (uint)seed;
 
-            var common = new CommonArray();
-            common.ByteArray = buffer;
+            var common = new CommonArray
+            {
+                ByteArray = buffer
+            };
             var array = common.UInt32Array;
 
             var length = buffer.Length;
@@ -130,7 +134,7 @@ namespace CatDb.General.Extensions
             var sb = new StringBuilder(2 * buffer.Length);
 
             for (var i = 0; i < buffer.Length; i++)
-                sb.Append(hexValues[buffer[i]]);
+                sb.Append(HexValues[buffer[i]]);
 
             return sb.ToString();
         }

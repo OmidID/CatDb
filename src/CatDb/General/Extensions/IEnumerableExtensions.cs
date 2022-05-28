@@ -9,12 +9,12 @@
         ReturnByFunction
     }
 
-    public static class IEnumerableExtensions
+    public static class EnumerableExtensions
     {
         public static IEnumerable<T> Merge<T>(this IEnumerable<T> collection1, IEnumerable<T> collection2, IComparer<T> comparer, OnMergeConflict onConflict = OnMergeConflict.ReturnFirstAndSecond, Func<T, T, T> function = null)
         {
-            var enumerator1 = collection1.GetEnumerator();
-            var enumerator2 = collection2.GetEnumerator();
+            using var enumerator1 = collection1.GetEnumerator();
+            using var enumerator2 = collection2.GetEnumerator();
 
             var haveNext1 = enumerator1.MoveNext();
             var haveNext2 = enumerator2.MoveNext();
@@ -127,7 +127,7 @@
 
         public static bool IsOrdered<T>(this IEnumerable<T> collection, IComparer<T> comparer, bool strictMonotone = false)
         {
-            var enumerator = collection.GetEnumerator();
+            using var enumerator = collection.GetEnumerator();
             if (!enumerator.MoveNext())
                 return true;
 

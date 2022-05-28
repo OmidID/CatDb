@@ -5,14 +5,14 @@ namespace CatDb.Database.Operations
 {
     public abstract class RangeOperation : IOperation
     {
-        private readonly IData from;
-        private readonly IData to;
+        private readonly IData _from;
+        private readonly IData _to;
 
         protected RangeOperation(int action, IData from, IData to)
         {
             Code = action;
-            this.from = from;
-            this.to = to;
+            this._from = from;
+            this._to = to;
         }
 
         protected RangeOperation(int action)
@@ -24,9 +24,9 @@ namespace CatDb.Database.Operations
 
         public OperationScope Scope => OperationScope.Range;
 
-        public IData FromKey => from;
+        public IData FromKey => _from;
 
-        public IData ToKey => to;
+        public IData ToKey => _to;
     }
 
     public class DeleteRangeOperation : RangeOperation

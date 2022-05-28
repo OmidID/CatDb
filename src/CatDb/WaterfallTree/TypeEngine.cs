@@ -6,7 +6,7 @@ namespace CatDb.WaterfallTree
 {
     public class TypeEngine
     {
-        private static readonly ConcurrentDictionary<Type, TypeEngine> map = new ConcurrentDictionary<Type, TypeEngine>();
+        private static readonly ConcurrentDictionary<Type, TypeEngine> Map = new();
 
         public IComparer<IData> Comparer { get; set; }
         public IEqualityComparer<IData> EqualityComparer { get; set; }
@@ -19,9 +19,10 @@ namespace CatDb.WaterfallTree
 
         private static TypeEngine Create(Type type)
         {
-            var descriptor = new TypeEngine();
-
-            descriptor.Persist = new DataPersist(type, null, AllowNull.OnlyMembers);
+            var descriptor = new TypeEngine
+            {
+                Persist = new DataPersist(type, null, AllowNull.OnlyMembers)
+            };
 
             if (DataTypeUtils.IsAllPrimitive(type) || type == typeof(Guid))
             {
@@ -37,7 +38,7 @@ namespace CatDb.WaterfallTree
 
         public static TypeEngine Default(Type type)
         {
-            return map.GetOrAdd(type, Create(type));
+            return Map.GetOrAdd(type, Create(type));
         }
     }
 }

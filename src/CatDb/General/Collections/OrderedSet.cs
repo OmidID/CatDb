@@ -7,30 +7,30 @@ namespace CatDb.General.Collections
 {
     public class OrderedSet<TKey, TValue> : IOrderedSet<TKey, TValue>
     {
-        protected List<KeyValuePair<TKey, TValue>> list;
-        protected Dictionary<TKey, TValue> dictionary;
-        protected SortedSet<KeyValuePair<TKey, TValue>> set;
+        protected List<KeyValuePair<TKey, TValue>> List;
+        private Dictionary<TKey, TValue> _dictionary;
+        private SortedSet<KeyValuePair<TKey, TValue>> _set;
 
-        protected IComparer<TKey> comparer;
-        protected IEqualityComparer<TKey> equalityComparer;
-        protected KeyValuePairComparer<TKey, TValue> kvComparer;
+        private readonly IComparer<TKey> _comparer;
+        private readonly IEqualityComparer<TKey> _equalityComparer;
+        protected KeyValuePairComparer<TKey, TValue> KvComparer;
 
         protected OrderedSet(IComparer<TKey> comparer, IEqualityComparer<TKey> equalityComparer, List<KeyValuePair<TKey, TValue>> list)
         {
-            this.comparer = comparer;
-            this.equalityComparer = equalityComparer;
-            kvComparer = new KeyValuePairComparer<TKey, TValue>(comparer);
+            this._comparer = comparer;
+            this._equalityComparer = equalityComparer;
+            KvComparer = new KeyValuePairComparer<TKey, TValue>(comparer);
 
-            this.list = list;
+            this.List = list;
         }
 
         protected OrderedSet(IComparer<TKey> comparer, IEqualityComparer<TKey> equalityComparer, SortedSet<KeyValuePair<TKey, TValue>> set)
         {
-            this.comparer = comparer;
-            this.equalityComparer = equalityComparer;
-            kvComparer = new KeyValuePairComparer<TKey, TValue>(comparer);
+            this._comparer = comparer;
+            this._equalityComparer = equalityComparer;
+            KvComparer = new KeyValuePairComparer<TKey, TValue>(comparer);
 
-            this.set = set;
+            this._set = set;
         }
 
         protected OrderedSet(IComparer<TKey> comparer, IEqualityComparer<TKey> equalityComparer, int capacity)
@@ -45,25 +45,25 @@ namespace CatDb.General.Collections
 
         protected void TransformListToTree()
         {
-            set = new SortedSet<KeyValuePair<TKey, TValue>>(kvComparer);
-            set.ConstructFromSortedArray(list.GetArray(), 0, list.Count);
-            list = null;
+            _set = new SortedSet<KeyValuePair<TKey, TValue>>(KvComparer);
+            _set.ConstructFromSortedArray(List.GetArray(), 0, List.Count);
+            List = null;
         }
 
         protected void TransformDictionaryToTree()
         {
-            set = new SortedSet<KeyValuePair<TKey, TValue>>(dictionary.Select(s => new KeyValuePair<TKey, TValue>(s.Key, s.Value)), kvComparer);
-            dictionary = null;
+            _set = new SortedSet<KeyValuePair<TKey, TValue>>(_dictionary.Select(s => new KeyValuePair<TKey, TValue>(s.Key, s.Value)), KvComparer);
+            _dictionary = null;
         }
 
         protected void TransformListToDictionary()
         {
-            dictionary = new Dictionary<TKey, TValue>(list.Capacity, EqualityComparer);
+            _dictionary = new Dictionary<TKey, TValue>(List.Capacity, EqualityComparer);
 
-            foreach (var kv in list)
-                dictionary.Add(kv.Key, kv.Value);
+            foreach (var kv in List)
+                _dictionary.Add(kv.Key, kv.Value);
 
-            list = null;
+            List = null;
         }
 
         /// <summary>
@@ -71,20 +71,20 @@ namespace CatDb.General.Collections
         /// </summary>
         protected void Reset()
         {
-            list = new List<KeyValuePair<TKey, TValue>>();
-            dictionary = null;
-            set = null;
+            List = new List<KeyValuePair<TKey, TValue>>();
+            _dictionary = null;
+            _set = null;
         }
 
         private bool FindIndexes(KeyValuePair<TKey, TValue> from, bool hasFrom, KeyValuePair<TKey, TValue> to, bool hasTo, out int idxFrom, out int idxTo)
         {
             idxFrom = 0;
-            idxTo = list.Count - 1;
-            Debug.Assert(list.Count > 0);
+            idxTo = List.Count - 1;
+            Debug.Assert(List.Count > 0);
 
             if (hasFrom)
             {
-                var cmp = Comparer.Compare(from.Key, list[list.Count - 1].Key);
+                var cmp = Comparer.Compare(from.Key, List[List.Count - 1].Key);
                 if (cmp > 0)
                     return false;
 
@@ -97,7 +97,7 @@ namespace CatDb.General.Collections
 
             if (hasTo)
             {
-                var cmp = Comparer.Compare(to.Key, list[0].Key);
+                var cmp = Comparer.Compare(to.Key, List[0].Key);
                 if (cmp < 0)
                     return false;
 
@@ -108,41 +108,41 @@ namespace CatDb.General.Collections
                 }
             }
 
-            if (hasFrom && Comparer.Compare(from.Key, list[0].Key) > 0)
+            if (hasFrom && Comparer.Compare(from.Key, List[0].Key) > 0)
             {
-                idxFrom = list.BinarySearch(1, list.Count - 1, from, kvComparer);
+                idxFrom = List.BinarySearch(1, List.Count - 1, from, KvComparer);
                 if (idxFrom < 0)
                     idxFrom = ~idxFrom;
             }
 
-            if (hasTo && Comparer.Compare(to.Key, list[list.Count - 1].Key) < 0)
+            if (hasTo && Comparer.Compare(to.Key, List[List.Count - 1].Key) < 0)
             {
-                idxTo = list.BinarySearch(idxFrom, list.Count - idxFrom, to, kvComparer);
+                idxTo = List.BinarySearch(idxFrom, List.Count - idxFrom, to, KvComparer);
                 if (idxTo < 0)
                     idxTo = ~idxTo - 1;
             }
 
             Debug.Assert(0 <= idxFrom);
             Debug.Assert(idxFrom <= idxTo);
-            Debug.Assert(idxTo <= list.Count - 1);
+            Debug.Assert(idxTo <= List.Count - 1);
 
             return true;
         }
 
         public IOrderedSet<TKey, TValue> Split(int count)
         {
-            if (list != null)
+            if (List != null)
             {
-                var right = list.Split(count);
+                var right = List.Split(count);
 
                 return new OrderedSet<TKey, TValue>(Comparer, EqualityComparer, right);
             }
             else
             {
-                if (dictionary != null)
+                if (_dictionary != null)
                     TransformDictionaryToTree();
 
-                var right = set.Split(count);
+                var right = _set.Split(count);
 
                 return new OrderedSet<TKey, TValue>(Comparer, EqualityComparer, right);
             }
@@ -159,68 +159,68 @@ namespace CatDb.General.Collections
             if (Count == 0)
             {
                 foreach (var x in set) //set.Forward()
-                    list.Add(x);
+                    List.Add(x);
 
                 return;
             }
 
             //Debug.Assert(comparer.Compare(this.Last.Key, set.First.Key) < 0 || comparer.Compare(this.First.Key, set.Last.Key) > 0);
 
-            if (list != null)
+            if (List != null)
             {
-                var idx = kvComparer.Compare(set.Last, list[0]) < 0 ? 0 : list.Count;
-                list.InsertRange(idx, set);
+                var idx = KvComparer.Compare(set.Last, List[0]) < 0 ? 0 : List.Count;
+                List.InsertRange(idx, set);
             }
-            else if (dictionary != null)
+            else if (_dictionary != null)
             {
                 foreach (var kv in set.InternalEnumerate())
-                    dictionary.Add(kv.Key, kv.Value); //there should be no exceptions
+                    _dictionary.Add(kv.Key, kv.Value); //there should be no exceptions
             }
             else //if (set != null)
             {
                 foreach (var kv in set.InternalEnumerate())
-                    this.set.Add(kv);
+                    this._set.Add(kv);
             }
         }
 
         #region IOrderedSet<TKey,TValue> Members
 
-        public IComparer<TKey> Comparer => comparer;
+        public IComparer<TKey> Comparer => _comparer;
 
-        public IEqualityComparer<TKey> EqualityComparer => equalityComparer;
+        public IEqualityComparer<TKey> EqualityComparer => _equalityComparer;
 
         public void Add(TKey key, TValue value)
         {
             var kv = new KeyValuePair<TKey, TValue>(key, value);
 
-            if (set != null)
+            if (_set != null)
             {
-                set.Replace(kv);
+                _set.Replace(kv);
                 return;
             }
 
-            if (dictionary != null)
+            if (_dictionary != null)
             {
-                dictionary[kv.Key] = kv.Value;
+                _dictionary[kv.Key] = kv.Value;
                 return;
             }
 
-            if (list.Count == 0)
-                list.Add(kv);
+            if (List.Count == 0)
+                List.Add(kv);
             else
             {
-                var last = list[list.Count - 1];
-                var cmp = comparer.Compare(last.Key, kv.Key);
+                var last = List[List.Count - 1];
+                var cmp = _comparer.Compare(last.Key, kv.Key);
 
                 if (cmp < 0)
-                    list.Add(kv);
+                    List.Add(kv);
                 else if (cmp > 0)
                 {
                     TransformListToDictionary();
-                    dictionary[kv.Key] = kv.Value;
+                    _dictionary[kv.Key] = kv.Value;
                 }
                 else
-                    list[list.Count - 1] = kv;
+                    List[List.Count - 1] = kv;
             }
         }
 
@@ -232,40 +232,40 @@ namespace CatDb.General.Collections
         public void UnsafeAdd(TKey key, TValue value)
         {
             var kv = new KeyValuePair<TKey, TValue>(key, value);
-            if (set != null)
+            if (_set != null)
             {
-                set.Replace(kv);
+                _set.Replace(kv);
                 return;
             }
 
-            if (dictionary != null)
+            if (_dictionary != null)
             {
-                dictionary[kv.Key] = kv.Value;
+                _dictionary[kv.Key] = kv.Value;
                 return;
             }
 
-            list.Add(kv);
+            List.Add(kv);
         }
 
         public bool Remove(TKey key)
         {
             var template = new KeyValuePair<TKey, TValue>(key, default(TValue));
 
-            if (list != null)
+            if (List != null)
                 TransformListToDictionary();
 
-            if (dictionary != null)
+            if (_dictionary != null)
             {
-                var res = dictionary.Remove(key);
-                if (dictionary.Count == 0)
+                var res = _dictionary.Remove(key);
+                if (_dictionary.Count == 0)
                     Reset();
 
                 return res;
             }
             else
             {
-                var res = set.Remove(template);
-                if (set.Count == 0)
+                var res = _set.Remove(template);
+                if (_set.Count == 0)
                     Reset();
 
                 return res;
@@ -283,16 +283,16 @@ namespace CatDb.General.Collections
                 return true;
             }
 
-            if (list != null)
+            if (List != null)
                 TransformListToTree();
-            else if (dictionary != null)
+            else if (_dictionary != null)
                 TransformDictionaryToTree();
 
-            var fromKey = hasFrom ? new KeyValuePair<TKey, TValue>(from, default(TValue)) : set.Min;
-            var toKey = hasTo ? new KeyValuePair<TKey, TValue>(to, default(TValue)) : set.Max;
+            var fromKey = hasFrom ? new KeyValuePair<TKey, TValue>(from, default(TValue)) : _set.Min;
+            var toKey = hasTo ? new KeyValuePair<TKey, TValue>(to, default(TValue)) : _set.Max;
 
-            var res = set.Remove(fromKey, toKey);
-            if (set.Count == 0)
+            var res = _set.Remove(fromKey, toKey);
+            if (_set.Count == 0)
                 Reset();
 
             return res;
@@ -300,29 +300,27 @@ namespace CatDb.General.Collections
 
         public bool ContainsKey(TKey key)
         {
-            TValue value;
-            return TryGetValue(key, out value);
+            return TryGetValue(key, out _);
         }
 
         public bool TryGetValue(TKey key, out TValue value)
         {
             var template = new KeyValuePair<TKey, TValue>(key, default(TValue));
 
-            if (list != null)
+            if (List != null)
             {
-                var idx = list.BinarySearch(template, kvComparer);
+                var idx = List.BinarySearch(template, KvComparer);
                 if (idx >= 0)
                 {
-                    value = list[idx].Value;
+                    value = List[idx].Value;
                     return true;
                 }
             }
-            else if (dictionary != null)
-                return dictionary.TryGetValue(template.Key, out value);
+            else if (_dictionary != null)
+                return _dictionary.TryGetValue(template.Key, out value);
             else
             {
-                KeyValuePair<TKey, TValue> kv;
-                if (set.TryGetValue(template, out kv))
+                if (_set.TryGetValue(template, out var kv))
                 {
                     value = kv.Value;
                     return true;
@@ -337,8 +335,7 @@ namespace CatDb.General.Collections
         {
             get
             {
-                TValue value;
-                if (!TryGetValue(key, out value))
+                if (!TryGetValue(key, out var value))
                     throw new KeyNotFoundException("The key was not found.");
 
                 return value;
@@ -351,40 +348,40 @@ namespace CatDb.General.Collections
             Reset();
         }
 
-        public bool IsInternallyOrdered => dictionary == null;
+        public bool IsInternallyOrdered => _dictionary == null;
 
         public IEnumerable<KeyValuePair<TKey, TValue>> InternalEnumerate()
         {
-            if (list != null)
-                return list;
-            else if (dictionary != null)
-                return dictionary.Select(s => new KeyValuePair<TKey, TValue>(s.Key, s.Value));
+            if (List != null)
+                return List;
+            else if (_dictionary != null)
+                return _dictionary.Select(s => new KeyValuePair<TKey, TValue>(s.Key, s.Value));
             else //if (set != null)
-                return set;
+                return _set;
         }
 
         public void LoadFrom(KeyValuePair<TKey, TValue>[] array, int count, bool isOrdered)
         {
             if (isOrdered)
             {
-                list = array.CreateList(count);
-                dictionary = null;
-                set = null;
+                List = array.CreateList(count);
+                _dictionary = null;
+                _set = null;
             }
             else
             {
-                list = null;
-                dictionary = new Dictionary<TKey, TValue>(count, EqualityComparer);
-                set = null;
+                List = null;
+                _dictionary = new Dictionary<TKey, TValue>(count, EqualityComparer);
+                _set = null;
 
                 for (var i = 0; i < count; i++)
-                    dictionary.Add(array[i].Key, array[i].Value);
+                    _dictionary.Add(array[i].Key, array[i].Value);
             }
         }
 
         public IEnumerable<KeyValuePair<TKey, TValue>> Forward(TKey from, bool hasFrom, TKey to, bool hasTo)
         {
-            if (hasFrom && hasTo && comparer.Compare(from, to) > 0)
+            if (hasFrom && hasTo && _comparer.Compare(from, to) > 0)
                 throw new ArgumentException("from > to");
 
             if (Count == 0)
@@ -393,22 +390,20 @@ namespace CatDb.General.Collections
             var fromKey = new KeyValuePair<TKey, TValue>(from, default(TValue));
             var toKey = new KeyValuePair<TKey, TValue>(to, default(TValue));
 
-            if (list != null)
+            if (List != null)
             {
-                int idxFrom;
-                int idxTo;
-                if (!FindIndexes(fromKey, hasFrom, toKey, hasTo, out idxFrom, out idxTo))
+                if (!FindIndexes(fromKey, hasFrom, toKey, hasTo, out var idxFrom, out var idxTo))
                     yield break;
 
                 for (var i = idxFrom; i <= idxTo; i++)
-                    yield return list[i];
+                    yield return List[i];
             }
             else
             {
-                if (dictionary != null)
+                if (_dictionary != null)
                     TransformDictionaryToTree();
 
-                var enumerable = hasFrom || hasTo ? set.GetViewBetween(fromKey, toKey, hasFrom, hasTo) : set;
+                var enumerable = hasFrom || hasTo ? _set.GetViewBetween(fromKey, toKey, hasFrom, hasTo) : _set;
 
                 foreach (var x in enumerable)
                     yield return x;
@@ -417,7 +412,7 @@ namespace CatDb.General.Collections
 
         public IEnumerable<KeyValuePair<TKey, TValue>> Backward(TKey to, bool hasTo, TKey from, bool hasFrom)
         {
-            if (hasFrom && hasTo && comparer.Compare(from, to) > 0)
+            if (hasFrom && hasTo && _comparer.Compare(from, to) > 0)
                 throw new ArgumentException("from > to");
 
             if (Count == 0)
@@ -426,22 +421,20 @@ namespace CatDb.General.Collections
             var fromKey = new KeyValuePair<TKey, TValue>(from, default(TValue));
             var toKey = new KeyValuePair<TKey, TValue>(to, default(TValue));
 
-            if (list != null)
+            if (List != null)
             {
-                int idxFrom;
-                int idxTo;
-                if (!FindIndexes(fromKey, hasFrom, toKey, hasTo, out idxFrom, out idxTo))
+                if (!FindIndexes(fromKey, hasFrom, toKey, hasTo, out var idxFrom, out var idxTo))
                     yield break;
 
                 for (var i = idxTo; i >= idxFrom; i--)
-                    yield return list[i];
+                    yield return List[i];
             }
             else
             {
-                if (dictionary != null)
+                if (_dictionary != null)
                     TransformDictionaryToTree();
 
-                var enumerable = hasFrom || hasTo ? set.GetViewBetween(fromKey, toKey, hasFrom, hasTo) : set;
+                var enumerable = hasFrom || hasTo ? _set.GetViewBetween(fromKey, toKey, hasFrom, hasTo) : _set;
 
                 foreach (var x in enumerable.Reverse())
                     yield return x;
@@ -465,13 +458,13 @@ namespace CatDb.General.Collections
                 if (Count == 0)
                     throw new InvalidOperationException("The set is empty.");
 
-                if (list != null)
-                    return list[0];
+                if (List != null)
+                    return List[0];
 
-                if (dictionary != null)
+                if (_dictionary != null)
                     TransformDictionaryToTree();
 
-                return set.Min;
+                return _set.Min;
             }
         }
 
@@ -482,13 +475,13 @@ namespace CatDb.General.Collections
                 if (Count == 0)
                     throw new InvalidOperationException("The set is empty.");
 
-                if (list != null)
-                    return list[list.Count - 1];
+                if (List != null)
+                    return List[List.Count - 1];
 
-                if (dictionary != null)
+                if (_dictionary != null)
                     TransformDictionaryToTree();
 
-                return set.Max;
+                return _set.Max;
             }
         }
 
@@ -496,13 +489,13 @@ namespace CatDb.General.Collections
         {
             get
             {
-                if (list != null)
-                    return list.Count;
+                if (List != null)
+                    return List.Count;
 
-                if (dictionary != null)
-                    return dictionary.Count;
+                if (_dictionary != null)
+                    return _dictionary.Count;
 
-                return set.Count;
+                return _set.Count;
             }
         }
 

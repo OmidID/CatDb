@@ -10,16 +10,16 @@ namespace CatDb.Remote
 {
     public class StorageEngineClient : IStorageEngine
     {
-        private int cacheSize;
-        private ConcurrentDictionary<string, XTableRemote> indexes = new ConcurrentDictionary<string, XTableRemote>();
+        private int _cacheSize;
+        private readonly ConcurrentDictionary<string, XTableRemote> _indexes = new();
 
-        public static readonly Descriptor StorageEngineDescriptor = new Descriptor(-1, "", DataType.Boolean, DataType.Boolean);
-        public readonly ClientConnection ClientConnection;
+        private static readonly Descriptor StorageEngineDescriptor = new(-1, "", DataType.Boolean, DataType.Boolean);
+        private readonly ClientConnection _clientConnection;
 
         public StorageEngineClient(string machineName = "localhost", int port = 7182)
         {
-            ClientConnection = new ClientConnection(machineName, port);
-            ClientConnection.Start();
+            _clientConnection = new ClientConnection(machineName, port);
+            _clientConnection.Start();
 
             Heap = new RemoteHeap(this);
         }
@@ -38,10 +38,10 @@ namespace CatDb.Remote
             var cmd = new StorageEngineOpenXIndexCommand(name, keyType, recordType);
             InternalExecute(cmd);
 
-            var descriptor = new Descriptor(cmd.ID, name, keyType, recordType);
+            var descriptor = new Descriptor(cmd.Id, name, keyType, recordType);
 
             var index = new XTableRemote(this, descriptor);
-            indexes.TryAdd(name, index);
+            _indexes.TryAdd(name, index);
 
             return index;
         }
@@ -51,8 +51,8 @@ namespace CatDb.Remote
             var keyDataType = DataTypeUtils.BuildDataType(typeof(TKey));
             var recordDataType = DataTypeUtils.BuildDataType(typeof(TRecord));
 
-            var keyTransformer = new DataTransformer<TKey>(typeof(TKey));
-            var recordTransformer = new DataTransformer<TRecord>(typeof(TRecord));
+            new DataTransformer<TKey>(typeof(TKey));
+            new DataTransformer<TRecord>(typeof(TRecord));
 
             return OpenXTablePortable<TKey, TRecord>(name, keyDataType, recordDataType, null, null);
         }
@@ -72,7 +72,7 @@ namespace CatDb.Remote
             InternalExecute(new StorageEngineRenameCommand(name, newName));
         }
 
-        public IDescriptor this[string name] => indexes[name].Descriptor;
+        public IDescriptor this[string name] => _indexes[name].Descriptor;
 
         public void Delete(string name)
         {
@@ -101,7 +101,7 @@ namespace CatDb.Remote
 
         public IDescriptor Find(long id)
         {
-            var cmd = new StorageEngineFindByIDCommand(null, id);
+            var cmd = new StorageEngineFindByIdCommand(null, id);
             InternalExecute(cmd);
 
             return cmd.Descriptor;
@@ -122,7 +122,7 @@ namespace CatDb.Remote
 
         public void Commit()
         {
-            foreach (var index in indexes.Values)
+            foreach (var index in _indexes.Values)
                 index.Flush();
 
             InternalExecute(new StorageEngineCommitCommand());
@@ -143,7 +143,7 @@ namespace CatDb.Remote
             message.Serialize(writer);
 
             var packet = new Packet(ms);
-            ClientConnection.Send(packet);
+            _clientConnection.Send(packet);
 
             packet.Wait();
 
@@ -155,8 +155,7 @@ namespace CatDb.Remote
 
         private void InternalExecute(ICommand command)
         {
-            var cmds = new CommandCollection(1);
-            cmds.Add(command);
+            var cmds = new CommandCollection(1) { command };
 
             var resultCommand = Execute(StorageEngineDescriptor, cmds)[0];
             SetResult(command, resultCommand);
@@ -171,13 +170,13 @@ namespace CatDb.Remote
 
                 case CommandCode.STORAGE_ENGINE_OPEN_XTABLE:
                     {
-                        ((StorageEngineOpenXIndexCommand)command).ID = ((StorageEngineOpenXIndexCommand)resultCommand).ID;
+                        ((StorageEngineOpenXIndexCommand)command).Id = ((StorageEngineOpenXIndexCommand)resultCommand).Id;
                         ((StorageEngineOpenXIndexCommand)command).CreateTime = ((StorageEngineOpenXIndexCommand)resultCommand).CreateTime;
                     }
                     break;
 
                 case CommandCode.STORAGE_ENGINE_OPEN_XFILE:
-                    ((StorageEngineOpenXFileCommand)command).ID = ((StorageEngineOpenXFileCommand)resultCommand).ID;
+                    ((StorageEngineOpenXFileCommand)command).Id = ((StorageEngineOpenXFileCommand)resultCommand).Id;
                     break;
 
                 case CommandCode.STORAGE_ENGINE_EXISTS:
@@ -185,7 +184,7 @@ namespace CatDb.Remote
                     break;
 
                 case CommandCode.STORAGE_ENGINE_FIND_BY_ID:
-                    ((StorageEngineFindByIDCommand)command).Descriptor = ((StorageEngineFindByIDCommand)resultCommand).Descriptor;
+                    ((StorageEngineFindByIdCommand)command).Descriptor = ((StorageEngineFindByIdCommand)resultCommand).Descriptor;
                     break;
 
                 case CommandCode.STORAGE_ENGINE_FIND_BY_NAME:
@@ -219,18 +218,18 @@ namespace CatDb.Remote
 
         #region IDisposable Members
 
-        private volatile bool disposed = false;
+        private volatile bool _disposed = false;
 
         private void Dispose(bool disposing)
         {
-            if (!disposed)
+            if (!_disposed)
             {
                 if (disposing)
                 {
-                    ClientConnection.Stop();
+                    _clientConnection.Stop();
                 }
 
-                disposed = true;
+                _disposed = true;
             }
         }
 
@@ -259,8 +258,7 @@ namespace CatDb.Remote
             {
                 var command = new StorageEngineGetCacheSizeCommand(0);
 
-                var collection = new CommandCollection(1);
-                collection.Add(command);
+                var collection = new CommandCollection(1) { command };
 
                 var resultComamnd = (StorageEngineGetCacheSizeCommand)Execute(StorageEngineDescriptor, collection)[0];
 
@@ -268,11 +266,10 @@ namespace CatDb.Remote
             }
             set
             {
-                cacheSize = value;
-                var command = new StorageEngineSetCacheSizeCommand(cacheSize);
+                _cacheSize = value;
+                var command = new StorageEngineSetCacheSizeCommand(_cacheSize);
 
-                var collection = new CommandCollection(1);
-                collection.Add(command);
+                var collection = new CommandCollection(1) { command };
 
                 Execute(StorageEngineDescriptor, collection);
             }
@@ -292,8 +289,7 @@ namespace CatDb.Remote
 
             private void InternalExecute(ICommand command)
             {
-                var cmds = new CommandCollection(1);
-                cmds.Add(command);
+                var cmds = new CommandCollection(1) { command };
 
                 var resultCommand = Engine.Execute(StorageEngineDescriptor, cmds)[0];
                 SetResult(command, resultCommand);

@@ -9,21 +9,21 @@ namespace CatDb.WaterfallTree
     {
         private sealed class LeafNode : Node
         {
-            public const byte VERSION = 40;
+            private const byte VERSION = 40;
 
             /// <summary>
             /// Total number of records in the node
             /// </summary>
             public int RecordCount { get; private set; }
 
-            public readonly Dictionary<Locator, IOrderedSet<IData, IData>> Container;
+            private readonly Dictionary<Locator, IOrderedSet<IData, IData>> _container;
 
             public LeafNode(Branch branch, bool isModified)
                 : base(branch)
             {
                 Debug.Assert(branch.NodeType == NodeType.Leaf);
 
-                Container = new Dictionary<Locator, IOrderedSet<IData, IData>>();
+                _container = new Dictionary<Locator, IOrderedSet<IData, IData>>();
                 IsModified = isModified;
             }
 
@@ -31,8 +31,7 @@ namespace CatDb.WaterfallTree
             {
                 var locator = operations.Locator;
 
-                IOrderedSet<IData, IData> data;
-                if (Container.TryGetValue(locator, out data))
+                if (_container.TryGetValue(locator, out var data))
                 {
                     RecordCount -= data.Count;
 
@@ -42,7 +41,7 @@ namespace CatDb.WaterfallTree
                     RecordCount += data.Count;
 
                     if (data.Count == 0)
-                        Container.Remove(locator);
+                        _container.Remove(locator);
                 }
                 else
                 {
@@ -54,26 +53,26 @@ namespace CatDb.WaterfallTree
                     RecordCount += data.Count;
 
                     if (data.Count > 0)
-                        Container.Add(locator, data);
+                        _container.Add(locator, data);
                 }
             }
 
             public override Node Split()
             {
-                var HALF_RECORD_COUNT = RecordCount / 2;
+                var halfRecordCount = RecordCount / 2;
 
                 var rightBranch = new Branch(Branch.Tree, NodeType.Leaf);
                 var rightNode = ((LeafNode)rightBranch.Node);
-                var rightContainer = rightNode.Container;
+                var rightContainer = rightNode._container;
 
                 var leftRecordCount = 0;
 
                 var specialCase = new KeyValuePair<Locator, IOrderedSet<IData, IData>>(default(Locator), null);
 
-                if (Container.Count == 1)
+                if (_container.Count == 1)
                 {
-                    var kv = Container.First();
-                    var data = kv.Value.Split(HALF_RECORD_COUNT);
+                    var kv = _container.First();
+                    var data = kv.Value.Split(halfRecordCount);
 
                     Debug.Assert(data.Count > 0);
                     rightContainer.Add(kv.Key, data);
@@ -81,7 +80,7 @@ namespace CatDb.WaterfallTree
                 }
                 else //if (Container.Count > 1)
                 {
-                    var enumerator = Container.OrderBy(x => x.Key).GetEnumerator();
+                    using var enumerator = _container.OrderBy(x => x.Key).GetEnumerator();
 
                     var emptyContainers = new List<Locator>();
 
@@ -96,12 +95,12 @@ namespace CatDb.WaterfallTree
                         }
 
                         leftRecordCount += kv.Value.Count;
-                        if (leftRecordCount < HALF_RECORD_COUNT)
+                        if (leftRecordCount < halfRecordCount)
                             continue;
 
-                        if (leftRecordCount > HALF_RECORD_COUNT)
+                        if (leftRecordCount > halfRecordCount)
                         {
-                            var data = kv.Value.Split(leftRecordCount - HALF_RECORD_COUNT);
+                            var data = kv.Value.Split(leftRecordCount - halfRecordCount);
                             if (data.Count > 0)
                             {
                                 specialCase = new KeyValuePair<Locator, IOrderedSet<IData, IData>>(kv.Key, data);
@@ -126,10 +125,10 @@ namespace CatDb.WaterfallTree
                     }
 
                     foreach (var kv in rightContainer)
-                        Container.Remove(kv.Key);
+                        _container.Remove(kv.Key);
 
                     foreach (var key in emptyContainers)
-                        Container.Remove(key);
+                        _container.Remove(key);
 
                     if (specialCase.Value != null) //have special case?
                         rightContainer[specialCase.Key] = specialCase.Value;
@@ -137,7 +136,7 @@ namespace CatDb.WaterfallTree
 
                 rightNode.RecordCount = RecordCount - leftRecordCount;
                 RecordCount = leftRecordCount;
-                rightNode.TouchID = TouchID;
+                rightNode.TouchId = TouchId;
                 IsModified = true;
 
                 return rightNode;
@@ -145,11 +144,10 @@ namespace CatDb.WaterfallTree
 
             public override void Merge(Node node)
             {
-                foreach (var kv in ((LeafNode)node).Container)
+                foreach (var kv in ((LeafNode)node)._container)
                 {
-                    IOrderedSet<IData, IData> data;
-                    if (!Container.TryGetValue(kv.Key, out data))
-                        Container[kv.Key] = data = kv.Value;
+                    if (!_container.TryGetValue(kv.Key, out var data))
+                        _container[kv.Key] = data = kv.Value;
                     else
                     {
                         RecordCount -= data.Count;
@@ -159,13 +157,13 @@ namespace CatDb.WaterfallTree
                     RecordCount += data.Count;
                 }
 
-                if (TouchID < node.TouchID)
-                    TouchID = node.TouchID;
+                if (TouchId < node.TouchId)
+                    TouchId = node.TouchId;
 
                 IsModified = true;
             }
 
-            public override bool IsOverflow => RecordCount > Branch.Tree.LEAF_NODE_MAX_RECORDS;
+            public override bool IsOverflow => RecordCount > Branch.Tree._leafNodeMaxRecords;
 
             public override bool IsUnderflow
             {
@@ -174,7 +172,7 @@ namespace CatDb.WaterfallTree
                     if (IsRoot)
                         return false;
 
-                    return RecordCount < Branch.Tree.LEAF_NODE_MIN_RECORDS;
+                    return RecordCount < Branch.Tree._leafNodeMinRecords;
                 }
             }
 
@@ -182,7 +180,7 @@ namespace CatDb.WaterfallTree
             {
                 get
                 {
-                    var kv = (Container.Count == 1) ? Container.First() : Container.OrderBy(x => x.Key).First();
+                    var kv = (_container.Count == 1) ? _container.First() : _container.OrderBy(x => x.Key).First();
 
                     return new FullKey(kv.Key, kv.Value.First.Key);
                 }
@@ -195,8 +193,8 @@ namespace CatDb.WaterfallTree
 
                 CountCompression.Serialize(writer, checked((ulong)Branch.NodeHandle));
 
-                CountCompression.Serialize(writer, checked((ulong)Container.Count));
-                foreach (var kv in Container)
+                CountCompression.Serialize(writer, checked((ulong)_container.Count));
+                foreach (var kv in _container)
                 {
                     Branch.Tree.SerializeLocator(writer, kv.Key);
                     kv.Key.OrderedSetPersist.Write(writer, kv.Value);
@@ -220,7 +218,7 @@ namespace CatDb.WaterfallTree
                 {
                     var path = Branch.Tree.DeserializeLocator(reader);
                     var data = path.OrderedSetPersist.Read(reader);
-                    Container[path] = data;
+                    _container[path] = data;
 
                     RecordCount += data.Count;
                 }
@@ -231,11 +229,11 @@ namespace CatDb.WaterfallTree
             public IOrderedSet<IData, IData> FindData(Locator locator, Direction direction, ref FullKey nearFullKey, ref bool hasNearFullKey)
             {
                 IOrderedSet<IData, IData> data = null;
-                Container.TryGetValue(locator, out data);
+                _container.TryGetValue(locator, out data);
                 if (direction == Direction.None)
                     return data;
 
-                if (Container.Count == 1 && data != null)
+                if (_container.Count == 1 && data != null)
                     return data;
 
                 IOrderedSet<IData, IData> nearData = null;
@@ -244,7 +242,7 @@ namespace CatDb.WaterfallTree
                     var havePrev = false;
                     var prev = default(Locator);
 
-                    foreach (var kv in Container)
+                    foreach (var kv in _container)
                     {
                         if (kv.Key.CompareTo(locator) < 0)
                         {
@@ -268,7 +266,7 @@ namespace CatDb.WaterfallTree
                     var haveNext = false;
                     var next = default(Locator);
 
-                    foreach (var kv in Container)
+                    foreach (var kv in _container)
                     {
                         if (kv.Key.CompareTo(locator) > 0)
                         {

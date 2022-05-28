@@ -8,7 +8,7 @@ namespace CatDb.General.Extensions
 
     public class DecimalHelper
     {
-        public static readonly DecimalHelper Instance = new DecimalHelper();
+        public static readonly DecimalHelper Instance = new();
 
         public readonly DecimalGetDigitsDelegate GetDigits;
 

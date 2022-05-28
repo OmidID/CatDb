@@ -4,7 +4,7 @@ namespace CatDb.General.Persist
 {
     public class StringIndexerPersist : IIndexerPersist<String>
     {
-        public const byte VERSION = 40;
+        private const byte VERSION = 40;
 
         private const int NULL_ID = -1;
         private const double PERCENT = 38.2;
@@ -13,10 +13,10 @@ namespace CatDb.General.Persist
         {
             writer.Write(VERSION);
             
-            var MAP_CAPACITY = (int)((PERCENT / 100) * count);
+            var mapCapacity = (int)((PERCENT / 100) * count);
             var map = new Dictionary<string, int>(/*MAP_CAPACITY*/); //optimistic variant
 
-            var ID = 0;
+            var id = 0;
             var indexes = new int[count];
             var mode = PersistMode.Dictionary;
 
@@ -29,22 +29,21 @@ namespace CatDb.General.Persist
                     continue;
                 }
 
-                int id;
-                if (map.TryGetValue(value, out id))
+                if (map.TryGetValue(value, out var mapId))
                 {
-                    indexes[i] = id;
+                    indexes[i] = mapId;
                     continue;
                 }
 
-                if (map.Count == MAP_CAPACITY)
+                if (map.Count == mapCapacity)
                 {
                     mode = PersistMode.Raw;
                     break;
                 }
 
-                map.Add(value, ID);
-                indexes[i] = ID;
-                ID++;
+                map.Add(value, id);
+                indexes[i] = id;
+                id++;
             }
 
             writer.Write((byte)mode);

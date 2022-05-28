@@ -121,8 +121,8 @@ namespace CatDb.Data
 
         #endregion
 
-        public static CompareOption Ascending => new CompareOption(SortOrder.Ascending);
+        public static CompareOption Ascending => new(SortOrder.Ascending);
 
-        public static CompareOption Descending => new CompareOption(SortOrder.Descending);
+        public static CompareOption Descending => new(SortOrder.Descending);
     }
 }

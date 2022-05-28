@@ -4,7 +4,7 @@ namespace CatDb.General.Persist
 {
     public class BooleanIndexerPersist : IIndexerPersist<Boolean>
     {
-        public const byte VERSION = 40;
+        private const byte VERSION = 40;
 
         public void Store(BinaryWriter writer, Func<int, bool> values, int count)
         {

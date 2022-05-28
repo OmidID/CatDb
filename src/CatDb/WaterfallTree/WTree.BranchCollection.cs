@@ -9,7 +9,7 @@ namespace CatDb.WaterfallTree
         [DebuggerDisplay("Count = {Count}")]
         private class BranchCollection : List<KeyValuePair<FullKey, Branch>>
         {
-            public static readonly KeyValuePairComparer<FullKey, Branch> Comparer = new KeyValuePairComparer<FullKey, Branch>(Comparer<FullKey>.Default);
+            private static readonly KeyValuePairComparer<FullKey, Branch> Comparer = new(Comparer<FullKey>.Default);
 
             public BranchCollection()
             {
@@ -100,11 +100,13 @@ namespace CatDb.WaterfallTree
                     var fullKey = new FullKey(locator, key);
 
                     //read branch info
-                    var nodeID = reader.ReadInt64();
+                    var nodeId = reader.ReadInt64();
                     var nodeState = (NodeState)reader.ReadInt32();
 
-                    var branch = new Branch(tree, nodeType, nodeID);
-                    branch.NodeState = nodeState;
+                    var branch = new Branch(tree, nodeType, nodeId)
+                    {
+                        NodeState = nodeState
+                    };
 
                     branch.Cache.Load(tree, reader);
 

@@ -10,8 +10,8 @@
         public const int SIZE = 4 * 1024;
         public const int MAX_TAG_DATA = 256;
 
-        private byte[] tag;
-        public int Version;
+        private byte[] _tag;
+        private int _version;
         public bool UseCompression;
 
         /// <summary>
@@ -28,7 +28,7 @@
                 var writer = new BinaryWriter(ms);
                 writer.Write(TITLE);
 
-                writer.Write(Version);
+                writer.Write(_version);
                 writer.Write(UseCompression);
 
                 //last flush location
@@ -36,7 +36,7 @@
 
                 //tag
                 if (Tag == null)
-                    writer.Write((int)-1);
+                    writer.Write(-1);
                 else
                 {
                     writer.Write(Tag.Length);
@@ -58,37 +58,35 @@
             if (stream.Read(buffer, 0, SIZE) != SIZE)
                 throw new Exception($"Invalid {TITLE} header.");
 
-            using (var ms = new MemoryStream(buffer))
-            {
-                var reader = new BinaryReader(ms);
+            using var ms = new MemoryStream(buffer);
+            var reader = new BinaryReader(ms);
 
-                var title = reader.ReadString();
-                if (title != TITLE)
-                    throw new Exception($"Invalid {TITLE} header.");
+            var title = reader.ReadString();
+            if (title != TITLE)
+                throw new Exception($"Invalid {TITLE} header.");
 
-                header.Version = reader.ReadInt32();
-                header.UseCompression = reader.ReadBoolean();
+            header._version = reader.ReadInt32();
+            header.UseCompression = reader.ReadBoolean();
 
-                //last flush location
-                header.SystemData = Ptr.Deserialize(reader);
+            //last flush location
+            header.SystemData = Ptr.Deserialize(reader);
 
-                //tag
-                var tagLength = reader.ReadInt32();
-                header.Tag = tagLength >= 0 ? reader.ReadBytes(tagLength) : null;
-            }
+            //tag
+            var tagLength = reader.ReadInt32();
+            header.Tag = tagLength >= 0 ? reader.ReadBytes(tagLength) : null;
 
             return header;
         }
 
         public byte[] Tag
         {
-            get => tag;
+            get => _tag;
             set
             {
-                if (value != null && value.Length > MAX_TAG_DATA)
+                if (value is { Length: > MAX_TAG_DATA })
                     throw new ArgumentException("Tag");
 
-                tag = value;
+                _tag = value;
             }
         }
     }

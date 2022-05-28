@@ -39,93 +39,94 @@ namespace CatDb.Data
 
     public sealed class DataType : IEquatable<DataType>, IEnumerable<DataType>
     {
-        private static readonly Type[] primitiveTypes;
-        private static readonly Dictionary<Type, DataType> primitiveMap;
+        private static readonly Type[] PrimitiveTypes;
+        private static readonly Dictionary<Type, DataType> PrimitiveMap;
 
-        public static readonly DataType Boolean = new DataType(Code.Boolean, null);
-        public static readonly DataType Char = new DataType(Code.Char, null);
-        public static readonly DataType SByte = new DataType(Code.SByte, null);
-        public static readonly DataType Byte = new DataType(Code.Byte, null);
-        public static readonly DataType Int16 = new DataType(Code.Int16, null);
-        public static readonly DataType UInt16 = new DataType(Code.UInt16, null);
-        public static readonly DataType Int32 = new DataType(Code.Int32, null);
-        public static readonly DataType UInt32 = new DataType(Code.UInt32, null);
-        public static readonly DataType Int64 = new DataType(Code.Int64, null);
-        public static readonly DataType UInt64 = new DataType(Code.UInt64, null);
-        public static readonly DataType Single = new DataType(Code.Single, null);
-        public static readonly DataType Double = new DataType(Code.Double, null);
-        public static readonly DataType Decimal = new DataType(Code.Decimal, null);
-        public static readonly DataType DateTime = new DataType(Code.DateTime, null);
-        public static readonly DataType TimeSpan = new DataType(Code.TimeSpan, null);
-        public static readonly DataType String = new DataType(Code.String, null);
-        public static readonly DataType ByteArray = new DataType(Code.ByteArray, null);
+        public static readonly DataType Boolean = new(Code.Boolean, null);
+        public static readonly DataType Char = new(Code.Char, null);
+        public static readonly DataType SByte = new(Code.SByte, null);
+        public static readonly DataType Byte = new(Code.Byte, null);
+        public static readonly DataType Int16 = new(Code.Int16, null);
+        public static readonly DataType UInt16 = new(Code.UInt16, null);
+        public static readonly DataType Int32 = new(Code.Int32, null);
+        public static readonly DataType UInt32 = new(Code.UInt32, null);
+        public static readonly DataType Int64 = new(Code.Int64, null);
+        public static readonly DataType UInt64 = new(Code.UInt64, null);
+        public static readonly DataType Single = new(Code.Single, null);
+        public static readonly DataType Double = new(Code.Double, null);
+        public static readonly DataType Decimal = new(Code.Decimal, null);
+        public static readonly DataType DateTime = new(Code.DateTime, null);
+        public static readonly DataType TimeSpan = new(Code.TimeSpan, null);
+        public static readonly DataType String = new(Code.String, null);
+        public static readonly DataType ByteArray = new(Code.ByteArray, null);
 
-        private int? cachedHashCode;
-        private string cachedToString;
-        private byte[] cachedSerialize;
+        private int? _cachedHashCode;
+        private string _cachedToString;
+        private byte[] _cachedSerialize;
 
-        private readonly Code code;
-        private readonly DataType[] types;
+        private readonly Code _code;
+        private readonly DataType[] _types;
 
         static DataType()
         {
-            primitiveTypes = new Type[(int)Code.ByteArray + 1];
+            PrimitiveTypes = new Type[(int)Code.ByteArray + 1];
 
-            primitiveTypes[(int)Code.Boolean] = typeof(Boolean);
-            primitiveTypes[(int)Code.Char] = typeof(Char);
-            primitiveTypes[(int)Code.SByte] = typeof(SByte);
-            primitiveTypes[(int)Code.Byte] = typeof(Byte);
-            primitiveTypes[(int)Code.Int16] = typeof(Int16);
-            primitiveTypes[(int)Code.Int32] = typeof(Int32);
-            primitiveTypes[(int)Code.UInt32] = typeof(UInt32);
-            primitiveTypes[(int)Code.UInt16] = typeof(UInt16);
-            primitiveTypes[(int)Code.Int64] = typeof(Int64);
-            primitiveTypes[(int)Code.UInt64] = typeof(UInt64);
-            primitiveTypes[(int)Code.Single] = typeof(Single);
-            primitiveTypes[(int)Code.Double] = typeof(Double);
-            primitiveTypes[(int)Code.Decimal] = typeof(Decimal);
-            primitiveTypes[(int)Code.DateTime] = typeof(DateTime);
-            primitiveTypes[(int)Code.TimeSpan] = typeof(TimeSpan);
-            primitiveTypes[(int)Code.String] = typeof(String);
-            primitiveTypes[(int)Code.ByteArray] = typeof(byte[]);
+            PrimitiveTypes[(int)Code.Boolean] = typeof(Boolean);
+            PrimitiveTypes[(int)Code.Char] = typeof(Char);
+            PrimitiveTypes[(int)Code.SByte] = typeof(SByte);
+            PrimitiveTypes[(int)Code.Byte] = typeof(Byte);
+            PrimitiveTypes[(int)Code.Int16] = typeof(Int16);
+            PrimitiveTypes[(int)Code.Int32] = typeof(Int32);
+            PrimitiveTypes[(int)Code.UInt32] = typeof(UInt32);
+            PrimitiveTypes[(int)Code.UInt16] = typeof(UInt16);
+            PrimitiveTypes[(int)Code.Int64] = typeof(Int64);
+            PrimitiveTypes[(int)Code.UInt64] = typeof(UInt64);
+            PrimitiveTypes[(int)Code.Single] = typeof(Single);
+            PrimitiveTypes[(int)Code.Double] = typeof(Double);
+            PrimitiveTypes[(int)Code.Decimal] = typeof(Decimal);
+            PrimitiveTypes[(int)Code.DateTime] = typeof(DateTime);
+            PrimitiveTypes[(int)Code.TimeSpan] = typeof(TimeSpan);
+            PrimitiveTypes[(int)Code.String] = typeof(String);
+            PrimitiveTypes[(int)Code.ByteArray] = typeof(byte[]);
 
-            primitiveMap = new Dictionary<Type, DataType>();
-
-            primitiveMap[typeof(Boolean)] = Boolean;
-            primitiveMap[typeof(Char)] = Char;
-            primitiveMap[typeof(SByte)] = SByte;
-            primitiveMap[typeof(Byte)] = Byte;
-            primitiveMap[typeof(Int16)] = Int16;
-            primitiveMap[typeof(Int32)] = Int32;
-            primitiveMap[typeof(UInt32)] = UInt32;
-            primitiveMap[typeof(UInt16)] = UInt16;
-            primitiveMap[typeof(Int64)] = Int64;
-            primitiveMap[typeof(UInt64)] = UInt64;
-            primitiveMap[typeof(Single)] = Single;
-            primitiveMap[typeof(Double)] = Double;
-            primitiveMap[typeof(Decimal)] = Decimal;
-            primitiveMap[typeof(DateTime)] = DateTime;
-            primitiveMap[typeof(TimeSpan)] = TimeSpan;
-            primitiveMap[typeof(String)] = String;
-            primitiveMap[typeof(byte[])] = ByteArray;
+            PrimitiveMap = new Dictionary<Type, DataType>
+            {
+                [typeof(Boolean)] = Boolean,
+                [typeof(Char)] = Char,
+                [typeof(SByte)] = SByte,
+                [typeof(Byte)] = Byte,
+                [typeof(Int16)] = Int16,
+                [typeof(Int32)] = Int32,
+                [typeof(UInt32)] = UInt32,
+                [typeof(UInt16)] = UInt16,
+                [typeof(Int64)] = Int64,
+                [typeof(UInt64)] = UInt64,
+                [typeof(Single)] = Single,
+                [typeof(Double)] = Double,
+                [typeof(Decimal)] = Decimal,
+                [typeof(DateTime)] = DateTime,
+                [typeof(TimeSpan)] = TimeSpan,
+                [typeof(String)] = String,
+                [typeof(byte[])] = ByteArray
+            };
         }
 
         private DataType(Code code, params DataType[] types)
         {
-            this.code = code;
-            this.types = types;
+            this._code = code;
+            this._types = types;
         }
 
         private int InternalGetHashCode()
         {
             if (IsPrimitive)
-                return (int)code;
+                return (int)_code;
 
             var hashcode = 37;
-            hashcode = 17 * hashcode + (int)code;
+            hashcode = 17 * hashcode + (int)_code;
 
-            for (var i = 0; i < types.Length; i++)
-                hashcode = 17 * hashcode + types[i].InternalGetHashCode();
+            for (var i = 0; i < _types.Length; i++)
+                hashcode = 17 * hashcode + _types[i].InternalGetHashCode();
 
             return hashcode;
         }
@@ -133,36 +134,36 @@ namespace CatDb.Data
         private string InternalToString()
         {
             if (IsPrimitive)
-                return code.ToString();
+                return _code.ToString();
 
-            var s = System.String.Join(", ", types.Select(x => x.InternalToString()));
+            var s = System.String.Join(", ", _types.Select(x => x.InternalToString()));
 
             if (IsSlots)
                 return $"({s})";
             else
-                return $"{code}<{s}>";
+                return $"{_code}<{s}>";
         }
 
         private void InternalSerialize(BinaryWriter writer)
         {
-            writer.Write((byte)code);
+            writer.Write((byte)_code);
             if (IsPrimitive)
                 return;
 
-            writer.Write(checked((byte)types.Length));
-            for (var i = 0; i < types.Length; i++)
-                types[i].InternalSerialize(writer);
+            writer.Write(checked((byte)_types.Length));
+            for (var i = 0; i < _types.Length; i++)
+                _types[i].InternalSerialize(writer);
         }
 
-        public bool IsPrimitive => code < Code.Slots;
+        public bool IsPrimitive => _code < Code.Slots;
 
-        public bool IsSlots => code == Code.Slots;
+        public bool IsSlots => _code == Code.Slots;
 
-        public bool IsArray => code == Code.Array;
+        public bool IsArray => _code == Code.Array;
 
-        public bool IsList => code == Code.List;
+        public bool IsList => _code == Code.List;
 
-        public bool IsDictionary => code == Code.Dictionary;
+        public bool IsDictionary => _code == Code.Dictionary;
 
         public bool AreAllTypesPrimitive
         {
@@ -171,7 +172,7 @@ namespace CatDb.Data
                 if (IsPrimitive)
                     throw new InvalidOperationException($"The type {this} is primitive");
 
-                return types.All(x => x.IsPrimitive);
+                return _types.All(x => x.IsPrimitive);
             }
         }
 
@@ -182,7 +183,7 @@ namespace CatDb.Data
                 if (IsPrimitive)
                     throw new InvalidOperationException($"The type {this} is primitive");
 
-                return types[index];
+                return _types[index];
             }
         }
 
@@ -193,7 +194,7 @@ namespace CatDb.Data
                 if (IsPrimitive)
                     throw new InvalidOperationException($"The type {this} is primitive");
 
-                return types.Length;
+                return _types.Length;
             }
         }
 
@@ -204,7 +205,7 @@ namespace CatDb.Data
                 if (!IsPrimitive)
                     throw new InvalidOperationException($"The type {this} is not primitive");
 
-                return primitiveTypes[(int)code];
+                return PrimitiveTypes[(int)_code];
             }
         }
 
@@ -216,14 +217,14 @@ namespace CatDb.Data
             if (ReferenceEquals(null, other))
                 return false;
 
-            if (code != other.code)
+            if (_code != other._code)
                 return false;
 
             if (IsPrimitive)
                 return true;
 
-            var types1 = types;
-            var types2 = other.types;
+            var types1 = _types;
+            var types2 = other._types;
 
             if (types1.Length != types2.Length)
                 return false;
@@ -247,24 +248,24 @@ namespace CatDb.Data
 
         public override int GetHashCode()
         {
-            if (!cachedHashCode.HasValue)
-                cachedHashCode = InternalGetHashCode();
+            if (!_cachedHashCode.HasValue)
+                _cachedHashCode = InternalGetHashCode();
 
-            return cachedHashCode.Value;
+            return _cachedHashCode.Value;
         }
 
         public override string ToString()
         {
-            if (cachedToString == null)
-                cachedToString = InternalToString();
+            if (_cachedToString == null)
+                _cachedToString = InternalToString();
 
-            return cachedToString;
+            return _cachedToString;
         }
 
         public IEnumerator<DataType> GetEnumerator()
         {
-            for (var i = 0; i < types.Length; i++)
-                yield return types[i];
+            for (var i = 0; i < _types.Length; i++)
+                yield return _types[i];
         }
 
         IEnumerator IEnumerable.GetEnumerator()
@@ -274,16 +275,14 @@ namespace CatDb.Data
 
         public void Serialize(BinaryWriter writer)
         {
-            if (cachedSerialize == null)
+            if (_cachedSerialize == null)
             {
-                using (var ms = new MemoryStream())
-                {
-                    InternalSerialize(new BinaryWriter(ms));
-                    cachedSerialize = ms.ToArray();
-                }
+                using var ms = new MemoryStream();
+                InternalSerialize(new BinaryWriter(ms));
+                _cachedSerialize = ms.ToArray();
             }
 
-            writer.Write(cachedSerialize);
+            writer.Write(_cachedSerialize);
         }
 
         public static DataType Deserialize(BinaryReader reader)
@@ -320,19 +319,19 @@ namespace CatDb.Data
             return new DataType(Code.List, T);
         }
 
-        public static DataType Dictionary(DataType TKey, DataType TValue)
+        public static DataType Dictionary(DataType key, DataType value)
         {
-            return new DataType(Code.Dictionary, TKey, TValue);
+            return new DataType(Code.Dictionary, key, value);
         }
 
         public static DataType FromPrimitiveType(Type type)
         {
-            return primitiveMap[type];
+            return PrimitiveMap[type];
         }
 
         public static bool IsPrimitiveType(Type type)
         {
-            return primitiveMap.ContainsKey(type);
+            return PrimitiveMap.ContainsKey(type);
         }
 
         public static bool operator ==(DataType type1, DataType type2)

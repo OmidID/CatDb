@@ -8,21 +8,21 @@ namespace CatDb.Data
 {
     public class IndexerPersist<T> : IIndexerPersist<T>
     {
-        public readonly Action<BinaryWriter, Func<int, T>, int> store;
-        public readonly Action<BinaryReader, Action<int, T>, int> load;
+        private readonly Action<BinaryWriter, Func<int, T>, int> _store;
+        private readonly Action<BinaryReader, Action<int, T>, int> _load;
 
-        public readonly Type Type;
-        public readonly IIndexerPersist[] Persists;
-        public readonly Func<Type, MemberInfo, int> MembersOrder;
+        private readonly Type _type;
+        private readonly IIndexerPersist[] _persists;
+        private readonly Func<Type, MemberInfo, int> _membersOrder;
 
         public IndexerPersist(IIndexerPersist[] persists, Func<Type, MemberInfo, int> membersOrder = null)
         {
-            Type = typeof(T);
-            Persists = persists;
-            MembersOrder = membersOrder;
+            _type = typeof(T);
+            _persists = persists;
+            _membersOrder = membersOrder;
             
-            store = CreateStoreMethod().Compile();
-            load = CreateLoadMethod().Compile();
+            _store = CreateStoreMethod().Compile();
+            _load = CreateLoadMethod().Compile();
         }
 
         public IndexerPersist(Func<Type, MemberInfo, int> membersOrder = null)
@@ -39,7 +39,7 @@ namespace CatDb.Data
             var idx = Expression.Variable(typeof(int), "idx");
             var callValues = Expression.Call(values, values.Type.GetMethod("Invoke"), idx);
 
-            var body = IndexerPersistHelper.CreateStoreBody(Type, Persists, writer, callValues, idx, count, MembersOrder);
+            var body = IndexerPersistHelper.CreateStoreBody(_type, _persists, writer, callValues, idx, count, _membersOrder);
 
             var lambda = Expression.Lambda<Action<BinaryWriter, Func<int, T>, int>>(body, new[] { writer, values, count });
 
@@ -55,8 +55,8 @@ namespace CatDb.Data
             var array = Expression.Variable(typeof(T[]));
 
 
-            var body = DataType.IsPrimitiveType(Type) ?
-                    IndexerPersistHelper.SingleSlotCreateLoadBody(Type, false, values, reader, count, Persists) :
+            var body = DataType.IsPrimitiveType(_type) ?
+                    IndexerPersistHelper.SingleSlotCreateLoadBody(_type, false, values, reader, count, _persists) :
                     Expression.Block(new[] { array },
                     Expression.Assign(array, Expression.New(array.Type.GetConstructor(new[] { typeof(int) }), count)),
                     array.For(i =>
@@ -64,7 +64,7 @@ namespace CatDb.Data
                             return Expression.Block(Expression.Assign(Expression.ArrayAccess(array, i), Expression.New(typeof(T).GetConstructor(new Type[] { }))),
                                     Expression.Call(values, values.Type.GetMethod("Invoke"), i, Expression.ArrayAccess(array, i)));
                         }, Expression.Label(), count),
-                    IndexerPersistHelper.CreateLoadBody(Type, false, reader, array, count, MembersOrder, Persists)
+                    IndexerPersistHelper.CreateLoadBody(_type, false, reader, array, count, _membersOrder, _persists)
                     );
 
             return Expression.Lambda<Action<BinaryReader, Action<int, T>, int>>(body, new[] { reader, values, count });
@@ -72,12 +72,12 @@ namespace CatDb.Data
 
         public void Store(BinaryWriter writer, Func<int, T> values, int count)
         {
-            store(writer, values, count);
+            _store(writer, values, count);
         }
 
         public void Load(BinaryReader reader, Action<int, T> values, int count)
         {
-            load(reader, values, count);
+            _load(reader, values, count);
         }
 
         #region Examples

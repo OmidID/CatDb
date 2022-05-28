@@ -10,66 +10,66 @@ namespace CatDb.Data
 {
     public class Persist<T> : IPersist<T>
     {
-        public readonly Action<BinaryWriter, T> write;
-        public readonly Func<BinaryReader, T> read;
+        private readonly Action<BinaryWriter, T> _write;
+        private readonly Func<BinaryReader, T> _read;
 
-        public readonly Type Type;
-        public readonly Func<Type, MemberInfo, int> MembersOrder;
-        public readonly AllowNull AllowNull;
+        private readonly Type _type;
+        private readonly Func<Type, MemberInfo, int> _membersOrder;
+        private readonly AllowNull _allowNull;
 
         public Persist(Func<Type, MemberInfo, int> membersOrder = null, AllowNull allowNull = AllowNull.None)
         {
-            Type = typeof(T);
-            MembersOrder = membersOrder;
-            AllowNull = allowNull;
+            _type = typeof(T);
+            _membersOrder = membersOrder;
+            _allowNull = allowNull;
 
-            write = CreateWriteMethod().Compile();
-            read = CreateReadMethod().Compile();
+            _write = CreateWriteMethod().Compile();
+            _read = CreateReadMethod().Compile();
         }
 
         public Expression<Action<BinaryWriter, T>> CreateWriteMethod()
         {
             var writer = Expression.Parameter(typeof(BinaryWriter));
-            var item = Expression.Parameter(Type);
+            var item = Expression.Parameter(_type);
 
-            return Expression.Lambda<Action<BinaryWriter, T>>(PersistHelper.CreateWriteBody(item, writer, MembersOrder, AllowNull), writer, item);
+            return Expression.Lambda<Action<BinaryWriter, T>>(PersistHelper.CreateWriteBody(item, writer, _membersOrder, _allowNull), writer, item);
         }
 
         public Expression<Func<BinaryReader, T>> CreateReadMethod()
         {
             var reader = Expression.Parameter(typeof(BinaryReader), "reader");
 
-            return Expression.Lambda<Func<BinaryReader, T>>(PersistHelper.CreateReadBody(reader, Type, MembersOrder, AllowNull), reader);
+            return Expression.Lambda<Func<BinaryReader, T>>(PersistHelper.CreateReadBody(reader, _type, _membersOrder, _allowNull), reader);
         }
 
         public void Write(BinaryWriter writer, T item)
         {
-            write(writer, item);
+            _write(writer, item);
         }
 
         public T Read(BinaryReader reader)
         {
-            return read(reader);
+            return _read(reader);
         }
     }
 
     public class Persist : IPersist<object>
     {
-        public readonly Action<BinaryWriter, object> write;
-        public readonly Func<BinaryReader, object> read;
+        private readonly Action<BinaryWriter, object> _write;
+        private readonly Func<BinaryReader, object> _read;
 
-        public readonly Type Type;
-        public readonly Func<Type, MemberInfo, int> MembersOrder;
-        public readonly AllowNull AllowNull;
+        private readonly Type _type;
+        private readonly Func<Type, MemberInfo, int> _membersOrder;
+        private readonly AllowNull _allowNull;
 
         public Persist(Type type, Func<Type, MemberInfo, int> membersOrder = null, AllowNull allowNull = AllowNull.None)
         {
-            Type = type;
-            MembersOrder = membersOrder;
-            AllowNull = allowNull;
+            _type = type;
+            _membersOrder = membersOrder;
+            _allowNull = allowNull;
 
-            write = CreateWriteMethod().Compile();
-            read = CreateReadMethod().Compile();
+            _write = CreateWriteMethod().Compile();
+            _read = CreateReadMethod().Compile();
         }
 
         public Expression<Action<BinaryWriter, object>> CreateWriteMethod()
@@ -77,13 +77,13 @@ namespace CatDb.Data
             var writer = Expression.Parameter(typeof(BinaryWriter));
             var item = Expression.Parameter(typeof(object));
 
-            return Expression.Lambda<Action<BinaryWriter, object>>(PersistHelper.CreateWriteBody(Expression.Convert(item, Type), writer, MembersOrder, AllowNull), writer, item);
+            return Expression.Lambda<Action<BinaryWriter, object>>(PersistHelper.CreateWriteBody(Expression.Convert(item, _type), writer, _membersOrder, _allowNull), writer, item);
         }
 
         public Expression<Func<BinaryReader, object>> CreateReadMethod()
         {
             var reader = Expression.Parameter(typeof(BinaryReader), "reader");
-            var body = PersistHelper.CreateReadBody(reader, Type, MembersOrder, AllowNull);
+            var body = PersistHelper.CreateReadBody(reader, _type, _membersOrder, _allowNull);
 
             return Expression.Lambda<Func<BinaryReader, object>>(Expression.Convert(body, typeof(object)), reader);
         }
@@ -92,12 +92,12 @@ namespace CatDb.Data
 
         public void Write(BinaryWriter writer, object item)
         {
-            write(writer, item);
+            _write(writer, item);
         }
 
         public object Read(BinaryReader reader)
         {
-            return read(reader);
+            return _read(reader);
         }
 
         #endregion
@@ -225,7 +225,7 @@ namespace CatDb.Data
             if (type.IsArray || type.IsList())
             {
                 if (!canBeNull)
-                    return Expression.Block(Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.Convert(type.IsArray ? (Expression)Expression.ArrayLength(item) : Expression.Property(item, "Count"), typeof(ulong))),
+                    return Expression.Block(Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.Convert(type.IsArray ? Expression.ArrayLength(item) : Expression.Property(item, "Count"), typeof(ulong))),
                         item.For(i =>
                            WriteAssignedOrCurrentVariable(type.IsArray ? Expression.ArrayAccess(item, i) : item.This(i), writer, membersOrder, allowNull), 
                            Expression.Label()));
@@ -233,7 +233,7 @@ namespace CatDb.Data
                 return Expression.IfThenElse(Expression.NotEqual(item, Expression.Constant(null)),
                     Expression.Block(
                         Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(true)),
-                        Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.Convert(type.IsArray ? (Expression)Expression.ArrayLength(item) : Expression.Property(item, "Count"), typeof(ulong))),
+                        Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.Convert(type.IsArray ? Expression.ArrayLength(item) : Expression.Property(item, "Count"), typeof(ulong))),
                         item.For(i =>
                         WriteAssignedOrCurrentVariable(type.IsArray ? Expression.ArrayAccess(item, i) : item.This(i), writer, membersOrder, allowNull),
                         Expression.Label())),
@@ -327,10 +327,10 @@ namespace CatDb.Data
 
             if (!DataType.IsPrimitiveType(type) && !type.IsEnum && type != typeof(Guid))
             {
-                var _var = Expression.Variable(type);
-                return Expression.Block(new[] { _var },
-               Expression.Assign(_var, variable),
-               BuildWrite(_var, writer, membersOrder, allowNull, false));
+                var var = Expression.Variable(type);
+                return Expression.Block(new[] { var },
+               Expression.Assign(var, variable),
+               BuildWrite(var, writer, membersOrder, allowNull, false));
             }
 
             return BuildWrite(variable, writer, membersOrder, allowNull, false);
@@ -519,8 +519,7 @@ namespace CatDb.Data
             {
                 var item = Expression.Variable(itemType);
 
-                var list = new List<Expression>();
-                list.Add(Expression.Assign(item, Expression.New(item.Type)));
+                var list = new List<Expression> { Expression.Assign(item, Expression.New(item.Type)) };
 
                 foreach (var member in DataTypeUtils.GetPublicMembers(itemType, membersOrder))
                     list.Add(Expression.Assign(Expression.PropertyOrField(item, member.Name), BuildRead(reader, member.GetPropertyOrFieldType(), membersOrder, allowNull, false)));
