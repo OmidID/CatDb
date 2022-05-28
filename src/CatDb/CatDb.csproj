@@ -13,7 +13,6 @@
 		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
 		<Authors>Omid Mafakher</Authors>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<PackageLicenseFile>C:\Users\Omid\Projects\Applications\CatDb\LICENSE</PackageLicenseFile>
 	</PropertyGroup>
 
 	<ItemGroup>
