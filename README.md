@@ -1,5 +1,8 @@
 # CatDb
 
+
+[<img src="https://raw.githubusercontent.com/OmidID/CatDb/master/images/icon.svg" align="left" width="100">](https://github.com/OmidID/CatDb/)
+
 CatDb is a NoSQL key-value store open-source database with innovative indexing algorithm. The CatDb engine is based on WaterfallTree technology which provides blazing performance in real-time indexing of both sequential and random keys, making CatDb perfect for BigData and enterprise systems.
 
 CatDb forked from STSdb 4.0. Ported to .Net 6 and try to make it more compatible with multi-platform in future. The main idea is to get rid of code injection to be able to use it everywhere.
