@@ -1,7 +1,7 @@
 # CatDb
 
 
-[<img src="https://raw.githubusercontent.com/OmidID/CatDb/master/images/icon.svg" align="left" width="100">](https://github.com/OmidID/CatDb/)
+[<img src="https://raw.githubusercontent.com/OmidID/CatDb/master/images/nuget.png" align="left" width="128">](https://github.com/OmidID/CatDb/)
 
 CatDb is a NoSQL key-value store open-source database with innovative indexing algorithm. The CatDb engine is based on WaterfallTree technology which provides blazing performance in real-time indexing of both sequential and random keys, making CatDb perfect for BigData and enterprise systems.
 
