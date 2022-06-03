@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
-using CatDb.General.Compression;
-using CatDb.General.Collections;
 using CatDb.Data;
+using CatDb.General.Collections;
+using CatDb.General.Compression;
 
 namespace CatDb.WaterfallTree
 {

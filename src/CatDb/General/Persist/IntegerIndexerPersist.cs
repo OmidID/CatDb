@@ -13,7 +13,7 @@ namespace CatDb.General.Persist
         /// </summary>
         public Int64IndexerPersist(long[] factors)
         {
-            this._factors = factors;
+            _factors = factors;
         }
 
         public Int64IndexerPersist()
@@ -37,8 +37,7 @@ namespace CatDb.General.Persist
                 {
                     if (value % _factors[index] == 0)
                         break;
-                    else
-                        index--;
+                    index--;
                 }
             }
 
@@ -76,7 +75,7 @@ namespace CatDb.General.Persist
         {
             writer.Write(VERSION);
             
-            _persist.Store(writer, (i) => { return (long)values(i); }, count);
+            _persist.Store(writer, i => { return (long)values(i); }, count);
         }
 
         public void Load(BinaryReader reader, Action<int, ulong> values, int count)
@@ -98,7 +97,7 @@ namespace CatDb.General.Persist
         {
             writer.Write(VERSION);
             
-            _persist.Store(writer, (i) => { return values(i); }, count);
+            _persist.Store(writer, i => { return values(i); }, count);
         }
 
         public void Load(BinaryReader reader, Action<int, int> values, int count)
@@ -120,7 +119,7 @@ namespace CatDb.General.Persist
         {
             writer.Write(VERSION);
             
-            _persist.Store(writer, (i) => { return values(i); }, count);
+            _persist.Store(writer, i => { return values(i); }, count);
         }
 
         public void Load(BinaryReader reader, Action<int, uint> values, int count)
@@ -142,7 +141,7 @@ namespace CatDb.General.Persist
         {
             writer.Write(VERSION);
 
-            _persist.Store(writer, (i) => { return values(i); }, count);
+            _persist.Store(writer, i => { return values(i); }, count);
         }
 
         public void Load(BinaryReader reader, Action<int, short> values, int count)
@@ -164,7 +163,7 @@ namespace CatDb.General.Persist
         {
             writer.Write(VERSION);
 
-            _persist.Store(writer, (i) => { return values(i); }, count);
+            _persist.Store(writer, i => { return values(i); }, count);
         }
 
         public void Load(BinaryReader reader, Action<int, ushort> values, int count)
@@ -186,7 +185,7 @@ namespace CatDb.General.Persist
         {
             writer.Write(VERSION);
 
-            _persist.Store(writer, (i) => { return values(i); }, count);
+            _persist.Store(writer, i => { return values(i); }, count);
         }
 
         public void Load(BinaryReader reader, Action<int, byte> values, int count)
@@ -208,7 +207,7 @@ namespace CatDb.General.Persist
         {
             writer.Write(VERSION);
 
-            _persist.Store(writer, (i) => { return values(i); }, count);
+            _persist.Store(writer, i => { return values(i); }, count);
         }
 
         public void Load(BinaryReader reader, Action<int, sbyte> values, int count)
@@ -230,7 +229,7 @@ namespace CatDb.General.Persist
         {
             writer.Write(VERSION);
 
-            _persist.Store(writer, (i) => { return values(i); }, count);
+            _persist.Store(writer, i => { return values(i); }, count);
         }
 
         public void Load(BinaryReader reader, Action<int, char> values, int count)

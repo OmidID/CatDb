@@ -1,8 +1,8 @@
-﻿using CatDb.General.Comparers;
-using CatDb.General.Extensions;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
+using CatDb.General.Comparers;
+using CatDb.General.Extensions;
 
 namespace CatDb.Data
 {
@@ -75,18 +75,15 @@ namespace CatDb.Data
 
             if (DataType.IsPrimitiveType(type) || type == typeof(Guid))
                 return GetEqualsCommand(x, y, compareOptions[0], exitPoint, true);
-            else
-            {
-                var list = new List<Expression>();
+            var list = new List<Expression>();
 
-                var i = 0;
-                var count = DataTypeUtils.GetPublicMembers(type, membersOrder).Count();
+            var i = 0;
+            var count = DataTypeUtils.GetPublicMembers(type, membersOrder).Count();
 
-                foreach (var member in DataTypeUtils.GetPublicMembers(type, membersOrder))
-                    list.Add(GetEqualsCommand(Expression.PropertyOrField(x, member.Name), Expression.PropertyOrField(y, member.Name), compareOptions[i++], exitPoint, i == count));
+            foreach (var member in DataTypeUtils.GetPublicMembers(type, membersOrder))
+                list.Add(GetEqualsCommand(Expression.PropertyOrField(x, member.Name), Expression.PropertyOrField(y, member.Name), compareOptions[i++], exitPoint, i == count));
 
-                return Expression.Block(typeof(bool), list);
-            }
+            return Expression.Block(typeof(bool), list);
         }
 
         public static Expression CreateGetHashCodeBody(Expression obj, Func<Type, MemberInfo, int> membersOrder)
@@ -95,19 +92,16 @@ namespace CatDb.Data
 
             if (DataType.IsPrimitiveType(type) || type == typeof(Guid))
                 return GetHashCodeCommand(obj);
-            else
-            {
-                var list = new List<Expression>();
+            var list = new List<Expression>();
 
-                foreach (var member in DataTypeUtils.GetPublicMembers(type, membersOrder))
-                    list.Add(GetHashCodeCommand(Expression.PropertyOrField(obj, member.Name)));
+            foreach (var member in DataTypeUtils.GetPublicMembers(type, membersOrder))
+                list.Add(GetHashCodeCommand(Expression.PropertyOrField(obj, member.Name)));
 
-                var xor = list[0];
-                for (var i = 1; i < list.Count; i++)
-                    xor = Expression.ExclusiveOr(list[i], xor);
+            var xor = list[0];
+            for (var i = 1; i < list.Count; i++)
+                xor = Expression.ExclusiveOr(list[i], xor);
 
-                return Expression.Block(typeof(int), Expression.Label(Expression.Label(typeof(int)), xor));
-            }
+            return Expression.Block(typeof(int), Expression.Label(Expression.Label(typeof(int)), xor));
         }
 
         private static Expression GetEqualsCommand(Expression x, Expression y, CompareOption compareOption, LabelTarget exitPoint, bool isLast)

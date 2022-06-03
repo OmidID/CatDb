@@ -22,7 +22,7 @@ namespace CatDb.Remote.Heap
 
         public static ObtainHandleCommand ReadResponse(BinaryReader reader)
         {
-            return new ObtainHandleCommand()
+            return new ObtainHandleCommand
             {
                 Handle = (long)CountCompression.Deserialize(reader)
             };
@@ -41,7 +41,7 @@ namespace CatDb.Remote.Heap
 
         public static ReleaseHandleCommand ReadRequest(BinaryReader reader)
         {
-            return new ReleaseHandleCommand()
+            return new ReleaseHandleCommand
             {
                 Handle = (long)CountCompression.Deserialize(reader)
             };
@@ -61,7 +61,7 @@ namespace CatDb.Remote.Heap
 
         public static HandleExistCommand ReadRequest(BinaryReader reader)
         {
-            return new HandleExistCommand()
+            return new HandleExistCommand
             {
                 Handle = (long)CountCompression.Deserialize(reader)
             };
@@ -74,7 +74,7 @@ namespace CatDb.Remote.Heap
 
         public static HandleExistCommand ReadResponse(BinaryReader reader)
         {
-            return new HandleExistCommand()
+            return new HandleExistCommand
             {
                 Exist = reader.ReadBoolean()
             };
@@ -103,7 +103,7 @@ namespace CatDb.Remote.Heap
 
         public static WriteCommand ReadRequest(BinaryReader reader)
         {
-            return new WriteCommand()
+            return new WriteCommand
             {
                 Handle = (long)CountCompression.Deserialize(reader),
 
@@ -128,7 +128,7 @@ namespace CatDb.Remote.Heap
 
         public static ReadCommand ReadRequest(BinaryReader reader)
         {
-            return new ReadCommand()
+            return new ReadCommand
             {
                 Handle = (long)CountCompression.Deserialize(reader)
             };
@@ -142,7 +142,7 @@ namespace CatDb.Remote.Heap
 
         public static ReadCommand ReadResponse(BinaryReader reader)
         {
-            return new ReadCommand()
+            return new ReadCommand
             {
                 Buffer = reader.ReadBytes((int)CountCompression.Deserialize(reader))
             };
@@ -182,7 +182,7 @@ namespace CatDb.Remote.Heap
 
         public static SetTagCommand ReadRequest(BinaryReader reader)
         {
-            return new SetTagCommand()
+            return new SetTagCommand
             {
                 Tag = reader.ReadBoolean() ? reader.ReadBytes((int)CountCompression.Deserialize(reader)) : null
             };
@@ -210,7 +210,7 @@ namespace CatDb.Remote.Heap
 
         public static GetTagCommand ReadResponse(BinaryReader reader)
         {
-            return new GetTagCommand()
+            return new GetTagCommand
             {
                 Tag = reader.ReadBoolean() ? reader.ReadBytes((int)CountCompression.Deserialize(reader)) : null
             };
@@ -233,8 +233,8 @@ namespace CatDb.Remote.Heap
 
         public static DataBaseSizeCommand ReadResponse(BinaryReader reader)
         {
-            return new DataBaseSizeCommand()
-             {
+            return new DataBaseSizeCommand
+            {
                  DataBaseSize = (long)CountCompression.Deserialize(reader)
              };
         }
@@ -256,7 +256,7 @@ namespace CatDb.Remote.Heap
 
         public static DataBaseSizeCommand ReadResponse(BinaryReader reader)
         {
-            return new DataBaseSizeCommand()
+            return new DataBaseSizeCommand
             {
                 DataBaseSize = (long)CountCompression.Deserialize(reader)
             };

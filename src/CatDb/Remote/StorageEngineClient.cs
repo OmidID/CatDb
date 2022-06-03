@@ -1,10 +1,10 @@
-﻿using CatDb.Data;
+﻿using System.Collections;
+using System.Collections.Concurrent;
+using CatDb.Data;
 using CatDb.Database;
 using CatDb.General.Communication;
 using CatDb.Remote.Commands;
 using CatDb.WaterfallTree;
-using System.Collections;
-using System.Collections.Concurrent;
 
 namespace CatDb.Remote
 {
@@ -148,7 +148,7 @@ namespace CatDb.Remote
             packet.Wait();
 
             var reader = new BinaryReader(packet.Response);
-            message = Message.Deserialize(reader, (id) => { return descriptor; });
+            message = Message.Deserialize(reader, id => { return descriptor; });
 
             return message.Commands;
         }
@@ -208,9 +208,6 @@ namespace CatDb.Remote
 
                 case CommandCode.EXCEPTION:
                     throw new Exception(((ExceptionCommand)resultCommand).Exception);
-
-                default:
-                    break;
             }
         }
 
@@ -218,7 +215,7 @@ namespace CatDb.Remote
 
         #region IDisposable Members
 
-        private volatile bool _disposed = false;
+        private volatile bool _disposed;
 
         private void Dispose(bool disposing)
         {
@@ -422,9 +419,6 @@ namespace CatDb.Remote
 
                     case CommandCode.EXCEPTION:
                         throw new Exception(((ExceptionCommand)resultCommand).Exception);
-
-                    default:
-                        break;
                 }
             }
         }

@@ -5,7 +5,7 @@ namespace CatDb.General.Communication
 {
     public class ClientConnection
     {
-        private long _id = 0;
+        private long _id;
 
         public TcpClient TcpClient { get; private set; }
 
@@ -50,8 +50,8 @@ namespace CatDb.General.Communication
             TcpClient.Connect(MachineName, Port);
             var networkStream = TcpClient.GetStream();
 
-            _sendWorker = new Thread(new ParameterizedThreadStart(DoSend));
-            _recieveWorker = new Thread(new ParameterizedThreadStart(DoRecieve));
+            _sendWorker = new Thread(DoSend);
+            _recieveWorker = new Thread(DoRecieve);
 
             _sendWorker.Start(networkStream);
             _recieveWorker.Start(networkStream);

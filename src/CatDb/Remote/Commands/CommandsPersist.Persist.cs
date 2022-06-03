@@ -481,8 +481,7 @@ namespace CatDb.Remote.Commands
         {
             if (reader.ReadBoolean())
                 return new StorageEngineOpenXFileCommand(reader.ReadInt64());
-            else
-                return new StorageEngineOpenXFileCommand(reader.ReadString());
+            return new StorageEngineOpenXFileCommand(reader.ReadString());
         }
 
         private void WriteStorageEngineDeleteCommand(BinaryWriter writer, ICommand command)

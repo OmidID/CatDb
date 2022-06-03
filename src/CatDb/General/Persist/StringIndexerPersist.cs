@@ -62,7 +62,7 @@ namespace CatDb.General.Persist
                         foreach (var kv in map.OrderBy(x => x.Value))
                             writer.Write(kv.Key);
 
-                        new Int32IndexerPersist().Store(writer, (idx) => { return indexes[idx]; }, count);
+                        new Int32IndexerPersist().Store(writer, idx => { return indexes[idx]; }, count);
                     }
                     break;
 

@@ -69,10 +69,6 @@ namespace CatDb.Remote.Commands
 
     public class ClearCommand : ICommand
     {
-        public ClearCommand()
-        {
-        }
-
         public int Code => CommandCode.CLEAR;
 
         public bool IsSynchronous => false;
@@ -144,7 +140,7 @@ namespace CatDb.Remote.Commands
 
         public OutValueCommand(int code, IData key, IData record)
         {
-            this._code = code;
+            _code = code;
 
             Key = key;
             Record = record;
@@ -177,7 +173,7 @@ namespace CatDb.Remote.Commands
 
         public OutKeyValueCommand(int code, IData key, KeyValuePair<IData, IData>? keyValue)
         {
-            this._code = code;
+            _code = code;
 
             Key = key;
             KeyValue = keyValue;
@@ -256,7 +252,7 @@ namespace CatDb.Remote.Commands
 
         public IteratorCommand(int code, int pageCount, IData from, IData to, List<KeyValuePair<IData, IData>> list)
         {
-            this._code = code;
+            _code = code;
 
             FromKey = from;
             ToKey = to;

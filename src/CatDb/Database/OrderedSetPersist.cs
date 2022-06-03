@@ -21,17 +21,17 @@ namespace CatDb.Database
 
         public OrderedSetPersist(IIndexerPersist<IData> keyIndexerPersist, IIndexerPersist<IData> recordIndexerPersist, IOrderedSetFactory orderedSetFactory)
         {
-            this._keyIndexerPersist = keyIndexerPersist;
-            this._recordIndexerPersist = recordIndexerPersist;
-            this._orderedSetFactory = orderedSetFactory;
+            _keyIndexerPersist = keyIndexerPersist;
+            _recordIndexerPersist = recordIndexerPersist;
+            _orderedSetFactory = orderedSetFactory;
             _verticalCompression = true;
         }
 
         public OrderedSetPersist(IPersist<IData> keyPersist, IPersist<IData> recordPersist, IOrderedSetFactory orderedSetFactory)
         {
-            this._keyPersist = keyPersist;
-            this._recordPersist = recordPersist;
-            this._orderedSetFactory = orderedSetFactory;
+            _keyPersist = keyPersist;
+            _recordPersist = recordPersist;
+            _orderedSetFactory = orderedSetFactory;
             _verticalCompression = false;
         }
 
@@ -96,13 +96,13 @@ namespace CatDb.Database
             actions[0] = () =>
             {
                 streams[0] = new MemoryStream();
-                _keyIndexerPersist.Store(new BinaryWriter(streams[0]), (idx) => { return rows[idx].Key; }, rows.Length);
+                _keyIndexerPersist.Store(new BinaryWriter(streams[0]), idx => { return rows[idx].Key; }, rows.Length);
             };
 
             actions[1] = () =>
             {
                 streams[1] = new MemoryStream();
-                _recordIndexerPersist.Store(new BinaryWriter(streams[1]), (idx) => { return rows[idx].Value; }, rows.Length);
+                _recordIndexerPersist.Store(new BinaryWriter(streams[1]), idx => { return rows[idx].Value; }, rows.Length);
             };
 
             Parallel.Invoke(actions);
@@ -171,8 +171,7 @@ namespace CatDb.Database
 
             if (_verticalCompression)
                 return ReadVertical(reader);
-            else
-                return ReadRaw(reader);
+            return ReadRaw(reader);
         }
     }
 }

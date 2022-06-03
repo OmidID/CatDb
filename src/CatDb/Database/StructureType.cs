@@ -10,10 +10,7 @@
 
         public static bool IsValid(int type)
         {
-            if (type == XTABLE || type == XFILE)
-                return true;
-
-            return false;
+            return type is XTABLE or XFILE;
         }
     }
 }

@@ -1,6 +1,6 @@
-﻿using CatDb.Data;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Concurrent;
+using CatDb.Data;
 
 namespace CatDb.WaterfallTree
 {

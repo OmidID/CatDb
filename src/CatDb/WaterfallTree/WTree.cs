@@ -1,8 +1,8 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
-using CatDb.General.Threading;
 using CatDb.Data;
 using CatDb.General.Collections;
+using CatDb.General.Threading;
 
 namespace CatDb.WaterfallTree
 {
@@ -26,8 +26,8 @@ namespace CatDb.WaterfallTree
         private readonly Branch _rootBranch;
         private bool _isRootCacheLoaded;
 
-        private volatile bool _disposed = false;
-        private volatile bool _shutdown = false;
+        private volatile bool _disposed;
+        private volatile bool _shutdown;
         private int _depth = 1;
 
         private long _globalVersion;
@@ -46,7 +46,7 @@ namespace CatDb.WaterfallTree
             if (heap == null)
                 throw new NullReferenceException("heap");
 
-            this._heap = heap;
+            _heap = heap;
 
             if (heap.Exists(HANDLE_SETTINGS))
             {

@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
-using CatDb.General.Compression;
 using CatDb.General.Comparers;
+using CatDb.General.Compression;
 
 namespace CatDb.WaterfallTree
 {

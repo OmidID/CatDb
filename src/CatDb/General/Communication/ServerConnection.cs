@@ -7,7 +7,7 @@ namespace CatDb.General.Communication
     {
         private Thread _receiver;
         private Thread _sender;
-        private volatile bool _shutdown = false;
+        private volatile bool _shutdown;
 
         public BlockingCollection<Packet> PendingPackets;
 
@@ -116,15 +116,12 @@ namespace CatDb.General.Communication
                 while (!TcpServer.ShutdownTokenSource.Token.IsCancellationRequested && !_shutdown && TcpClient.Connected)
                     SendPacket();
             }
-            catch (OperationCanceledException exc)
+            catch (OperationCanceledException)
             {
             }
             catch (Exception exc)
             {
                 TcpServer.LogError(exc);
-            }
-            finally
-            {
             }
         }
 

@@ -1,6 +1,6 @@
-﻿using CatDb.General.Comparers;
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using System.Reflection;
+using CatDb.General.Comparers;
 using CatDb.General.Extensions;
 
 namespace CatDb.Data
@@ -18,7 +18,7 @@ namespace CatDb.Data
         public Transformer(Func<Type, MemberInfo, int> membersOrder1 = null, Func<Type, MemberInfo, int> membersOrder2 = null)
         {
             if (!TransformerHelper.CheckCompatible(typeof(T1), typeof(T2), new HashSet<Type>(), membersOrder1, membersOrder2))
-                throw new ArgumentException($"{typeof(T1).ToString()} not compatible with {typeof(T2).ToString()}");
+                throw new ArgumentException($"{typeof(T1)} not compatible with {typeof(T2).ToString()}");
 
             _type1 = typeof(T1);
             _type2 = typeof(T2);

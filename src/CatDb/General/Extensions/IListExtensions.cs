@@ -30,7 +30,7 @@ namespace CatDb.General.Extensions
 
         public static int BinarySearch<T>(this IList<T> array, int index, int length, T value)
         {
-            return BinarySearch<T>(array, index, length, value, Comparer<T>.Default);
+            return BinarySearch(array, index, length, value, Comparer<T>.Default);
         }
 
         public static int BinarySearch(this IList array, int index, int length, object value, IComparer comparer)
@@ -117,7 +117,7 @@ namespace CatDb.General.Extensions
 
         public static void AddRange<T>(this List<T> instance, List<T> list, int index, int count)
         {
-            instance.AddRange<T>(list.GetArray(), index, count);
+            instance.AddRange(list.GetArray(), index, count);
         }
     }
 }

@@ -42,10 +42,10 @@
                 if (Position > Length)
                     _length = Position;
             }
-            catch (Exception exc)
+            catch (Exception)
             {
                 _length = long.MinValue;
-                throw exc;
+                throw;
             }
         }
 
@@ -58,10 +58,10 @@
                 if (Position > Length)
                     _length = Position;
             }
-            catch (Exception exc)
+            catch (Exception)
             {
                 _length = long.MinValue;
-                throw exc;
+                throw;
             }
         }
 
@@ -84,11 +84,11 @@
 
                 _length = value;
             }
-            catch (Exception exc)
+            catch (Exception)
             {
                 _length = long.MinValue;
 
-                throw exc;
+                throw;
             }
         }
 

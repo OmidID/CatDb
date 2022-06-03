@@ -1,8 +1,8 @@
 ﻿using CatDb.Data;
 using CatDb.Database;
-using CatDb.WaterfallTree;
 using CatDb.General.Communication;
 using CatDb.Remote.Commands;
+using CatDb.WaterfallTree;
 
 namespace CatDb.Remote
 {
@@ -142,7 +142,7 @@ namespace CatDb.Remote
                 var order = (KeyValuePair<ServerConnection, Packet>)state;
 
                 var reader = new BinaryReader(order.Value.Request);
-                var msgRequest = Message.Deserialize(reader, (id) => _storageEngine.Find(id));
+                var msgRequest = Message.Deserialize(reader, id => _storageEngine.Find(id));
 
                 var clientDescription = msgRequest.Description;
                 var resultCommands = new CommandCollection(1);

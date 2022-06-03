@@ -1,9 +1,9 @@
-﻿using CatDb.Data;
+﻿using System.Diagnostics;
+using CatDb.Data;
 using CatDb.Database;
 using CatDb.General.Collections;
 using CatDb.General.Compression;
 using CatDb.General.Persist;
-using System.Diagnostics;
 
 namespace CatDb.WaterfallTree
 {
@@ -44,7 +44,7 @@ namespace CatDb.WaterfallTree
 
         static Locator()
         {
-            Min = new Locator(0, null, CatDb.Database.StructureType.RESERVED, DataType.Boolean, DataType.Boolean, null, null)
+            Min = new Locator(0, null, Database.StructureType.RESERVED, DataType.Boolean, DataType.Boolean, null, null)
                 {
                     _keyPersist = SentinelPersistKey.Instance
                 };
@@ -69,8 +69,8 @@ namespace CatDb.WaterfallTree
             //apply
             Apply = structureType switch
             {
-                CatDb.Database.StructureType.XTABLE => new XTableApply(this),
-                CatDb.Database.StructureType.XFILE => new XStreamApply(this),
+                Database.StructureType.XTABLE => new XTableApply(this),
+                Database.StructureType.XFILE => new XStreamApply(this),
                 _ => Apply
             };
 

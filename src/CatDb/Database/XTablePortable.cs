@@ -1,7 +1,7 @@
 ﻿using System.Collections;
-using CatDb.General.Collections;
 using CatDb.Data;
 using CatDb.Database.Operations;
+using CatDb.General.Collections;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Database
@@ -234,9 +234,8 @@ namespace CatDb.Database
                 Flush();
 
                 var lastVisitedFullKey = default(WTree.FullKey);
-                IOrderedSet<IData, IData> records;
 
-                records = Tree.FindData(Locator, Locator, hasFrom ? from : null, Direction.Forward, out var nearFullKey, out var hasNearFullKey, ref lastVisitedFullKey);
+                var records = Tree.FindData(Locator, Locator, hasFrom ? from : null, Direction.Forward, out var nearFullKey, out var hasNearFullKey, ref lastVisitedFullKey);
 
                 if (records == null)
                 {
@@ -295,10 +294,8 @@ namespace CatDb.Database
 
                 Flush();
 
-                IOrderedSet<IData, IData> records;
-
                 var lastVisitedFullKey = new WTree.FullKey(Locator, to);
-                records = Tree.FindData(Locator, Locator, hasTo ? to : null, Direction.Backward, out var nearFullKey, out var hasNearFullKey, ref lastVisitedFullKey);
+                var records = Tree.FindData(Locator, Locator, hasTo ? to : null, Direction.Backward, out var nearFullKey, out var hasNearFullKey, ref lastVisitedFullKey);
 
                 if (records == null)
                     yield break;

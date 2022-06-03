@@ -42,8 +42,7 @@ namespace CatDb.General.Compression
 
             if (idx > 0)
                 return (data[index] >> (idx)) | (data[index + 1] << (64 - idx));
-            else
-                return data[index];
+            return data[index];
         }
 
         private static void SetBits(ulong[] data, int bitIndex, ulong value, int bitCount)
@@ -67,8 +66,7 @@ namespace CatDb.General.Compression
 
             if (idx + bitCount <= 64)
                 return (data[index] >> idx) & (UInt64.MaxValue >> (64 - bitCount));
-            else
-                return ((data[index + 1] << (64 - idx)) | (data[index] >> (idx))) & (UInt64.MaxValue >> (64 - bitCount));
+            return ((data[index + 1] << (64 - idx)) | (data[index] >> (idx))) & (UInt64.MaxValue >> (64 - bitCount));
         }
 
         #endregion

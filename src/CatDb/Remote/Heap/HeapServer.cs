@@ -126,9 +126,6 @@ namespace CatDb.Remote.Heap
                             case RemoteHeapCommandCodes.DataBaseSize:
                                 DataBaseSizeCommand.WriteResponse(writer, _heap.DataSize);
                                 break;
-
-                            default:
-                                break;
                         }
 
                         ms.Position = 0;

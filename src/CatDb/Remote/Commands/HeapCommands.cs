@@ -96,10 +96,6 @@
 
     public class HeapCommitCommand : ICommand
     {
-        public HeapCommitCommand()
-        {
-        }
-
         public int Code => CommandCode.HEAP_COMMIT;
 
         public bool IsSynchronous => true;
@@ -107,10 +103,6 @@
 
     public class HeapCloseCommand : ICommand
     {
-        public HeapCloseCommand()
-        {
-        }
-
         public int Code => CommandCode.HEAP_CLOSE;
 
         public bool IsSynchronous => true;

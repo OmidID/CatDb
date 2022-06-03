@@ -74,7 +74,7 @@ namespace CatDb.Data
 
             var body = Expression.Block(new[] { data }, list);
 
-            return Expression.Lambda<Func<string, IData>>(body, new[] { stringParam });
+            return Expression.Lambda<Func<string, IData>>(body, stringParam);
         }
 
         public string To(IData value1)

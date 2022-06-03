@@ -136,8 +136,7 @@ namespace CatDb.General.Extensions
 
             if (type.IsArray)
                 return For(collection, action, @break, Expression.ArrayLength(collection));
-            else
-                return For(collection, action, @break, Expression.PropertyOrField(collection, "Count"));
+            return For(collection, action, @break, Expression.PropertyOrField(collection, "Count"));
         }
 
         public static Expression This(this Expression collection, params Expression[] indexes)

@@ -208,7 +208,7 @@ namespace CatDb.General.Persist
                     for (var i = 0; i < count; i++)
                     {
                         var value = values(i);
-                        var v = checked((long)Math.Round(value * koef));
+                        var v = (long)Math.Round(value * koef);
 
                         array[i] = v;
                         helper.Add(v);

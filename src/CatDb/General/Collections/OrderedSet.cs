@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Diagnostics;
-using CatDb.General.Extensions;
 using CatDb.General.Comparers;
+using CatDb.General.Extensions;
 
 namespace CatDb.General.Collections
 {
@@ -17,20 +17,20 @@ namespace CatDb.General.Collections
 
         protected OrderedSet(IComparer<TKey> comparer, IEqualityComparer<TKey> equalityComparer, List<KeyValuePair<TKey, TValue>> list)
         {
-            this._comparer = comparer;
-            this._equalityComparer = equalityComparer;
+            _comparer = comparer;
+            _equalityComparer = equalityComparer;
             KvComparer = new KeyValuePairComparer<TKey, TValue>(comparer);
 
-            this.List = list;
+            List = list;
         }
 
         protected OrderedSet(IComparer<TKey> comparer, IEqualityComparer<TKey> equalityComparer, SortedSet<KeyValuePair<TKey, TValue>> set)
         {
-            this._comparer = comparer;
-            this._equalityComparer = equalityComparer;
+            _comparer = comparer;
+            _equalityComparer = equalityComparer;
             KvComparer = new KeyValuePairComparer<TKey, TValue>(comparer);
 
-            this._set = set;
+            _set = set;
         }
 
         protected OrderedSet(IComparer<TKey> comparer, IEqualityComparer<TKey> equalityComparer, int capacity)
@@ -179,7 +179,7 @@ namespace CatDb.General.Collections
             else //if (set != null)
             {
                 foreach (var kv in set.InternalEnumerate())
-                    this._set.Add(kv);
+                    _set.Add(kv);
             }
         }
 
@@ -354,10 +354,9 @@ namespace CatDb.General.Collections
         {
             if (List != null)
                 return List;
-            else if (_dictionary != null)
+            if (_dictionary != null)
                 return _dictionary.Select(s => new KeyValuePair<TKey, TValue>(s.Key, s.Value));
-            else //if (set != null)
-                return _set;
+            return _set;
         }
 
         public void LoadFrom(KeyValuePair<TKey, TValue>[] array, int count, bool isOrdered)

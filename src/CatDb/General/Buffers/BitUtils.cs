@@ -40,8 +40,7 @@
             var bitMask = 1 << (bitIndex & 7);
             if (value != 0)
                 return map |= (byte)bitMask;
-            else
-                return map &= (byte)(~bitMask);
+            return map &= (byte)(~bitMask);
         }
     }
 }

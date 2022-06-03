@@ -1,6 +1,6 @@
-﻿using System.Reflection;
+﻿using System.Collections.Concurrent;
+using System.Reflection;
 using CatDb.General.Extensions;
-using System.Collections.Concurrent;
 
 namespace CatDb.Data
 {
@@ -81,7 +81,7 @@ namespace CatDb.Data
             if (membersOrder != null)
                 return InternalIsAnonymousType(type, membersOrder);
 
-            return CacheIsAnonymousTypes.GetOrAdd(type, (x) => InternalIsAnonymousType(x, null));
+            return CacheIsAnonymousTypes.GetOrAdd(type, x => InternalIsAnonymousType(x));
         }
 
         public static Type Anonymous(Type type, Func<Type, MemberInfo, int> membersOrder = null)
@@ -182,7 +182,7 @@ namespace CatDb.Data
             if (dataType.IsPrimitive)
                 return dataType.PrimitiveType;
 
-            return CacheAnonymousTypes.GetOrAdd(dataType, (x) => InternalBuildType(x));
+            return CacheAnonymousTypes.GetOrAdd(dataType, x => InternalBuildType(x));
         }
     }
 }

@@ -12,7 +12,7 @@ namespace CatDb.WaterfallTree
             if (type != null)
                 return type;
 
-            return Cache.GetOrAdd(fullName, (x) =>
+            return Cache.GetOrAdd(fullName, x =>
             {
                 foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
                 {

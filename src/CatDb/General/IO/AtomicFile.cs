@@ -5,7 +5,7 @@ namespace CatDb.General.IO
     public class AtomicFile
     {
         private readonly byte[] _header = new byte[512];
-        private readonly CommonArray _commonArray = new();
+        private readonly CommonArray _commonArray;
 
         private readonly Stream _stream;
         public string FileName { get; private set; }

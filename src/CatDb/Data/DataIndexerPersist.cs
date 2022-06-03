@@ -1,7 +1,7 @@
-﻿using CatDb.General.Persist;
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using System.Reflection;
 using CatDb.General.Extensions;
+using CatDb.General.Persist;
 
 namespace CatDb.Data
 {
@@ -39,7 +39,7 @@ namespace CatDb.Data
             var callValues = Expression.Convert(Expression.Call(values, values.Type.GetMethod("Invoke"), idx), typeof(Data<>).MakeGenericType(_type)).Value();
 
             var body = IndexerPersistHelper.CreateStoreBody(_type, _persists, writer, callValues, idx, count, _membersOrder);
-            var lambda = Expression.Lambda<Action<BinaryWriter, Func<int, IData>, int>>(body, new[] { writer, values, count });
+            var lambda = Expression.Lambda<Action<BinaryWriter, Func<int, IData>, int>>(body, writer, values, count);
 
             return lambda;
         }
@@ -65,7 +65,7 @@ namespace CatDb.Data
                         IndexerPersistHelper.CreateLoadBody(_type, true, reader, array, count, _membersOrder, _persists)
                     );
 
-            return Expression.Lambda<Action<BinaryReader, Action<int, IData>, int>>(body, new[] { reader, values, count });
+            return Expression.Lambda<Action<BinaryReader, Action<int, IData>, int>>(body, reader, values, count);
         }
 
         public void Store(BinaryWriter writer, Func<int, IData> values, int count)

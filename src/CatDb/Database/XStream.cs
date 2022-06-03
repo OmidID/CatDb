@@ -1,5 +1,5 @@
-﻿using CatDb.General.Extensions;
-using CatDb.Data;
+﻿using CatDb.Data;
+using CatDb.General.Extensions;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Database
@@ -174,12 +174,9 @@ namespace CatDb.Database
                 {
                     if (!_isModified)
                         return _cachedLength;
-                    else
-                    {
-                        SetCahchedLenght();
+                    SetCahchedLenght();
 
-                        return _cachedLength;
-                    }
+                    return _cachedLength;
                 }
             }
         }

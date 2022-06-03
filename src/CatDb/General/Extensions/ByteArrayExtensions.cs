@@ -1,5 +1,5 @@
-﻿using CatDb.General.Comparers;
-using System.Text;
+﻿using System.Text;
+using CatDb.General.Comparers;
 
 namespace CatDb.General.Extensions
 {

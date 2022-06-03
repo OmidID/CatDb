@@ -1,4 +1,4 @@
-﻿﻿using DatabaseBenchmark;
+﻿using DatabaseBenchmark;
 using CatDb.Data;
 using CatDb.Database;
 using CatDb.General.Extensions;

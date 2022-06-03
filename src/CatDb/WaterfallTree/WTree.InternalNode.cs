@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
+using CatDb.Data;
 using CatDb.General.Compression;
 using CatDb.General.Extensions;
-using CatDb.Data;
 
 namespace CatDb.WaterfallTree
 {
@@ -240,7 +240,7 @@ namespace CatDb.WaterfallTree
                 //if ((param.WalkAction & WalkAction.Store) == WTree<TPath>.WalkAction.Store)
                   //  taskCreationOptions = TaskCreationOptions.AttachedToParent;
 
-                Parallel.ForEach(branches, (branch) =>
+                Parallel.ForEach(branches, branch =>
                     {
                         if (param.WalkMethod == WalkMethod.CascadeButOnlyLoaded)
                         {

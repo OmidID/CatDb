@@ -32,7 +32,7 @@
 
         public static void InsertionSort<T>(this T[] array, IComparer<T> comparer)
         {
-            InsertionSort<T>(array, 0, array.Length, comparer);
+            InsertionSort(array, 0, array.Length, comparer);
         }
 
         public static T[] Middle<T>(this T[] buffer, int offset, int length)
@@ -54,7 +54,7 @@
 
         public static string ToString<T>(this T[] array, string separator)
         {
-            return "{" + String.Join<T>(separator, array) + "}";
+            return "{" + String.Join(separator, array) + "}";
         }
 
         public static List<T> CreateList<T>(this T[] array, int count)

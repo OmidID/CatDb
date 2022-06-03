@@ -368,8 +368,6 @@ namespace CatDb.Remote
                         break;
                     case CommandCode.EXCEPTION:
                         throw new Exception(((ExceptionCommand)command).Exception);
-                    default:
-                        break;
                 }
             }
             catch (Exception e)

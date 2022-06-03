@@ -1,10 +1,10 @@
-﻿using CatDb.General.Persist;
+﻿using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
-using CatDb.General.Extensions;
-using System.Diagnostics;
-using CatDb.General.Compression;
 using CatDb.General.Comparers;
+using CatDb.General.Compression;
+using CatDb.General.Extensions;
+using CatDb.General.Persist;
 
 namespace CatDb.Data
 {
@@ -244,7 +244,7 @@ namespace CatDb.Data
             if (type.IsDictionary())
             {
                 if (!DataType.IsPrimitiveType(type.GetGenericArguments()[0]) && !type.GetGenericArguments()[0].IsEnum && type != typeof(Guid))
-                    throw new NotSupportedException($"Dictionarty<{type.GetGenericArguments()[0].ToString()}, TValue>");
+                    throw new NotSupportedException($"Dictionarty<{type.GetGenericArguments()[0]}, TValue>");
 
                 if (!canBeNull)
                     return Expression.Block(
@@ -302,7 +302,7 @@ namespace CatDb.Data
                         list.Add(BuildWrite(Expression.PropertyOrField(item, member.Name), writer, membersOrder, allowNull, false));
                     else
                     {
-                        var @var = Expression.Variable(member.GetPropertyOrFieldType());
+                        var var = Expression.Variable(member.GetPropertyOrFieldType());
                         variables.Add(var);
                         list.Add(Expression.Assign(var, Expression.PropertyOrField(item, member.Name)));
                         list.Add(BuildWrite(var, writer, membersOrder, allowNull, false));
@@ -361,14 +361,16 @@ namespace CatDb.Data
 
                 //writer.Write(item);
             }
-            else if (type == typeof(DateTime) || type == typeof(TimeSpan))
+
+            if (type == typeof(DateTime) || type == typeof(TimeSpan))
             {
                 var writeLong = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(long) });
                 return Expression.Call(writer, writeLong, Expression.PropertyOrField(item, "Ticks"));
 
                 //writer.Write(item.Ticks);
             }
-            else if (type == typeof(String))
+
+            if (type == typeof(String))
             {
                 var writeBool = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) });
                 var writeString = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(string) });
@@ -379,7 +381,7 @@ namespace CatDb.Data
                 return Expression.IfThenElse(Expression.NotEqual(item, Expression.Constant(null)),
                     Expression.Block(Expression.Call(writer, writeBool, Expression.Constant(true)), Expression.Call(writer, writeString, item)),
                     Expression.Call(writer, writeBool, Expression.Constant(false))
-                    );
+                );
 
                 //if (item != null)
                 //{
@@ -389,24 +391,25 @@ namespace CatDb.Data
                 //else
                 //    writer.Write(false);
             }
-            else if (type == typeof(byte[]))
+
+            if (type == typeof(byte[]))
             {
                 var writeByteArray = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(byte[]) });
 
                 if (!canBeNull)
                     return Expression.Block(
-                            Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.ConvertChecked(Expression.Property(item, "Length"), typeof(ulong))),
-                            Expression.Call(writer, writeByteArray, item)
-                            );
+                        Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.ConvertChecked(Expression.Property(item, "Length"), typeof(ulong))),
+                        Expression.Call(writer, writeByteArray, item)
+                    );
 
                 return Expression.IfThenElse(Expression.NotEqual(item, Expression.Constant(null)),
-                        Expression.Block(
-                            Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(true)),
-                            Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.ConvertChecked(Expression.Property(item, "Length"), typeof(ulong))),
-                            Expression.Call(writer, writeByteArray, item)
-                            ),
-                        Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(false))
-                        );
+                    Expression.Block(
+                        Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(true)),
+                        Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.ConvertChecked(Expression.Property(item, "Length"), typeof(ulong))),
+                        Expression.Call(writer, writeByteArray, item)
+                    ),
+                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(false))
+                );
 
                 //if (buffer != null)
                 //{
@@ -417,8 +420,8 @@ namespace CatDb.Data
                 //else
                 //    writer.Write(false);
             }
-            else
-                throw new NotSupportedException(type.ToString());
+
+            throw new NotSupportedException(type.ToString());
         }
 
         public static Expression CreateReadBody(Expression reader, Type itemType, Func<Type, MemberInfo, int> membersOrder, AllowNull allowNull)
@@ -429,20 +432,17 @@ namespace CatDb.Data
 
             if (DataType.IsPrimitiveType(itemType) || itemType.IsEnum || itemType == typeof(Guid) || itemType.IsKeyValuePair() || itemType.IsArray || itemType.IsList() || itemType.IsDictionary() || itemType.IsNullable())
                 return BuildRead(reader, itemType, membersOrder, allowNull, true);
-            else
-            {
-                list.Add(Expression.Assign(item, Expression.New(itemType)));
+            list.Add(Expression.Assign(item, Expression.New(itemType)));
 
-                foreach (var member in DataTypeUtils.GetPublicMembers(itemType, membersOrder))
-                    list.Add(Expression.Assign(Expression.PropertyOrField(item, member.Name), BuildRead(reader, member.GetPropertyOrFieldType(), membersOrder, allowNull, false)));
+            foreach (var member in DataTypeUtils.GetPublicMembers(itemType, membersOrder))
+                list.Add(Expression.Assign(Expression.PropertyOrField(item, member.Name), BuildRead(reader, member.GetPropertyOrFieldType(), membersOrder, allowNull, false)));
 
-                list.Add(Expression.Label(Expression.Label(itemType), item));
+            list.Add(Expression.Label(Expression.Label(itemType), item));
 
-                if (allowNull == AllowNull.All && !itemType.IsStruct())
-                    return Expression.Condition(Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBoolean")),
-                            Expression.Block(itemType, new[] { item }, list), Expression.Label(Expression.Label(itemType),
-                            Expression.Constant(null, item.Type)));
-            }
+            if (allowNull == AllowNull.All && !itemType.IsStruct())
+                return Expression.Condition(Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBoolean")),
+                    Expression.Block(itemType, new[] { item }, list), Expression.Label(Expression.Label(itemType),
+                        Expression.Constant(null, item.Type)));
 
             return Expression.Block(itemType, new[] { item }, list);
         }
@@ -482,13 +482,12 @@ namespace CatDb.Data
                         {
                             if (itemType.IsArray)
                                 return Expression.Assign(Expression.ArrayAccess(field, i), BuildRead(reader, itemType.GetElementType(), membersOrder, allowNull, false));
-                            else if (itemType.IsList())
+                            if (itemType.IsList())
                                 return Expression.Call(field, field.Type.GetMethod("Add"), BuildRead(reader, itemType.GetGenericArguments()[0], membersOrder, allowNull, false));
-                            else //if (dataType.IsDictionary)                                                                                       
-                                return Expression.Call(field, field.Type.GetMethod("Add"),
-                                    BuildRead(reader, itemType.GetGenericArguments()[0], membersOrder, allowNull, false),
-                                    BuildRead(reader, itemType.GetGenericArguments()[1], membersOrder, allowNull, false)
-                                    );
+                            return Expression.Call(field, field.Type.GetMethod("Add"),
+                                BuildRead(reader, itemType.GetGenericArguments()[0], membersOrder, allowNull, false),
+                                BuildRead(reader, itemType.GetGenericArguments()[1], membersOrder, allowNull, false)
+                            );
                         },
                         Expression.Label(), lenght)
                     );

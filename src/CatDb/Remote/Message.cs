@@ -1,6 +1,6 @@
 ﻿using CatDb.Data;
-using CatDb.WaterfallTree;
 using CatDb.Remote.Commands;
+using CatDb.WaterfallTree;
 
 namespace CatDb.Remote
 {
@@ -58,7 +58,7 @@ namespace CatDb.Remote
                     description = _previousRecord.Key == id ? _previousRecord.Value : find(id);
                     persist = new CommandPersist(new DataPersist(description.KeyType, null, AllowNull.OnlyMembers), new DataPersist(description.RecordType, null, AllowNull.OnlyMembers));
                 }
-                catch (Exception exc)
+                catch (Exception)
                 {
                     throw new Exception("Cannot find description with the specified ID");
                 }

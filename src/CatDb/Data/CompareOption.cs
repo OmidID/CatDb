@@ -1,6 +1,6 @@
-﻿using CatDb.General.Comparers;
+﻿using System.Reflection;
+using CatDb.General.Comparers;
 using CatDb.General.Extensions;
-using System.Reflection;
 
 namespace CatDb.Data
 {

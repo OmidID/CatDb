@@ -1,14 +1,10 @@
-﻿using CatDb.WaterfallTree;
-using CatDb.Data;
+﻿using CatDb.Data;
+using CatDb.WaterfallTree;
 
 namespace CatDb.Remote.Commands
 {
     public class StorageEngineCommitCommand : ICommand
     {
-        public StorageEngineCommitCommand()
-        {
-        }
-
         public bool IsSynchronous => true;
 
         public int Code => CommandCode.STORAGE_ENGINE_COMMIT;

@@ -1,5 +1,5 @@
-﻿using System.Diagnostics;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using CatDb.Data;
 
 namespace CatDb.WaterfallTree
@@ -11,10 +11,6 @@ namespace CatDb.WaterfallTree
             private const int MAP_CAPACITY = 131072;
             private ConcurrentDictionary<Locator, Range> _map = new();
             private BranchCollection _branches;
-
-            public BranchesOptimizator()
-            {
-            }
 
             public void Rebuild(BranchCollection branches)
             {

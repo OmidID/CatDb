@@ -46,7 +46,7 @@ namespace CatDb.WaterfallTree
                     }
                     else
                     {
-                        Parallel.ForEach(cache, (kv) =>
+                        Parallel.ForEach(cache, kv =>
                         {
                             //compact operations
                             kv.Key.Apply.Internal(kv.Value);

@@ -1,5 +1,5 @@
-﻿using CatDb.WaterfallTree;
-using CatDb.Data;
+﻿using CatDb.Data;
+using CatDb.WaterfallTree;
 
 namespace CatDb.Database.Operations
 {
@@ -10,7 +10,7 @@ namespace CatDb.Database.Operations
         protected PointOperation(int action, IData key)
         {
             Code = action;
-            this._key = key;
+            _key = key;
         }
 
         public int Code { get; private set; }

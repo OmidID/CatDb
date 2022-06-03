@@ -1,8 +1,8 @@
-﻿using System.Text;
-using CatDb.General.Extensions;
-using System.Globalization;
+﻿using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text;
+using CatDb.General.Extensions;
 
 namespace CatDb.Data
 {
@@ -55,7 +55,7 @@ namespace CatDb.Data
         {
             var item = Expression.Parameter(typeof(T));
 
-            return Expression.Lambda<Func<T, string>>(ValueToStringHelper.CreateToStringBody(item, _stringBuilderCapacity, _providers, _delimiters[0], _membersOrder), new[] { item });
+            return Expression.Lambda<Func<T, string>>(ValueToStringHelper.CreateToStringBody(item, _stringBuilderCapacity, _providers, _delimiters[0], _membersOrder), item);
         }
 
         public Expression<Func<string, T>> CreateFromMethod()
@@ -73,7 +73,7 @@ namespace CatDb.Data
 
             var body = Expression.Block(new[] { item }, list);
 
-            return Expression.Lambda<Func<string, T>>(body, new[] { stringParam });
+            return Expression.Lambda<Func<string, T>>(body, stringParam);
         }
 
         public string To(T value1)
@@ -204,7 +204,7 @@ namespace CatDb.Data
 
             var list = new List<Expression>
             {
-                Expression.Assign(array, Expression.Call(stringParam, typeof(string).GetMethod("Split", new[] { typeof(char[]) }), new Expression[] { Expression.Constant(delimiters) }))
+                Expression.Assign(array, Expression.Call(stringParam, typeof(string).GetMethod("Split", new[] { typeof(char[]) }), Expression.Constant(delimiters)))
             };
 
             var i = 0;
@@ -275,7 +275,8 @@ namespace CatDb.Data
 
                 return numberFormat;
             }
-            else if (type == typeof(DateTime) || type == typeof(TimeSpan))
+
+            if (type == typeof(DateTime) || type == typeof(TimeSpan))
             {
                 var dateTimeFormat = new DateTimeFormatInfo
                 {
@@ -289,8 +290,8 @@ namespace CatDb.Data
 
                 return dateTimeFormat;
             }
-            else
-                return null;
+
+            return null;
         }
     }
 }

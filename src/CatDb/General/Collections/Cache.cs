@@ -15,14 +15,14 @@ namespace CatDb.General.Collections
         //Comparer<TKey>.Default
         public Cache(int capacity, IComparer<TKey> comparer)
         {
-            this._capacity = capacity;
+            _capacity = capacity;
             _mapping = new SortedDictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>>(comparer);
         }
 
         //EqualityComparer<TKey>.Default
         public Cache(int capacity, IEqualityComparer<TKey> comparer)
         {
-            this._capacity = capacity;
+            _capacity = capacity;
             _mapping = new Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>>(comparer);
         }
 

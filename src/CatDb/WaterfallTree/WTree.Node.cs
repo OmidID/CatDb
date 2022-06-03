@@ -12,7 +12,7 @@ namespace CatDb.WaterfallTree
 #if DEBUG
             public volatile int TaskId;
 #endif
-            private static long _globalTouchId = 0;
+            private static long _globalTouchId;
             private long _touchId;
 
             public long TouchId

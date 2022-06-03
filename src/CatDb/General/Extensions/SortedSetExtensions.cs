@@ -281,11 +281,10 @@ namespace CatDb.General.Extensions
 
             var exitPoint = Expression.Label(typeof(KeyValuePair<bool, T>));
 
-            MethodInfo findNode;
 #if NETFX_CORE
             findNode = type.GetMethod("FindNode");
 #else
-            findNode = type.GetMethod("FindNode", BindingFlags.NonPublic | BindingFlags.Instance);
+            var findNode = type.GetMethod("FindNode", BindingFlags.NonPublic | BindingFlags.Instance);
 #endif
             var call = Expression.Call(set, findNode, key);
             var node = Expression.Variable(nodeType, "node");
@@ -324,11 +323,10 @@ namespace CatDb.General.Extensions
             var index = Expression.Variable(typeof(int), "index");
             var count = Expression.Variable(typeof(int), "count");
 
-            MethodInfo method;
 #if NETFX_CORE
             method = type.GetMethod("ConstructRootFromSortedArray");
 #else
-            method = type.GetMethod("ConstructRootFromSortedArray", BindingFlags.NonPublic | BindingFlags.Static);
+            var method = type.GetMethod("ConstructRootFromSortedArray", BindingFlags.NonPublic | BindingFlags.Static);
 #endif
             var toIndex = Expression.Subtract(Expression.Add(index, count), Expression.Constant(1, typeof(int)));
             var call = Expression.Call(method, array, index, toIndex, Expression.Constant(null, nodeType));
@@ -389,21 +387,16 @@ namespace CatDb.General.Extensions
 
             var sortedSetType = typeof(SortedSet<T>);
 
-            MethodInfo is4NodeMethod;
-            MethodInfo split4NodeMethod;
-            MethodInfo isRedMethod;
-            MethodInfo insertionBalanceMethod;
-
 #if NETFX_CORE
             is4NodeMethod = sortedSetType.GetMethod("Is4Node");
             split4NodeMethod = sortedSetType.GetMethod("Split4Node");
             isRedMethod = sortedSetType.GetMethod("IsRed");
             insertionBalanceMethod = sortedSetType.GetMethod("InsertionBalance");
 #else
-            is4NodeMethod = sortedSetType.GetMethod("Is4Node", BindingFlags.NonPublic | BindingFlags.Static);
-            split4NodeMethod = sortedSetType.GetMethod("Split4Node", BindingFlags.NonPublic | BindingFlags.Static);
-            isRedMethod = sortedSetType.GetMethod("IsRed", BindingFlags.NonPublic | BindingFlags.Static);
-            insertionBalanceMethod = sortedSetType.GetMethod("InsertionBalance", BindingFlags.NonPublic | BindingFlags.Instance);
+            var is4NodeMethod = sortedSetType.GetMethod("Is4Node", BindingFlags.NonPublic | BindingFlags.Static);
+            var split4NodeMethod = sortedSetType.GetMethod("Split4Node", BindingFlags.NonPublic | BindingFlags.Static);
+            var isRedMethod = sortedSetType.GetMethod("IsRed", BindingFlags.NonPublic | BindingFlags.Static);
+            var insertionBalanceMethod = sortedSetType.GetMethod("InsertionBalance", BindingFlags.NonPublic | BindingFlags.Instance);
 #endif
 
             var loopBody = Expression.Block(
@@ -463,7 +456,7 @@ namespace CatDb.General.Extensions
 
             var body = Expression.Block(new[] { comparer, root, node, grandParent, greatGrandParent, cmp, current }, list);
 
-            var lambda = Expression.Lambda<Func<SortedSet<T>, T, Func<T, T, T>, bool>>(body, new[] { set, item, onExist });
+            var lambda = Expression.Lambda<Func<SortedSet<T>, T, Func<T, T, T>, bool>>(body, set, item, onExist);
 
             //public bool Replace(SortedSet<T> set, T item, Func<T, T, T> onExist)
             //{
@@ -526,12 +519,11 @@ namespace CatDb.General.Extensions
         public Expression<Func<SortedSet<T>, T, T, bool, bool, SortedSet<T>>> CreateGetViewBetweenMethod()
         {
             var type = typeof(SortedSet<T>);
-            Type treeSubSetType;
 
 #if NETFX_CORE
             treeSubSetType = type.GetNestedType("TreeSubSet").MakeGenericType(typeof(T));
 #else
-            treeSubSetType = type.GetNestedType("TreeSubSet", BindingFlags.NonPublic).MakeGenericType(typeof(T));
+            var treeSubSetType = type.GetNestedType("TreeSubSet", BindingFlags.NonPublic).MakeGenericType(typeof(T));
 #endif
 
             var set = Expression.Parameter(typeof(SortedSet<T>), "set");

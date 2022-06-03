@@ -109,7 +109,7 @@
 
         public static IEnumerable<T> Merge<T>(this IEnumerable<T> enumerable1, IEnumerable<T> enumerable2, OnMergeConflict onMergeConflict = OnMergeConflict.ReturnFirstAndSecond, Func<T, T, T> function = null)
         {
-            return Merge<T>(enumerable1, enumerable2, Comparer<T>.Default, onMergeConflict, function);
+            return Merge(enumerable1, enumerable2, Comparer<T>.Default, onMergeConflict, function);
         }
 
         public static IEnumerable<T> Apply<T>(this IEnumerable<T> collection, Action<T> action)

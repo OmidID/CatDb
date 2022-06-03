@@ -1,6 +1,6 @@
 ﻿using System.Linq.Expressions;
-using CatDb.General.Extensions;
 using System.Reflection;
+using CatDb.General.Extensions;
 
 namespace CatDb.Data
 {

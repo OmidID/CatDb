@@ -1,8 +1,8 @@
-﻿using CatDb.General.Persist;
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using System.Reflection;
-using CatDb.General.Extensions;
 using CatDb.General.Compression;
+using CatDb.General.Extensions;
+using CatDb.General.Persist;
 
 namespace CatDb.Data
 {
@@ -41,7 +41,7 @@ namespace CatDb.Data
 
             var body = IndexerPersistHelper.CreateStoreBody(_type, _persists, writer, callValues, idx, count, _membersOrder);
 
-            var lambda = Expression.Lambda<Action<BinaryWriter, Func<int, T>, int>>(body, new[] { writer, values, count });
+            var lambda = Expression.Lambda<Action<BinaryWriter, Func<int, T>, int>>(body, writer, values, count);
 
             return lambda;
         }
@@ -67,7 +67,7 @@ namespace CatDb.Data
                     IndexerPersistHelper.CreateLoadBody(_type, false, reader, array, count, _membersOrder, _persists)
                     );
 
-            return Expression.Lambda<Action<BinaryReader, Action<int, T>, int>>(body, new[] { reader, values, count });
+            return Expression.Lambda<Action<BinaryReader, Action<int, T>, int>>(body, reader, values, count);
         }
 
         public void Store(BinaryWriter writer, Func<int, T> values, int count)
@@ -264,7 +264,7 @@ namespace CatDb.Data
 
             return Expression.Call(Expression.Convert(Expression.Constant(persists[index]), persists[index].GetType()), persists[index].GetType().GetMethod("Load"),
                Expression.New(typeof(BinaryReader).GetConstructor(new[] { typeof(MemoryStream) }), ms),
-               Expression.Lambda(typeof(Action<,>).MakeGenericType(new[] { typeof(int), member.GetPropertyOrFieldType() }), Expression.Assign(field, value), idx, value),
+               Expression.Lambda(typeof(Action<,>).MakeGenericType(typeof(int), member.GetPropertyOrFieldType()), Expression.Assign(field, value), idx, value),
                count);
         }
 
@@ -311,51 +311,49 @@ namespace CatDb.Data
                             Expression.Call(ms, typeof(MemoryStream).GetMethod("GetBuffer")), Expression.Constant(0), Expression.Convert(Expression.Property(ms, "Length"), typeof(int)))
                     ));
             }
-            else
+
+            var streams = Expression.Variable(typeof(MemoryStream[]), "streams");
+            var actions = Expression.Variable(typeof(Action[]), "actions");
+
+            list.Add(Expression.Assign(streams, Expression.New(typeof(MemoryStream[]).GetConstructor(new[] { typeof(int) }), Expression.Constant(itemsCount, typeof(int)))));
+            list.Add(Expression.Assign(actions, Expression.New(typeof(Action[]).GetConstructor(new[] { typeof(int) }), Expression.Constant(itemsCount, typeof(int)))));
+
+            var counter = 0;
+            foreach (var member in DataTypeUtils.GetPublicMembers(type, membersOrder))
             {
-                var streams = Expression.Variable(typeof(MemoryStream[]), "streams");
-                var actions = Expression.Variable(typeof(Action[]), "actions");
+                var persist = Expression.Convert(Expression.Constant(persists[counter]), persists[counter].GetType());
+                var ms = Expression.ArrayAccess(streams, Expression.Constant(counter, typeof(int)));
+                var func = Expression.Lambda(Expression.PropertyOrField(callValues, member.Name), idx);
 
-                list.Add(Expression.Assign(streams, Expression.New(typeof(MemoryStream[]).GetConstructor(new[] { typeof(int) }), Expression.Constant(itemsCount, typeof(int)))));
-                list.Add(Expression.Assign(actions, Expression.New(typeof(Action[]).GetConstructor(new[] { typeof(int) }), Expression.Constant(itemsCount, typeof(int)))));
+                var writerNew = Expression.New(typeof(BinaryWriter).GetConstructor(new[] { typeof(MemoryStream) }), ms);
 
-                var counter = 0;
-                foreach (var member in DataTypeUtils.GetPublicMembers(type, membersOrder))
-                {
-                    var persist = Expression.Convert(Expression.Constant(persists[counter]), persists[counter].GetType());
-                    var ms = Expression.ArrayAccess(streams, Expression.Constant(counter, typeof(int)));
-                    var func = Expression.Lambda(Expression.PropertyOrField(callValues, member.Name), idx);
-
-                    var writerNew = Expression.New(typeof(BinaryWriter).GetConstructor(new[] { typeof(MemoryStream) }), ms);
-
-                    var action = Expression.Lambda(Expression.Block(
-                           Expression.Assign(ms, Expression.New(typeof(MemoryStream).GetConstructor(new Type[] { }))),
-                           Expression.Call(persist, persist.Type.GetMethod("Store"), writerNew, func, count)
-                        ));
-
-                    list.Add(Expression.Assign(Expression.ArrayAccess(actions, Expression.Constant(counter)), action));
-                    counter++;
-                }
-
-                list.Add(Expression.Call(typeof(Parallel).GetMethod("Invoke", new[] { typeof(Action[]) }), actions));
-
-                list.Add(streams.For(
-                    (i) =>
-                    {
-                        var stream = Expression.Variable(typeof(MemoryStream), "stream");
-
-                        return stream.Using(Expression.Block(
-                               Expression.Assign(stream, Expression.ArrayAccess(streams, i)),
-                               Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.ConvertChecked(Expression.Property(stream, "Length"), typeof(ulong))),
-                               Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(byte[]), typeof(int), typeof(int) }),
-                                   Expression.Call(stream, typeof(MemoryStream).GetMethod("GetBuffer")), Expression.Constant(0), Expression.Convert(Expression.Property(stream, "Length"), typeof(int)))
-                            ));
-                    },
-                     Expression.Label()
+                var action = Expression.Lambda(Expression.Block(
+                    Expression.Assign(ms, Expression.New(typeof(MemoryStream).GetConstructor(new Type[] { }))),
+                    Expression.Call(persist, persist.Type.GetMethod("Store"), writerNew, func, count)
                 ));
 
-                return Expression.Block(new[] { actions, streams }, list);
+                list.Add(Expression.Assign(Expression.ArrayAccess(actions, Expression.Constant(counter)), action));
+                counter++;
             }
+
+            list.Add(Expression.Call(typeof(Parallel).GetMethod("Invoke", new[] { typeof(Action[]) }), actions));
+
+            list.Add(streams.For(
+                i =>
+                {
+                    var stream = Expression.Variable(typeof(MemoryStream), "stream");
+
+                    return stream.Using(Expression.Block(
+                        Expression.Assign(stream, Expression.ArrayAccess(streams, i)),
+                        Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.ConvertChecked(Expression.Property(stream, "Length"), typeof(ulong))),
+                        Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(byte[]), typeof(int), typeof(int) }),
+                            Expression.Call(stream, typeof(MemoryStream).GetMethod("GetBuffer")), Expression.Constant(0), Expression.Convert(Expression.Property(stream, "Length"), typeof(int)))
+                    ));
+                },
+                Expression.Label()
+            ));
+
+            return Expression.Block(new[] { actions, streams }, list);
         }
 
         public static IIndexerPersist[] GetDefaultPersists(Type type, Func<Type, MemberInfo, int> membersOrder = null)

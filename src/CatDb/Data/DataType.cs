@@ -113,8 +113,8 @@ namespace CatDb.Data
 
         private DataType(Code code, params DataType[] types)
         {
-            this._code = code;
-            this._types = types;
+            _code = code;
+            _types = types;
         }
 
         private int InternalGetHashCode()
@@ -140,8 +140,7 @@ namespace CatDb.Data
 
             if (IsSlots)
                 return $"({s})";
-            else
-                return $"{_code}<{s}>";
+            return $"{_code}<{s}>";
         }
 
         private void InternalSerialize(BinaryWriter writer)

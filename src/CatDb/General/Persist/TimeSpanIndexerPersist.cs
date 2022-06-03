@@ -16,7 +16,7 @@
         {
             writer.Write(VERSION);
 
-            _persist.Store(writer, (i) => { return values(i).Ticks; }, count);
+            _persist.Store(writer, i => { return values(i).Ticks; }, count);
         }
 
         public void Load(BinaryReader reader, Action<int, TimeSpan> values, int count)

@@ -15,7 +15,7 @@ namespace CatDb.Database
 
         public static IStorageEngine FromStream(Stream stream)
         {
-            IHeap heap = new Heap(stream, false, AllocationStrategy.FromTheCurrentBlock);
+            IHeap heap = new Heap(stream);
 
             return FromHeap(heap);
         }

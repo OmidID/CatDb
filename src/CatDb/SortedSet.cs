@@ -1,8 +1,8 @@
-﻿using System.Diagnostics;
+﻿using System.Collections;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.Serialization;
-using System.Collections;
 
 namespace CatDb
 {
@@ -81,7 +81,7 @@ namespace CatDb
 
         public SortedSet(IComparer<T>? comparer)
         {
-            this._comparer = comparer ?? Comparer<T>.Default;
+            _comparer = comparer ?? Comparer<T>.Default;
         }
 
 
@@ -100,8 +100,8 @@ namespace CatDb
                 if (sortedSet.Count > 0)
                 {
                     Debug.Assert(sortedSet.Root != null);
-                    this._count = sortedSet._count;
-                    Root = sortedSet.Root.DeepClone(this._count);
+                    _count = sortedSet._count;
+                    Root = sortedSet.Root.DeepClone(_count);
                 }
                 return;
             }
@@ -111,7 +111,7 @@ namespace CatDb
             {
                 // If `comparer` is null, sets it to Comparer<T>.Default. We checked for this condition in the IComparer<T> constructor.
                 // Array.Sort handles null comparers, but we need this later when we use `comparer.Compare` directly.
-                comparer = this._comparer;
+                comparer = _comparer;
                 Array.Sort(elements, 0, count, comparer);
 
                 // Overwrite duplicates while shifting the distinct elements towards
@@ -127,7 +127,7 @@ namespace CatDb
 
                 count = index;
                 Root = ConstructRootFromSortedArray(elements, 0, count - 1, null);
-                this._count = count;
+                _count = count;
             }
         }
 
@@ -1208,12 +1208,10 @@ namespace CatDb
                     return false;
                 return IsSubsetOfSortedSetWithSameComparer(asSorted);
             }
-            else
-            {
-                // Worst case: I mark every element in my set and see if I've counted all of them. O(M log N).
-                var result = CheckUniqueAndUnfoundElements(other, false);
-                return result.UniqueCount == Count && result.UnfoundCount >= 0;
-            }
+
+            // Worst case: I mark every element in my set and see if I've counted all of them. O(M log N).
+            var result = CheckUniqueAndUnfoundElements(other, false);
+            return result.UniqueCount == Count && result.UnfoundCount >= 0;
         }
 
         private bool IsSubsetOfSortedSetWithSameComparer(SortedSet<T> asSorted)
@@ -2443,7 +2441,7 @@ namespace CatDb
         internal static int ToIntArrayLength(int n) => n > 0 ? ((n - 1) / INT_SIZE + 1) : 0;
     }
 
-    internal static partial class EnumerableHelpers
+    internal static class EnumerableHelpers
     {
         /// <summary>Converts an enumerable to an array using the same logic as List{T}.</summary>
         /// <param name="source">The enumerable to convert.</param>

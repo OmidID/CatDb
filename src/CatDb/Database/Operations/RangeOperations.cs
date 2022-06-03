@@ -1,5 +1,5 @@
-﻿using CatDb.WaterfallTree;
-using CatDb.Data;
+﻿using CatDb.Data;
+using CatDb.WaterfallTree;
 
 namespace CatDb.Database.Operations
 {
@@ -11,8 +11,8 @@ namespace CatDb.Database.Operations
         protected RangeOperation(int action, IData from, IData to)
         {
             Code = action;
-            this._from = from;
-            this._to = to;
+            _from = from;
+            _to = to;
         }
 
         protected RangeOperation(int action)

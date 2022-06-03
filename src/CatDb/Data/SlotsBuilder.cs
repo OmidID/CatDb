@@ -3,6 +3,8 @@ using System.CodeDom.Compiler;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
+using Microsoft.CSharp;
+using Environment = CatDb.General.Environment;
 
 namespace CatDb.Data
 {
@@ -21,10 +23,9 @@ namespace CatDb.Data
             if (types.Length == 0)
                 throw new ArgumentException("types.Length == 0");
 
-            if (General.Environment.RunningOnMono)
+            if (Environment.RunningOnMono)
                 return BuildTypeCodeDom(baseInterface, className, fieldsPrefix, types);
-            else
-                return BuildTypeEmit(baseInterface, className, fieldsPrefix, types);
+            return BuildTypeEmit(baseInterface, className, fieldsPrefix, types);
         }
 
         private static Type BuildTypeEmit(Type baseInterface, string className, string fieldsPrefix, params Type[] types)
@@ -143,7 +144,7 @@ namespace CatDb.Data
 
             var parameters = new CompilerParameters(assemblies);
 
-            CodeDomProvider runTimeProvider = new Microsoft.CSharp.CSharpCodeProvider();
+            CodeDomProvider runTimeProvider = new CSharpCodeProvider();
             parameters = new CompilerParameters(assemblies)
             {
                 GenerateExecutable = false,

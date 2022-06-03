@@ -1,6 +1,6 @@
-﻿using CatDb.Data;
+﻿using System.Collections.Concurrent;
+using CatDb.Data;
 using CatDb.General.Persist;
-using System.Collections.Concurrent;
 
 namespace CatDb.WaterfallTree
 {
@@ -12,10 +12,6 @@ namespace CatDb.WaterfallTree
         public IEqualityComparer<IData> EqualityComparer { get; set; }
         public IPersist<IData> Persist { get; set; }
         public IIndexerPersist<IData> IndexerPersist { get; set; }
-
-        public TypeEngine()
-        {
-        }
 
         private static TypeEngine Create(Type type)
         {

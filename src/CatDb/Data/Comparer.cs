@@ -1,8 +1,8 @@
-﻿using System.Linq.Expressions;
-using CatDb.General.Extensions;
+﻿using System.Diagnostics;
+using System.Linq.Expressions;
 using System.Reflection;
 using CatDb.General.Comparers;
-using System.Diagnostics;
+using CatDb.General.Extensions;
 
 namespace CatDb.Data
 {
