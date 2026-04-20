@@ -1,51 +1,49 @@
-﻿namespace CatDb.General.Communication
+﻿namespace CatDb.General.Communication;
+///--------------------- Packet Exchange Protocol
+///
+///--------------------- Comments-----------------------------------
+///format           : binary
+///byte style       : LittleEndian
+///ID               : Unique ID's per Connection and Unique ID per Packet.
+///
+///------------------------------------------------------------------
+///Packet           : long ID, int Size, byte[] buffer 
+///  
+
+public class Packet
 {
-    ///--------------------- Packet Exchange Protocol
-    ///
-    ///--------------------- Comments-----------------------------------
-    ///format           : binary
-    ///byte style       : LittleEndian
-    ///ID               : Unique ID's per Connection and Unique ID per Packet.
-    ///
-    ///------------------------------------------------------------------
-    ///Packet           : long ID, int Size, byte[] buffer 
-    ///  
+    internal long Id;
 
-    public class Packet
+    public readonly MemoryStream Request; // Request Message
+    public MemoryStream Response; // Response Message
+
+    public readonly ManualResetEventSlim ResultEvent;
+    public Exception Exception;
+
+    public Packet(MemoryStream request)
     {
-        internal long Id;
+        if (request == null)
+            throw new ArgumentNullException("request == null");
 
-        public readonly MemoryStream Request; // Request Message
-        public MemoryStream Response; // Response Message
+        Request = request;
 
-        public readonly ManualResetEventSlim ResultEvent;
-        public Exception Exception;
+        ResultEvent = new ManualResetEventSlim(false);
+    }
 
-        public Packet(MemoryStream request)
-        {
-            if (request == null)
-                throw new ArgumentNullException("request == null");
+    public void Wait()
+    {
+        ResultEvent.Wait();
 
-            Request = request;
+        if (Exception != null)
+            throw Exception;
+    }
 
-            ResultEvent = new ManualResetEventSlim(false);
-        }
+    public void Write(BinaryWriter writer, MemoryStream memoryStream)
+    {
+        var size = (int)memoryStream.Length;
 
-        public void Wait()
-        {
-            ResultEvent.Wait();
-
-            if (Exception != null)
-                throw Exception;
-        }
-
-        public void Write(BinaryWriter writer, MemoryStream memoryStream)
-        {
-            var size = (int)memoryStream.Length;
-
-            writer.Write(Id);
-            writer.Write(size);
-            writer.Write(memoryStream.GetBuffer(), 0, size);
-        }
+        writer.Write(Id);
+        writer.Write(size);
+        writer.Write(memoryStream.GetBuffer(), 0, size);
     }
 }

@@ -1,61 +1,36 @@
 ﻿using CatDb.Data;
 using CatDb.General.Persist;
 
-namespace CatDb.WaterfallTree
+namespace CatDb.WaterfallTree;
+
+public interface IDescriptor
 {
-    //[Flags]
-    //public enum CustomData : byte
-    //{
-    //    None = 0,
-    //    KeyType = 1,
-    //    RecordType = 2,
-    //    KeyComparer = 4,
-    //    KeyEqualityComparer = 8,
-    //    KeyPersist = 16,
-    //    RecordPersist = 32,
-    //    KeyIndexerPersist = 64,
-    //    RecordIndexerPersist = 128,
+    long   Id            { get; }
+    string Name          { get; }
+    int    StructureType { get; }
 
-    //    All = KeyType | RecordType | KeyComparer | KeyEqualityComparer | KeyPersist | RecordPersist | KeyIndexerPersist | RecordIndexerPersist
-    //}
+    /// Describes the key type.
+    DataType KeyDataType { get; }
 
-    public interface IDescriptor
-    {
-        long Id { get; }
-        string Name { get; }
-        int StructureType { get; }
+    /// Describes the record type.
+    DataType RecordDataType { get; }
 
-        /// <summary>
-        /// Describes the KeyType
-        /// </summary>
-        DataType KeyDataType { get; }
+    /// Can be anonymous or user type.
+    Type KeyType    { get; set; }
 
-        /// <summary>
-        /// Describes the RecordType
-        /// </summary>
-        DataType RecordDataType { get; }
+    /// Can be anonymous or user type.
+    Type RecordType { get; set; }
 
-        /// <summary>
-        /// Can be anonymous or user type
-        /// </summary>
-        Type KeyType { get; set; }
+    IComparer<IData>          KeyComparer           { get; set; }
+    IEqualityComparer<IData>  KeyEqualityComparer   { get; set; }
+    IPersist<IData>           KeyPersist            { get; set; }
+    IPersist<IData>           RecordPersist         { get; set; }
+    IIndexerPersist<IData>    KeyIndexerPersist     { get; set; }
+    IIndexerPersist<IData>    RecordIndexerPersist  { get; set; }
 
-        /// <summary>
-        /// Can be anonymous or user type
-        /// </summary>
-        Type RecordType { get; set; }
+    DateTime CreateTime   { get; }
+    DateTime ModifiedTime { get; }
+    DateTime AccessTime   { get; }
 
-        IComparer<IData> KeyComparer { get; set; }
-        IEqualityComparer<IData> KeyEqualityComparer { get; set; }
-        IPersist<IData> KeyPersist { get; set; }
-        IPersist<IData> RecordPersist { get; set; }
-        IIndexerPersist<IData> KeyIndexerPersist { get; set; }
-        IIndexerPersist<IData> RecordIndexerPersist { get; set; }
-
-        DateTime CreateTime { get; }
-        DateTime ModifiedTime { get; }
-        DateTime AccessTime { get; }
-
-        byte[] Tag { get; set; }
-    }
+    byte[] Tag { get; set; }
 }

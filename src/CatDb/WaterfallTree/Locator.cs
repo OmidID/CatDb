@@ -5,9 +5,9 @@ using CatDb.General.Collections;
 using CatDb.General.Compression;
 using CatDb.General.Persist;
 
-namespace CatDb.WaterfallTree
-{
-    public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
+namespace CatDb.WaterfallTree;
+
+public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
     {
         private const byte VERSION = 40;
 
@@ -269,14 +269,10 @@ namespace CatDb.WaterfallTree
             //records
             if (RecordPersist == null || RecordIndexerPersist == null)
             {
-                if (_recEngine == null)
-                    _recEngine = TypeEngine.Default(RecordType);
+                _recEngine ??= TypeEngine.Default(RecordType);
 
-                if (RecordPersist == null)
-                    RecordPersist = _recEngine.Persist;
-
-                if (RecordIndexerPersist == null)
-                    RecordIndexerPersist = _recEngine.IndexerPersist;
+                RecordPersist       ??= _recEngine.Persist;
+                RecordIndexerPersist ??= _recEngine.IndexerPersist;
             }
 
             //container
@@ -311,10 +307,10 @@ namespace CatDb.WaterfallTree
 
         public override bool Equals(object obj)
         {
-            if (!(obj is Locator))
+            if (obj is not Locator other2)
                 return false;
 
-            return Equals((Locator)obj);
+            return Equals(other2);
         }
 
         public override int GetHashCode()
@@ -329,8 +325,8 @@ namespace CatDb.WaterfallTree
 
         public static bool operator ==(Locator x, Locator y)
         {
-            var xNotNull = !ReferenceEquals(x, null);
-            var yNotNull = !ReferenceEquals(y, null);
+            var xNotNull = x is not null;
+            var yNotNull = y is not null;
 
             if (xNotNull && yNotNull)
                 return x.Equals(y);
@@ -637,4 +633,3 @@ namespace CatDb.WaterfallTree
 
         #endregion
     }
-}

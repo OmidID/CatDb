@@ -1,344 +1,342 @@
 ﻿using System.Diagnostics;
 using CatDb.Data;
 
-namespace CatDb.WaterfallTree
+namespace CatDb.WaterfallTree;
+public partial class WTree
 {
-    public partial class WTree
+    private partial class Branch
     {
-        private partial class Branch
-        {
-            private volatile Task _fallTask;
+        private volatile Task _fallTask;
 
-            private void DoFall(object state)
-            {
-                var tuple = (Tuple<Branch, BranchCache, int, Token, Params>)state;
-                var branch = tuple.Item1;
-                var cache = tuple.Item2;
-                var level = tuple.Item3;
-                var token = tuple.Item4;
-                var param = tuple.Item5;
-                if (!branch.IsNodeLoaded)
-                    token.Semaphore.Wait();
-                var node = branch.Node;
-                Debug.Assert(branch == node.Branch);
+        private void DoFall(object state)
+        {
+            var tuple = (Tuple<Branch, BranchCache, int, Token, Params>)state;
+            var branch = tuple.Item1;
+            var cache = tuple.Item2;
+            var level = tuple.Item3;
+            var token = tuple.Item4;
+            var param = tuple.Item5;
+            if (!branch.IsNodeLoaded)
+                token.Semaphore.Wait();
+            var node = branch.Node;
+            Debug.Assert(branch == node.Branch);
 //#if DEBUG
 //                Debug.Assert(node.TaskID == 0);
 //                node.TaskID = Task.CurrentId.Value;
 //#endif
 
-                //if (param.WalkAction != WalkAction.CacheFlush)
-                    node.Touch(level);
+            //if (param.WalkAction != WalkAction.CacheFlush)
+                node.Touch(level);
 
-                //1. Apply cache
-                if (cache != null)
+            //1. Apply cache
+            if (cache != null)
+            {
+                if (cache.Count == 1 || node.Type == NodeType.Leaf)
                 {
-                    if (cache.Count == 1 || node.Type == NodeType.Leaf)
+                    foreach (var kv in cache)
                     {
-                        foreach (var kv in cache)
-                        {
-                            //compact operations
-                            kv.Key.Apply.Internal(kv.Value);
+                        //compact operations
+                        kv.Key.Apply.Internal(kv.Value);
 
-                            //apply
-                            if (kv.Value.Count > 0)
-                                node.Apply(kv.Value);
-                        }
-                    }
-                    else
-                    {
-                        Parallel.ForEach(cache, kv =>
-                        {
-                            //compact operations
-                            kv.Key.Apply.Internal(kv.Value);
-
-                            //apply
-                            if (kv.Value.Count > 0)
-                                node.Apply(kv.Value);
-                        });
-                    }
-
-                    cache.Clear();
-                }
-                
-                //2. Maintenance
-                if (node.Type == NodeType.Internal)
-                    ((InternalNode)node).Maintenance(level, token);
-                branch.NodeState = node.State;
-
-                if (node.IsExpiredFromCache && (param.WalkAction & WalkAction.CacheFlush) == WalkAction.CacheFlush)
-                    param = new Params(param.WalkMethod, WalkAction.Store | WalkAction.Unload, param.WalkParams, param.Sink);
-
-                if (node.Type == NodeType.Internal)
-                {
-                    if (param.WalkMethod != WalkMethod.Current)
-                    {
-                        //broadcast
-                        ((InternalNode)node).BroadcastFall(level, token, param);
+                        //apply
+                        if (kv.Value.Count > 0)
+                            node.Apply(kv.Value);
                     }
                 }
-
-                if ((param.WalkAction & WalkAction.Store) == WalkAction.Store)
+                else
                 {
-                    if (node.IsModified)
-                        node.Store();
+                    Parallel.ForEach(cache, kv =>
+                    {
+                        //compact operations
+                        kv.Key.Apply.Internal(kv.Value);
+
+                        //apply
+                        if (kv.Value.Count > 0)
+                            node.Apply(kv.Value);
+                    });
                 }
 
-                if ((param.WalkAction & WalkAction.Unload) == WalkAction.Unload)
-                {
-                    //node.IsExpiredFromCache = false;
-                    branch.Node = null;
-                    Tree.Exclude(branch.NodeHandle);
-                }
+                cache.Clear();
+            }
+            
+            //2. Maintenance
+            if (node.Type == NodeType.Internal)
+                ((InternalNode)node).Maintenance(level, token);
+            branch.NodeState = node.State;
 
-                if (token != null)
-                    token.CountdownEvent.Signal();
+            if (node.IsExpiredFromCache && (param.WalkAction & WalkAction.CacheFlush) == WalkAction.CacheFlush)
+                param = new Params(param.WalkMethod, WalkAction.Store | WalkAction.Unload, param.WalkParams, param.Sink);
+
+            if (node.Type == NodeType.Internal)
+            {
+                if (param.WalkMethod != WalkMethod.Current)
+                {
+                    //broadcast
+                    ((InternalNode)node).BroadcastFall(level, token, param);
+                }
+            }
+
+            if ((param.WalkAction & WalkAction.Store) == WalkAction.Store)
+            {
+                if (node.IsModified)
+                    node.Store();
+            }
+
+            if ((param.WalkAction & WalkAction.Unload) == WalkAction.Unload)
+            {
+                //node.IsExpiredFromCache = false;
+                branch.Node = null;
+                Tree.Exclude(branch.NodeHandle);
+            }
+
+            if (token != null)
+                token.CountdownEvent.Signal();
 //#if DEBUG
 //                node.TaskID = 0;
 //#endif
-                branch._fallTask = null;
+            branch._fallTask = null;
 
-                Tree._workingFallCount.Decrement();
-            }
+            Tree._workingFallCount.Decrement();
+        }
 
-            public bool Fall(int level, Token token, Params param, TaskCreationOptions taskCreationOptions = TaskCreationOptions.None)
+        public bool Fall(int level, Token token, Params param, TaskCreationOptions taskCreationOptions = TaskCreationOptions.None)
+        {
+            lock (this)
             {
-                lock (this)
+                WaitFall();
+
+                if (token != null)
                 {
-                    WaitFall();
+                    if (token.Cancellation.IsCancellationRequested)
+                        return false;
 
-                    if (token != null)
+                    token.CountdownEvent.AddCount(1);
+                }
+
+                var haveSink = false;
+                BranchCache cache = null;
+                if (param.Sink)
+                {
+                    if (Cache.OperationCount > 0)
                     {
-                        if (token.Cancellation.IsCancellationRequested)
-                            return false;
-
-                        token.CountdownEvent.AddCount(1);
-                    }
-
-                    var haveSink = false;
-                    BranchCache cache = null;
-                    if (param.Sink)
-                    {
-                        if (Cache.OperationCount > 0)
+                        if (param.IsTotal)
                         {
-                            if (param.IsTotal)
+                            cache = Cache;
+                            Cache = new BranchCache();
+                            haveSink = true;
+                        }
+                        else //no matter IsOverall or IsPoint, we exclude all the operations for the path
+                        {
+                            var operationCollection = Cache.Exclude(param.Path);
+                            if (operationCollection != null)
                             {
-                                cache = Cache;
-                                Cache = new BranchCache();
+                                cache = new BranchCache(/*param.Path,*/ operationCollection);
                                 haveSink = true;
-                            }
-                            else //no matter IsOverall or IsPoint, we exclude all the operations for the path
-                            {
-                                var operationCollection = Cache.Exclude(param.Path);
-                                if (operationCollection != null)
-                                {
-                                    cache = new BranchCache(/*param.Path,*/ operationCollection);
-                                    haveSink = true;
-                                }
                             }
                         }
                     }
-
-                    Tree._workingFallCount.Increment();
-                    _fallTask = Task.Factory.StartNew(DoFall, new Tuple<Branch, BranchCache, int, Token, Params>(this, cache, level - 1, token, param), taskCreationOptions);
-
-                    return haveSink;
                 }
-            }
 
-            public void WaitFall()
+                Tree._workingFallCount.Increment();
+                _fallTask = Task.Factory.StartNew(DoFall, new Tuple<Branch, BranchCache, int, Token, Params>(this, cache, level - 1, token, param), taskCreationOptions);
+
+                return haveSink;
+            }
+        }
+
+        public void WaitFall()
+        {
+            lock (this)
             {
-                lock (this)
+                var task = _fallTask;
+                if (task != null)
+                    task.Wait();
+            }
+        }
+
+        public void ApplyToCache(Locator locator, IOperation operation)
+        {
+            lock (this)
+                Cache.Apply(locator, operation);
+        }
+
+        public void ApplyToCache(IOperationCollection operations)
+        {
+            lock (this)
+                Cache.Apply(operations);
+        }
+
+        public void MaintenanceRoot(Token token)
+        {
+            if (_node.IsOverflow)
+            {
+                var newBranch = new Branch(Tree, NodeType, NodeHandle)
                 {
-                    var task = _fallTask;
-                    if (task != null)
-                        task.Wait();
-                }
-            }
+                    Node = Node
+                };
+                newBranch.Node.Branch = newBranch;
+                newBranch.NodeState = newBranch.Node.State;
 
-            public void ApplyToCache(Locator locator, IOperation operation)
+                NodeType = NodeType.Internal;
+                //NodeHandle = Tree.Repository.Reserve();
+                NodeHandle = Tree._heap.ObtainNewHandle();
+                Node = Node.Create(this);
+                NodeState = NodeState.None;
+
+                Tree._depth++;
+
+                var rootNode = (InternalNode)Node;
+                rootNode.Branches.Add(new FullKey(Tree.MinLocator, null), newBranch);
+                //rootNode.Branches.Add(newBranch.Node.FirstKey, newBranch);
+                rootNode.HaveChildrenForMaintenance = true;
+                rootNode.Maintenance(Tree._depth + 1, token);
+            }
+            else if (_node.IsUnderflow)
             {
-                lock (this)
-                    Cache.Apply(locator, operation);
+                //TODO: also to release handle
+                //Debug.Assert(node.Type == NodeType.Internal);
+
+                //Branch branch = ((InternalNode)Node).Branches[0].Value;
+
+                //NodeType = branch.NodeType;
+                //NodeHandle = branch.NodeHandle;
+                //Node = branch.node;
+                //NodeState = branch.NodeState;
+
+                //Tree.Depth--;
             }
 
-            public void ApplyToCache(IOperationCollection operations)
-            {
-                lock (this)
-                    Cache.Apply(operations);
-            }
+            token.CountdownEvent.Signal();
+        }
+    }
 
-            public void MaintenanceRoot(Token token)
-            {
-                if (_node.IsOverflow)
-                {
-                    var newBranch = new Branch(Tree, NodeType, NodeHandle)
-                    {
-                        Node = Node
-                    };
-                    newBranch.Node.Branch = newBranch;
-                    newBranch.NodeState = newBranch.Node.State;
+    private enum WalkMethod
+    {
+        Current,
+        CascadeFirst,
+        CascadeLast,
+        Cascade,
+        CascadeButOnlyLoaded,
+    }
 
-                    NodeType = NodeType.Internal;
-                    //NodeHandle = Tree.Repository.Reserve();
-                    NodeHandle = Tree._heap.ObtainNewHandle();
-                    Node = Node.Create(this);
-                    NodeState = NodeState.None;
+    [Flags]
+    private enum WalkAction
+    {
+        None = 0,
+        Store = 0x01,
+        Unload = 0x02,
+        CacheFlush = 0x04
+    }
 
-                    Tree._depth++;
+    private class WalkParams
+    {
+    }
 
-                    var rootNode = (InternalNode)Node;
-                    rootNode.Branches.Add(new FullKey(Tree.MinLocator, null), newBranch);
-                    //rootNode.Branches.Add(newBranch.Node.FirstKey, newBranch);
-                    rootNode.HaveChildrenForMaintenance = true;
-                    rootNode.Maintenance(Tree._depth + 1, token);
-                }
-                else if (_node.IsUnderflow)
-                {
-                    //TODO: also to release handle
-                    //Debug.Assert(node.Type == NodeType.Internal);
+    private class CacheWalkParams : WalkParams
+    {
+        public long TouchId;
 
-                    //Branch branch = ((InternalNode)Node).Branches[0].Value;
+        public CacheWalkParams(long touchId)
+        {
+            TouchId = touchId;
+        }
+    }
 
-                    //NodeType = branch.NodeType;
-                    //NodeHandle = branch.NodeHandle;
-                    //Node = branch.node;
-                    //NodeState = branch.NodeState;
+    private class Params
+    {
+        public readonly WalkMethod WalkMethod;
+        public readonly WalkAction WalkAction;
+        public readonly WalkParams WalkParams;
 
-                    //Tree.Depth--;
-                }
+        #region param scope
 
-                token.CountdownEvent.Signal();
-            }
+        public readonly Locator Path;
+        public readonly IData FromKey;
+        public readonly IData ToKey;
+        public readonly bool IsPoint;
+        public readonly bool IsOverall;
+        public readonly bool IsTotal;
+
+        #endregion
+
+        public readonly bool Sink;
+
+        public Params(WalkMethod walkMethod, WalkAction walkAction, WalkParams walkParams, bool sink, Locator path, IData fromKey, IData toKey)
+        {
+            WalkMethod = walkMethod;
+            WalkAction = walkAction;
+            WalkParams = walkParams;
+
+            Sink = sink;
+
+            Path = path;
+            FromKey = fromKey;
+            ToKey = toKey;
+            IsPoint = false;
+            IsOverall = false;
+            IsTotal = false;
         }
 
-        private enum WalkMethod
+        public Params(WalkMethod walkMethod, WalkAction walkAction, WalkParams walkParams, bool sink, Locator path, IData key)
         {
-            Current,
-            CascadeFirst,
-            CascadeLast,
-            Cascade,
-            CascadeButOnlyLoaded,
+            WalkMethod = walkMethod;
+            WalkAction = walkAction;
+            WalkParams = walkParams;
+
+            Sink = sink;
+
+            Path = path;
+            FromKey = key;
+            ToKey = key;
+            IsPoint = true;
+            IsOverall = false;
+            IsTotal = false;
         }
 
-        [Flags]
-        private enum WalkAction
+        public Params(WalkMethod walkMethod, WalkAction walkAction, WalkParams walkParams, bool sink, Locator path)
         {
-            None = 0,
-            Store = 0x01,
-            Unload = 0x02,
-            CacheFlush = 0x04
+            WalkMethod = walkMethod;
+            WalkAction = walkAction;
+            WalkParams = walkParams;
+
+            Sink = sink;
+
+            Path = path;
+            IsPoint = false;
+            IsOverall = true;
+            IsTotal = false;
         }
 
-        private class WalkParams
+        public Params(WalkMethod walkMethod, WalkAction walkAction, WalkParams walkParams, bool sink)
         {
+            WalkMethod = walkMethod;
+            WalkAction = walkAction;
+            WalkParams = walkParams;
+
+            Sink = sink;
+
+            IsPoint = false;
+            IsOverall = false;
+            IsTotal = true;
         }
+    }
 
-        private class CacheWalkParams : WalkParams
+    private class Token
+    {
+        //private static long globalID = 0;
+
+        //public readonly long ID;
+        public readonly CountdownEvent CountdownEvent = new(1);
+        public readonly SemaphoreSlim Semaphore;
+        public readonly CancellationToken Cancellation;
+
+        [DebuggerStepThrough]
+        public Token(SemaphoreSlim semaphore, CancellationToken cancellationToken)
         {
-            public long TouchId;
+            Semaphore = semaphore;
+            Cancellation = cancellationToken;
 
-            public CacheWalkParams(long touchId)
-            {
-                TouchId = touchId;
-            }
-        }
-
-        private class Params
-        {
-            public readonly WalkMethod WalkMethod;
-            public readonly WalkAction WalkAction;
-            public readonly WalkParams WalkParams;
-
-            #region param scope
-
-            public readonly Locator Path;
-            public readonly IData FromKey;
-            public readonly IData ToKey;
-            public readonly bool IsPoint;
-            public readonly bool IsOverall;
-            public readonly bool IsTotal;
-
-            #endregion
-
-            public readonly bool Sink;
-
-            public Params(WalkMethod walkMethod, WalkAction walkAction, WalkParams walkParams, bool sink, Locator path, IData fromKey, IData toKey)
-            {
-                WalkMethod = walkMethod;
-                WalkAction = walkAction;
-                WalkParams = walkParams;
-
-                Sink = sink;
-
-                Path = path;
-                FromKey = fromKey;
-                ToKey = toKey;
-                IsPoint = false;
-                IsOverall = false;
-                IsTotal = false;
-            }
-
-            public Params(WalkMethod walkMethod, WalkAction walkAction, WalkParams walkParams, bool sink, Locator path, IData key)
-            {
-                WalkMethod = walkMethod;
-                WalkAction = walkAction;
-                WalkParams = walkParams;
-
-                Sink = sink;
-
-                Path = path;
-                FromKey = key;
-                ToKey = key;
-                IsPoint = true;
-                IsOverall = false;
-                IsTotal = false;
-            }
-
-            public Params(WalkMethod walkMethod, WalkAction walkAction, WalkParams walkParams, bool sink, Locator path)
-            {
-                WalkMethod = walkMethod;
-                WalkAction = walkAction;
-                WalkParams = walkParams;
-
-                Sink = sink;
-
-                Path = path;
-                IsPoint = false;
-                IsOverall = true;
-                IsTotal = false;
-            }
-
-            public Params(WalkMethod walkMethod, WalkAction walkAction, WalkParams walkParams, bool sink)
-            {
-                WalkMethod = walkMethod;
-                WalkAction = walkAction;
-                WalkParams = walkParams;
-
-                Sink = sink;
-
-                IsPoint = false;
-                IsOverall = false;
-                IsTotal = true;
-            }
-        }
-
-        private class Token
-        {
-            //private static long globalID = 0;
-
-            //public readonly long ID;
-            public readonly CountdownEvent CountdownEvent = new(1);
-            public readonly SemaphoreSlim Semaphore;
-            public readonly CancellationToken Cancellation;
-
-            [DebuggerStepThrough]
-            public Token(SemaphoreSlim semaphore, CancellationToken cancellationToken)
-            {
-                Semaphore = semaphore;
-                Cancellation = cancellationToken;
-
-                //ID = Interlocked.Increment(ref globalID);
-            }
+            //ID = Interlocked.Increment(ref globalID);
         }
     }
 }

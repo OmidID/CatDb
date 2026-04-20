@@ -1,20 +1,18 @@
 ﻿using CatDb.Data;
 
-namespace CatDb.WaterfallTree
+namespace CatDb.WaterfallTree;
+
+public enum OperationScope : byte
 {
-    public enum OperationScope : byte
-    {
-        Point,
-        Range,
-        Overall
-    }
+    Point,
+    Range,
+    Overall
+}
 
-    public interface IOperation
-    {
-        int Code { get; }
-        OperationScope Scope { get; }
-
-        IData FromKey { get; }
-        IData ToKey { get; }
-    }
+public interface IOperation
+{
+    int            Code    { get; }
+    OperationScope Scope   { get; }
+    IData          FromKey { get; }
+    IData          ToKey   { get; }
 }

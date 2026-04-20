@@ -2,68 +2,66 @@
 using System.Reflection;
 using CatDb.General.Extensions;
 
-namespace CatDb.Data
+namespace CatDb.Data;
+public class DataToObjects : IToObjects<IData>
 {
-    public class DataToObjects : IToObjects<IData>
+    private readonly Func<IData, object[]> _to;
+    private readonly Func<object[], IData> _from;
+
+    private readonly Type _type;
+    private readonly Func<Type, MemberInfo, int> _membersOrder;
+
+    public DataToObjects(Type type, Func<Type, MemberInfo, int> membersOrder = null)
     {
-        private readonly Func<IData, object[]> _to;
-        private readonly Func<object[], IData> _from;
+        if (!DataType.IsPrimitiveType(type) && !type.HasDefaultConstructor())
+            throw new NotSupportedException("No default constructor.");
 
-        private readonly Type _type;
-        private readonly Func<Type, MemberInfo, int> _membersOrder;
+        var isSupported = DataTypeUtils.IsAllPrimitive(type);
+        if (!isSupported)
+            throw new NotSupportedException("Not all types are primitive.");
 
-        public DataToObjects(Type type, Func<Type, MemberInfo, int> membersOrder = null)
-        {
-            if (!DataType.IsPrimitiveType(type) && !type.HasDefaultConstructor())
-                throw new NotSupportedException("No default constructor.");
+        _type = type;
+        _membersOrder = membersOrder;
 
-            var isSupported = DataTypeUtils.IsAllPrimitive(type);
-            if (!isSupported)
-                throw new NotSupportedException("Not all types are primitive.");
+        _to = CreateToMethod().Compile();
+        _from = CreateFromMethod().Compile();
+    }
 
-            _type = type;
-            _membersOrder = membersOrder;
+    public Expression<Func<IData, object[]>> CreateToMethod()
+    {
+        var data = Expression.Parameter(typeof(IData), "data");
 
-            _to = CreateToMethod().Compile();
-            _from = CreateFromMethod().Compile();
-        }
+        var d = Expression.Variable(typeof(Data<>).MakeGenericType(_type), "d");
+        var body = Expression.Block(new[] { d }, Expression.Assign(d, Expression.Convert(data, d.Type)), ValueToObjectsHelper.ToObjects(d.Value(), _membersOrder));
 
-        public Expression<Func<IData, object[]>> CreateToMethod()
-        {
-            var data = Expression.Parameter(typeof(IData), "data");
+        return Expression.Lambda<Func<IData, object[]>>(body, data);
+    }
 
-            var d = Expression.Variable(typeof(Data<>).MakeGenericType(_type), "d");
-            var body = Expression.Block(new[] { d }, Expression.Assign(d, Expression.Convert(data, d.Type)), ValueToObjectsHelper.ToObjects(d.Value(), _membersOrder));
+    public Expression<Func<object[], IData>> CreateFromMethod()
+    {
+        var objectArray = Expression.Parameter(typeof(object[]), "item");
+        var data = Expression.Variable(typeof(Data<>).MakeGenericType(_type));
 
-            return Expression.Lambda<Func<IData, object[]>>(body, data);
-        }
+        var list = new List<Expression> { Expression.Assign(data, Expression.New(data.Type)) };
 
-        public Expression<Func<object[], IData>> CreateFromMethod()
-        {
-            var objectArray = Expression.Parameter(typeof(object[]), "item");
-            var data = Expression.Variable(typeof(Data<>).MakeGenericType(_type));
+        if (!DataType.IsPrimitiveType(_type))
+            list.Add(Expression.Assign(data.Value(), Expression.New(data.Value().Type)));
 
-            var list = new List<Expression> { Expression.Assign(data, Expression.New(data.Type)) };
+        list.Add(ValueToObjectsHelper.FromObjects(data.Value(), objectArray, _membersOrder));
+        list.Add(Expression.Label(Expression.Label(typeof(IData)), data));
 
-            if (!DataType.IsPrimitiveType(_type))
-                list.Add(Expression.Assign(data.Value(), Expression.New(data.Value().Type)));
+        var body = Expression.Block(typeof(IData), new[] { data }, list);
 
-            list.Add(ValueToObjectsHelper.FromObjects(data.Value(), objectArray, _membersOrder));
-            list.Add(Expression.Label(Expression.Label(typeof(IData)), data));
+        return Expression.Lambda<Func<object[], IData>>(body, objectArray);
+    }
 
-            var body = Expression.Block(typeof(IData), new[] { data }, list);
+    public object[] To(IData value1)
+    {
+        return _to(value1);
+    }
 
-            return Expression.Lambda<Func<object[], IData>>(body, objectArray);
-        }
-
-        public object[] To(IData value1)
-        {
-            return _to(value1);
-        }
-
-        public IData From(object[] value2)
-        {
-            return _from(value2);
-        }
+    public IData From(object[] value2)
+    {
+        return _from(value2);
     }
 }

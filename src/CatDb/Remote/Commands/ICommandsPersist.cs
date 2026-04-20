@@ -1,8 +1,6 @@
-﻿namespace CatDb.Remote.Commands
+﻿namespace CatDb.Remote.Commands;
+public interface ICommandCollectionPersist
 {
-    public interface ICommandCollectionPersist
-    {
-        void Write(BinaryWriter writer, CommandCollection collection);
-        CommandCollection Read(BinaryReader reader);
-    }
+    void Write(BinaryWriter writer, CommandCollection collection);
+    CommandCollection Read(BinaryReader reader);
 }

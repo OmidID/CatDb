@@ -1,32 +1,30 @@
 ﻿using CatDb.General.Extensions;
 
-namespace CatDb.General.Persist
+namespace CatDb.General.Persist;
+public class BooleanIndexerPersist : IIndexerPersist<Boolean>
 {
-    public class BooleanIndexerPersist : IIndexerPersist<Boolean>
+    private const byte VERSION = 40;
+
+    public void Store(BinaryWriter writer, Func<int, bool> values, int count)
     {
-        private const byte VERSION = 40;
+        writer.Write(VERSION);
+        
+        var buffer = new byte[(int)Math.Ceiling(count / 8.0)];
 
-        public void Store(BinaryWriter writer, Func<int, bool> values, int count)
-        {
-            writer.Write(VERSION);
-            
-            var buffer = new byte[(int)Math.Ceiling(count / 8.0)];
+        for (var i = 0; i < count; i++)
+            buffer.SetBit(i, values(i) ? 1 : 0);
 
-            for (var i = 0; i < count; i++)
-                buffer.SetBit(i, values(i) ? 1 : 0);
+        writer.Write(buffer);
+    }
 
-            writer.Write(buffer);
-        }
+    public void Load(BinaryReader reader, Action<int, bool> values, int count)
+    {
+        if (reader.ReadByte() != VERSION)
+            throw new Exception("Invalid BooleanIndexerPersist version.");
 
-        public void Load(BinaryReader reader, Action<int, bool> values, int count)
-        {
-            if (reader.ReadByte() != VERSION)
-                throw new Exception("Invalid BooleanIndexerPersist version.");
+        var buffer = reader.ReadBytes((int)Math.Ceiling(count / 8.0));
 
-            var buffer = reader.ReadBytes((int)Math.Ceiling(count / 8.0));
-
-            for (var i = 0; i < count; i++)
-                values(i, buffer.GetBit(i) == 0 ? false : true);
-        }
+        for (var i = 0; i < count; i++)
+            values(i, buffer.GetBit(i) == 0 ? false : true);
     }
 }

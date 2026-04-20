@@ -1,54 +1,25 @@
 ﻿using CatDb.Data;
 
-namespace CatDb.WaterfallTree
+namespace CatDb.WaterfallTree;
+
+public partial class WTree
 {
-    public partial class WTree
+    public struct FullKey(Locator locator, IData key) : IComparable<FullKey>, IEquatable<FullKey>
     {
-        public struct FullKey : IComparable<FullKey>, IEquatable<FullKey>
+        public readonly Locator Locator = locator;
+        public readonly IData   Key     = key;
+
+        public override string ToString() => $"Locator = {Locator}, Key = {Key}";
+
+        public int CompareTo(FullKey other)
         {
-            public readonly Locator Locator;
-            public readonly IData Key;
-
-            public FullKey(Locator locator, IData key)
-            {
-                Locator = locator;
-                Key = key;
-            }
-
-            public override string ToString()
-            {
-                return $"Locator = {Locator}, Key = {Key}";
-            }
-
-            #region IComparable<Locator> Members
-
-            public int CompareTo(FullKey other)
-            {
-                var cmp = Locator.CompareTo(other.Locator);
-                if (cmp != 0)
-                    return cmp;
-
-                return Locator.KeyComparer.Compare(Key, other.Key);
-            }
-
-            #endregion
-
-            #region IEquatable<Locator> Members
-
-            public override int GetHashCode()
-            {
-                return Locator.GetHashCode() ^ Key.GetHashCode();
-            }
-
-            public bool Equals(FullKey other)
-            {
-                if (!Locator.Equals(other.Locator))
-                    return false;
-
-                return Locator.KeyEqualityComparer.Equals(Key, other.Key);
-            }
-
-            #endregion
+            var cmp = Locator.CompareTo(other.Locator);
+            return cmp != 0 ? cmp : Locator.KeyComparer.Compare(Key, other.Key);
         }
+
+        public override int GetHashCode() => Locator.GetHashCode() ^ Key.GetHashCode();
+
+        public bool Equals(FullKey other) =>
+            Locator.Equals(other.Locator) && Locator.KeyEqualityComparer.Equals(Key, other.Key);
     }
 }

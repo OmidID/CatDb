@@ -2,187 +2,185 @@
 using System.Reflection;
 using CatDb.General.Extensions;
 
-namespace CatDb.Data
+namespace CatDb.Data;
+public static class DataTypeUtils
 {
-    public static class DataTypeUtils
+    //dataType -> anonymous type
+    private static readonly ConcurrentDictionary<DataType, Type> CacheAnonymousTypes = new();
+
+    //Type -> true/false
+    private static readonly ConcurrentDictionary<Type, bool> CacheIsAnonymousTypes = new();
+
+    public static IEnumerable<MemberInfo> GetPublicMembers(Type type, Func<Type, MemberInfo, int> membersOrder = null)
     {
-        //dataType -> anonymous type
-        private static readonly ConcurrentDictionary<DataType, Type> CacheAnonymousTypes = new();
+        var members = type.GetPublicReadWritePropertiesAndFields();
+        if (membersOrder == null)
+            return members;
 
-        //Type -> true/false
-        private static readonly ConcurrentDictionary<Type, bool> CacheIsAnonymousTypes = new();
+        return members.Where(x => membersOrder(type, x) >= 0).OrderBy(x => membersOrder(type, x));
+    }
 
-        public static IEnumerable<MemberInfo> GetPublicMembers(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public static bool IsAllPrimitive(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    {
+        if (DataType.IsPrimitiveType(type))
+            return true;
+
+        if (type.IsArray || type.IsList() || type.IsDictionary() || type.IsKeyValuePair() || type.IsNullable() || type == typeof(Guid))
+            return false;
+
+        foreach (var member in GetPublicMembers(type, membersOrder))
         {
-            var members = type.GetPublicReadWritePropertiesAndFields();
-            if (membersOrder == null)
-                return members;
-
-            return members.Where(x => membersOrder(type, x) >= 0).OrderBy(x => membersOrder(type, x));
+            if (!DataType.IsPrimitiveType(member.GetPropertyOrFieldType()))
+                return false;
         }
 
-        public static bool IsAllPrimitive(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+        return true;
+    }
+
+    private static bool InternalIsAnonymousType(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    {
+        if (DataType.IsPrimitiveType(type))
+            return true;
+
+        if (type.IsEnum || type == typeof(Guid))
+            return false;
+
+        if (type.IsNullable())
+            return false;
+
+        if (type.IsKeyValuePair())
+            return false;
+
+        if (type.IsArray)
+            return InternalIsAnonymousType(type.GetElementType(), membersOrder);
+
+        if (type.IsList())
+            return InternalIsAnonymousType(type.GetGenericArguments()[0], membersOrder);
+
+        if (type.IsDictionary())
+            return InternalIsAnonymousType(type.GetGenericArguments()[0], membersOrder) && InternalIsAnonymousType(type.GetGenericArguments()[1], membersOrder);
+
+        if (type.IsInheritInterface(typeof(ISlots)))
         {
-            if (DataType.IsPrimitiveType(type))
-                return true;
-
-            if (type.IsArray || type.IsList() || type.IsDictionary() || type.IsKeyValuePair() || type.IsNullable() || type == typeof(Guid))
-                return false;
-
-            foreach (var member in GetPublicMembers(type, membersOrder))
+            foreach (var slotType in GetPublicMembers(type, membersOrder))
             {
-                if (!DataType.IsPrimitiveType(member.GetPropertyOrFieldType()))
+                if (!InternalIsAnonymousType(slotType.GetPropertyOrFieldType(), membersOrder))
                     return false;
             }
-
-            return true;
         }
 
-        private static bool InternalIsAnonymousType(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+        if ((type.IsClass || type.IsStruct()) && !type.IsInheritInterface(typeof(ISlots)))
+            return false;
+
+        return true;
+    }
+
+    public static bool IsAnonymousType(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    {
+        if (membersOrder != null)
+            return InternalIsAnonymousType(type, membersOrder);
+
+        return CacheIsAnonymousTypes.GetOrAdd(type, x => InternalIsAnonymousType(x));
+    }
+
+    public static Type Anonymous(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    {
+        var dataType = BuildDataType(type, membersOrder);
+
+        return BuildType(dataType);
+    }
+
+    private static DataType BuildDataType(Type type, Func<Type, MemberInfo, int> membersOrder, HashSet<Type> cycleCheck)
+    {
+        if (DataType.IsPrimitiveType(type))
+            return DataType.FromPrimitiveType(type);
+
+        if (type.IsEnum)
+            return DataType.FromPrimitiveType(type.GetEnumUnderlyingType());
+
+        if (type == typeof(Guid))
+            return DataType.ByteArray;
+
+        if (type.IsKeyValuePair())
         {
-            if (DataType.IsPrimitiveType(type))
-                return true;
-
-            if (type.IsEnum || type == typeof(Guid))
-                return false;
-
-            if (type.IsNullable())
-                return false;
-
-            if (type.IsKeyValuePair())
-                return false;
-
-            if (type.IsArray)
-                return InternalIsAnonymousType(type.GetElementType(), membersOrder);
-
-            if (type.IsList())
-                return InternalIsAnonymousType(type.GetGenericArguments()[0], membersOrder);
-
-            if (type.IsDictionary())
-                return InternalIsAnonymousType(type.GetGenericArguments()[0], membersOrder) && InternalIsAnonymousType(type.GetGenericArguments()[1], membersOrder);
-
-            if (type.IsInheritInterface(typeof(ISlots)))
-            {
-                foreach (var slotType in GetPublicMembers(type, membersOrder))
-                {
-                    if (!InternalIsAnonymousType(slotType.GetPropertyOrFieldType(), membersOrder))
-                        return false;
-                }
-            }
-
-            if ((type.IsClass || type.IsStruct()) && !type.IsInheritInterface(typeof(ISlots)))
-                return false;
-
-            return true;
+            return DataType.Slots(
+                BuildDataType(type.GetGenericArguments()[0], membersOrder, cycleCheck),
+                BuildDataType(type.GetGenericArguments()[1], membersOrder, cycleCheck));
         }
 
-        public static bool IsAnonymousType(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+        if (type.IsArray)
+            return DataType.Array(BuildDataType(type.GetElementType(), membersOrder, cycleCheck));
+
+        if (type.IsList())
+            return DataType.List(BuildDataType(type.GetGenericArguments()[0], membersOrder, cycleCheck));
+
+        if (type.IsDictionary())
         {
-            if (membersOrder != null)
-                return InternalIsAnonymousType(type, membersOrder);
-
-            return CacheIsAnonymousTypes.GetOrAdd(type, x => InternalIsAnonymousType(x));
+            return DataType.Dictionary(
+                BuildDataType(type.GetGenericArguments()[0], membersOrder, cycleCheck),
+                BuildDataType(type.GetGenericArguments()[1], membersOrder, cycleCheck));
         }
 
-        public static Type Anonymous(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+        if (type.IsNullable())
+            return DataType.Slots(BuildDataType(type.GetGenericArguments()[0], membersOrder, cycleCheck));
+
+        var slots = new List<DataType>();
+        foreach (var member in GetPublicMembers(type, membersOrder))
         {
-            var dataType = BuildDataType(type, membersOrder);
+            var memberType = member.GetPropertyOrFieldType();
 
-            return BuildType(dataType);
+            if (cycleCheck.Contains(memberType))
+                throw new NotSupportedException($"Type {memberType} has cycle declaration.");
+
+            cycleCheck.Add(memberType);
+            var slot = BuildDataType(memberType, membersOrder, cycleCheck);
+            cycleCheck.Remove(memberType);
+            slots.Add(slot);
         }
 
-        private static DataType BuildDataType(Type type, Func<Type, MemberInfo, int> membersOrder, HashSet<Type> cycleCheck)
-        {
-            if (DataType.IsPrimitiveType(type))
-                return DataType.FromPrimitiveType(type);
+        if (slots.Count == 0)
+            throw new NotSupportedException($"{type} do not contains public read/writer properties and fields");
 
-            if (type.IsEnum)
-                return DataType.FromPrimitiveType(type.GetEnumUnderlyingType());
+        return DataType.Slots(slots.ToArray());
+    }
 
-            if (type == typeof(Guid))
-                return DataType.ByteArray;
+    public static DataType BuildDataType(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    {
+        if (DataType.IsPrimitiveType(type) || type.IsEnum || type == typeof(Guid) || type.IsKeyValuePair() || type.IsArray || type.IsList() || type.IsDictionary() || type.IsNullable())
+            return BuildDataType(type, membersOrder, new HashSet<Type>());
 
-            if (type.IsKeyValuePair())
-            {
-                return DataType.Slots(
-                    BuildDataType(type.GetGenericArguments()[0], membersOrder, cycleCheck),
-                    BuildDataType(type.GetGenericArguments()[1], membersOrder, cycleCheck));
-            }
+        var slots = new List<DataType>();
+        foreach (var member in GetPublicMembers(type, membersOrder))
+            slots.Add(BuildDataType(member.GetPropertyOrFieldType(), membersOrder, new HashSet<Type>()));
 
-            if (type.IsArray)
-                return DataType.Array(BuildDataType(type.GetElementType(), membersOrder, cycleCheck));
+        return DataType.Slots(slots.ToArray());
+    }
 
-            if (type.IsList())
-                return DataType.List(BuildDataType(type.GetGenericArguments()[0], membersOrder, cycleCheck));
+    private static Type InternalBuildType(DataType dataType)
+    {
+        if (dataType.IsPrimitive)
+            return dataType.PrimitiveType;
 
-            if (type.IsDictionary())
-            {
-                return DataType.Dictionary(
-                    BuildDataType(type.GetGenericArguments()[0], membersOrder, cycleCheck),
-                    BuildDataType(type.GetGenericArguments()[1], membersOrder, cycleCheck));
-            }
+        if (dataType.IsArray)
+            return InternalBuildType(dataType[0]).MakeArrayType();
 
-            if (type.IsNullable())
-                return DataType.Slots(BuildDataType(type.GetGenericArguments()[0], membersOrder, cycleCheck));
+        if (dataType.IsList)
+            return typeof(List<>).MakeGenericType(InternalBuildType(dataType[0]));
 
-            var slots = new List<DataType>();
-            foreach (var member in GetPublicMembers(type, membersOrder))
-            {
-                var memberType = member.GetPropertyOrFieldType();
+        if (dataType.IsDictionary)
+            return typeof(Dictionary<,>).MakeGenericType(InternalBuildType(dataType[0]), InternalBuildType(dataType[1]));
 
-                if (cycleCheck.Contains(memberType))
-                    throw new NotSupportedException($"Type {memberType} has cycle declaration.");
+        if (dataType.IsSlots)
+            return SlotsBuilder.BuildType(dataType.Select(x => InternalBuildType(x)).ToArray());
 
-                cycleCheck.Add(memberType);
-                var slot = BuildDataType(memberType, membersOrder, cycleCheck);
-                cycleCheck.Remove(memberType);
-                slots.Add(slot);
-            }
+        throw new NotSupportedException();
+    }
 
-            if (slots.Count == 0)
-                throw new NotSupportedException($"{type} do not contains public read/writer properties and fields");
+    public static Type BuildType(DataType dataType)
+    {
+        if (dataType.IsPrimitive)
+            return dataType.PrimitiveType;
 
-            return DataType.Slots(slots.ToArray());
-        }
-
-        public static DataType BuildDataType(Type type, Func<Type, MemberInfo, int> membersOrder = null)
-        {
-            if (DataType.IsPrimitiveType(type) || type.IsEnum || type == typeof(Guid) || type.IsKeyValuePair() || type.IsArray || type.IsList() || type.IsDictionary() || type.IsNullable())
-                return BuildDataType(type, membersOrder, new HashSet<Type>());
-
-            var slots = new List<DataType>();
-            foreach (var member in GetPublicMembers(type, membersOrder))
-                slots.Add(BuildDataType(member.GetPropertyOrFieldType(), membersOrder, new HashSet<Type>()));
-
-            return DataType.Slots(slots.ToArray());
-        }
-
-        private static Type InternalBuildType(DataType dataType)
-        {
-            if (dataType.IsPrimitive)
-                return dataType.PrimitiveType;
-
-            if (dataType.IsArray)
-                return InternalBuildType(dataType[0]).MakeArrayType();
-
-            if (dataType.IsList)
-                return typeof(List<>).MakeGenericType(InternalBuildType(dataType[0]));
-
-            if (dataType.IsDictionary)
-                return typeof(Dictionary<,>).MakeGenericType(InternalBuildType(dataType[0]), InternalBuildType(dataType[1]));
-
-            if (dataType.IsSlots)
-                return SlotsBuilder.BuildType(dataType.Select(x => InternalBuildType(x)).ToArray());
-
-            throw new NotSupportedException();
-        }
-
-        public static Type BuildType(DataType dataType)
-        {
-            if (dataType.IsPrimitive)
-                return dataType.PrimitiveType;
-
-            return CacheAnonymousTypes.GetOrAdd(dataType, x => InternalBuildType(x));
-        }
+        return CacheAnonymousTypes.GetOrAdd(dataType, x => InternalBuildType(x));
     }
 }

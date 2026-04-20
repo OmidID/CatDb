@@ -1,6 +1,4 @@
-﻿namespace CatDb.Data
+﻿namespace CatDb.Data;
+public interface IData
 {
-    public interface IData
-    {
-    }
 }

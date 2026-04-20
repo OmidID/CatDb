@@ -1,12 +1,10 @@
 ﻿using System.Diagnostics;
 
-namespace CatDb.General.Extensions
+namespace CatDb.General.Extensions;
+public static class StopwatchExtensions
 {
-    public static class StopwatchExtensions
+    public static double GetSpeed(this Stopwatch sw, long count)
     {
-        public static double GetSpeed(this Stopwatch sw, long count)
-        {
-            return count / (sw.ElapsedMilliseconds / 1000.0);
-        }
+        return count / (sw.ElapsedMilliseconds / 1000.0);
     }
 }

@@ -1,9 +1,7 @@
-﻿namespace CatDb.General.Comparers
+﻿namespace CatDb.General.Comparers;
+public enum ByteOrder : byte
 {
-    public enum ByteOrder : byte
-    {
-        Unspecified = 0,
-        LittleEndian = 1,
-        BigEndian = 2
-    }
+    Unspecified = 0,
+    LittleEndian = 1,
+    BigEndian = 2
 }

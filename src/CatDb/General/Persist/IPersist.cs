@@ -1,12 +1,10 @@
-﻿namespace CatDb.General.Persist
+﻿namespace CatDb.General.Persist;
+public interface IPersist
 {
-    public interface IPersist
-    {
-    }
+}
 
-    public interface IPersist<T> : IPersist
-    {
-        void Write(BinaryWriter writer, T item);
-        T Read(BinaryReader reader);
-    }
+public interface IPersist<T> : IPersist
+{
+    void Write(BinaryWriter writer, T item);
+    T Read(BinaryReader reader);
 }

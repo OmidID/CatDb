@@ -1,12 +1,7 @@
 ﻿using CatDb.Data;
 
-namespace CatDb.Database
+namespace CatDb.Database;
+
+public class XFile(ITable<IData, IData> table) : XStream(table)
 {
-    public class XFile : XStream
-    {
-        internal XFile(ITable<IData, IData> table)
-            : base(table)
-        {
-        }
-    }
 }

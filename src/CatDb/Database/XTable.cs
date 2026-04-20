@@ -2,275 +2,90 @@
 using CatDb.Data;
 using CatDb.WaterfallTree;
 
-namespace CatDb.Database
+namespace CatDb.Database;
+
+public class XTable<TKey, TRecord>(ITable<IData, IData> table) : ITable<TKey, TRecord>
 {
-    public class XTable<TKey, TRecord> : ITable<TKey, TRecord>
+    public ITable<IData, IData> Table { get; } = table ?? throw new ArgumentNullException(nameof(table));
+
+    private static IData K(TKey key)       => new Data<TKey>(key);
+    private static IData R(TRecord record) => new Data<TRecord>(record);
+    private static TKey   FromK(IData d)   => ((Data<TKey>)d).Value;
+    private static TRecord FromR(IData d)  => ((Data<TRecord>)d).Value;
+
+    private static KeyValuePair<TKey, TRecord> Pair(KeyValuePair<IData, IData> kv) =>
+        new(FromK(kv.Key), FromR(kv.Value));
+
+    private static KeyValuePair<TKey, TRecord>? Nullable(KeyValuePair<IData, IData>? kv) =>
+        kv is null ? null : Pair(kv.Value);
+
+    public TRecord this[TKey key]
     {
-        public ITable<IData, IData> Table { get; private set; }
-
-        public XTable(ITable<IData, IData> table)
-        {
-            if (table == null)
-                throw new ArgumentNullException("table");
-            
-            Table = table;
-        }
-
-        #region ITable<TKey, TRecord> Membres
-
-        public TRecord this[TKey key]
-        {
-            get
-            {
-                IData ikey = new Data<TKey>(key);
-                var irec = Table[ikey];
-
-                return ((Data<TRecord>)irec).Value;
-            }
-            set
-            {
-                IData ikey = new Data<TKey>(key);
-                IData irec = new Data<TRecord>(value);
-
-                Table[ikey] = irec;
-            }
-        }
-
-        public void Replace(TKey key, TRecord record)
-        {
-            IData ikey = new Data<TKey>(key);
-            IData irec = new Data<TRecord>(record);
-
-            Table.Replace(ikey, irec);
-        }
-
-        public void InsertOrIgnore(TKey key, TRecord record)
-        {
-            IData ikey = new Data<TKey>(key);
-            IData irec = new Data<TRecord>(record);
-
-            Table.InsertOrIgnore(ikey, irec);
-        }
-
-        public void Delete(TKey key)
-        {
-            IData ikey = new Data<TKey>(key);
-
-            Table.Delete(ikey);
-        }
-
-        public void Delete(TKey fromKey, TKey toKey)
-        {
-            IData ifrom = new Data<TKey>(fromKey);
-            IData ito = new Data<TKey>(toKey);
-
-            Table.Delete(ifrom, ito);
-        }
-
-        public void Clear()
-        {
-            Table.Clear();
-        }
-
-        public bool Exists(TKey key)
-        {
-            IData ikey = new Data<TKey>(key);
-
-            return Table.Exists(ikey);
-        }
-
-        public bool TryGet(TKey key, out TRecord record)
-        {
-            IData ikey = new Data<TKey>(key);
-
-            if (!Table.TryGet(ikey, out var irec))
-            {
-                record = default(TRecord);
-                return false;
-            }
-
-            record = ((Data<TRecord>)irec).Value;
-
-            return true;
-        }
-
-        public TRecord Find(TKey key)
-        {
-            IData ikey = new Data<TKey>(key);
-
-            var irec = Table.Find(ikey);
-            if (irec == null)
-                return default(TRecord);
-
-            var record = ((Data<TRecord>)irec).Value;
-
-            return record;
-        }
-
-        public TRecord TryGetOrDefault(TKey key, TRecord defaultRecord)
-        {
-            IData ikey = new Data<TKey>(key);
-            IData idefaultRec = new Data<TRecord>(defaultRecord);
-            var irec = Table.TryGetOrDefault(ikey, idefaultRec);
-
-            var record = ((Data<TRecord>)irec).Value;
-
-            return record;
-        }
-
-        public KeyValuePair<TKey, TRecord>? FindNext(TKey key)
-        {
-            IData ikey = new Data<TKey>(key);
-
-            var kv = Table.FindNext(ikey);
-            if (!kv.HasValue)
-                return null;
-
-            var k = ((Data<TKey>)kv.Value.Key).Value;
-            var r = ((Data<TRecord>)kv.Value.Value).Value;
-
-            return new KeyValuePair<TKey, TRecord>(k, r);
-        }
-
-        public KeyValuePair<TKey, TRecord>? FindAfter(TKey key)
-        {
-            IData ikey = new Data<TKey>(key);
-
-            var kv = Table.FindAfter(ikey);
-            if (!kv.HasValue)
-                return null;
-
-            var k = ((Data<TKey>)kv.Value.Key).Value;
-            var r = ((Data<TRecord>)kv.Value.Value).Value;
-
-            return new KeyValuePair<TKey, TRecord>(k, r);
-        }
-
-        public KeyValuePair<TKey, TRecord>? FindPrev(TKey key)
-        {
-            IData ikey = new Data<TKey>(key);
-
-            var kv = Table.FindPrev(ikey);
-            if (!kv.HasValue)
-                return null;
-
-            var k = ((Data<TKey>)kv.Value.Key).Value;
-            var r = ((Data<TRecord>)kv.Value.Value).Value;
-
-            return new KeyValuePair<TKey, TRecord>(k, r);
-        }
-
-        public KeyValuePair<TKey, TRecord>? FindBefore(TKey key)
-        {
-            IData ikey = new Data<TKey>(key);
-
-            var kv = Table.FindBefore(ikey);
-            if (!kv.HasValue)
-                return null;
-
-            var k = ((Data<TKey>)kv.Value.Key).Value;
-            var r = ((Data<TRecord>)kv.Value.Value).Value;
-
-            return new KeyValuePair<TKey, TRecord>(k, r);
-        }
-
-        public IEnumerable<KeyValuePair<TKey, TRecord>> Forward()
-        {
-            foreach (var kv in Table.Forward())
-            {
-                var key = ((Data<TKey>)kv.Key).Value;
-                var rec = ((Data<TRecord>)kv.Value).Value;
-
-                yield return new KeyValuePair<TKey, TRecord>(key, rec);
-            }
-        }
-
-        public IEnumerable<KeyValuePair<TKey, TRecord>> Forward(TKey from, bool hasFrom, TKey to, bool hasTo)
-        {
-            IData ifrom = hasFrom ? new Data<TKey>(from) : null;
-            IData ito = hasTo ? new Data<TKey>(to) : null;
-
-            foreach (var kv in Table.Forward(ifrom, hasFrom, ito, hasTo))
-            {
-                var key = ((Data<TKey>)kv.Key).Value;
-                var rec = ((Data<TRecord>)kv.Value).Value;
-
-                yield return new KeyValuePair<TKey, TRecord>(key, rec);
-            }
-        }
-
-        public IEnumerable<KeyValuePair<TKey, TRecord>> Backward()
-        {
-            foreach (var kv in Table.Backward())
-            {
-                var key = ((Data<TKey>)kv.Key).Value;
-                var rec = ((Data<TRecord>)kv.Value).Value;
-
-                yield return new KeyValuePair<TKey, TRecord>(key, rec);
-            }
-        }
-
-        public IEnumerable<KeyValuePair<TKey, TRecord>> Backward(TKey to, bool hasTo, TKey from, bool hasFrom)
-        {
-            IData ito = hasTo ? new Data<TKey>(to) : null;
-            IData ifrom = hasFrom ? new Data<TKey>(from) : null;
-
-            foreach (var kv in Table.Backward(ito, hasTo, ifrom, hasFrom))
-            {
-                var key = ((Data<TKey>)kv.Key).Value;
-                var rec = ((Data<TRecord>)kv.Value).Value;
-
-                yield return new KeyValuePair<TKey, TRecord>(key, rec);
-            }
-        }
-
-        public KeyValuePair<TKey, TRecord> FirstRow
-        {
-            get
-            {
-                var kv = Table.FirstRow;
-
-                var key = ((Data<TKey>)kv.Key).Value;
-                var rec = ((Data<TRecord>)kv.Value).Value;
-
-                return new KeyValuePair<TKey, TRecord>(key, rec);
-            }
-        }
-
-        public KeyValuePair<TKey, TRecord> LastRow
-        {
-            get
-            {
-                var kv = Table.LastRow;
-
-                var key = ((Data<TKey>)kv.Key).Value;
-                var rec = ((Data<TRecord>)kv.Value).Value;
-
-                return new KeyValuePair<TKey, TRecord>(key, rec);
-            }
-        }
-
-        public long Count()
-        {
-            return Table.Count();
-        }
-
-        public IDescriptor Descriptor => Table.Descriptor;
-
-        #endregion
-
-        #region IEnumerable<KeyValuePair<TKey, TRecord>> Members
-
-        public IEnumerator<KeyValuePair<TKey, TRecord>> GetEnumerator()
-        {
-            return Forward().GetEnumerator();
-        }
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
-
-        #endregion
+        get => FromR(Table[K(key)]);
+        set => Table[K(key)] = R(value);
     }
+
+    public void Replace(TKey key, TRecord record)         => Table.Replace(K(key), R(record));
+    public void InsertOrIgnore(TKey key, TRecord record)  => Table.InsertOrIgnore(K(key), R(record));
+    public void Delete(TKey key)                          => Table.Delete(K(key));
+    public void Delete(TKey fromKey, TKey toKey)          => Table.Delete(K(fromKey), K(toKey));
+    public void Clear()                                   => Table.Clear();
+    public bool Exists(TKey key)                          => Table.Exists(K(key));
+    public long Count()                                   => Table.Count();
+    public IDescriptor Descriptor                         => Table.Descriptor;
+
+    public bool TryGet(TKey key, out TRecord record)
+    {
+        if (!Table.TryGet(K(key), out var irec))
+        {
+            record = default;
+            return false;
+        }
+        record = FromR(irec);
+        return true;
+    }
+
+    public TRecord Find(TKey key)
+    {
+        var irec = Table.Find(K(key));
+        return irec is null ? default : FromR(irec);
+    }
+
+    public TRecord TryGetOrDefault(TKey key, TRecord defaultRecord) =>
+        FromR(Table.TryGetOrDefault(K(key), R(defaultRecord)));
+
+    public KeyValuePair<TKey, TRecord>? FindNext(TKey key)   => Nullable(Table.FindNext(K(key)));
+    public KeyValuePair<TKey, TRecord>? FindAfter(TKey key)  => Nullable(Table.FindAfter(K(key)));
+    public KeyValuePair<TKey, TRecord>? FindPrev(TKey key)   => Nullable(Table.FindPrev(K(key)));
+    public KeyValuePair<TKey, TRecord>? FindBefore(TKey key) => Nullable(Table.FindBefore(K(key)));
+
+    public IEnumerable<KeyValuePair<TKey, TRecord>> Forward()
+    {
+        foreach (var kv in Table.Forward()) yield return Pair(kv);
+    }
+
+    public IEnumerable<KeyValuePair<TKey, TRecord>> Forward(TKey from, bool hasFrom, TKey to, bool hasTo)
+    {
+        var ifrom = hasFrom ? K(from) : null;
+        var ito   = hasTo   ? K(to)   : null;
+        foreach (var kv in Table.Forward(ifrom, hasFrom, ito, hasTo)) yield return Pair(kv);
+    }
+
+    public IEnumerable<KeyValuePair<TKey, TRecord>> Backward()
+    {
+        foreach (var kv in Table.Backward()) yield return Pair(kv);
+    }
+
+    public IEnumerable<KeyValuePair<TKey, TRecord>> Backward(TKey to, bool hasTo, TKey from, bool hasFrom)
+    {
+        var ito   = hasTo   ? K(to)   : null;
+        var ifrom = hasFrom ? K(from) : null;
+        foreach (var kv in Table.Backward(ito, hasTo, ifrom, hasFrom)) yield return Pair(kv);
+    }
+
+    public KeyValuePair<TKey, TRecord> FirstRow => Pair(Table.FirstRow);
+    public KeyValuePair<TKey, TRecord> LastRow  => Pair(Table.LastRow);
+
+    public IEnumerator<KeyValuePair<TKey, TRecord>> GetEnumerator() => Forward().GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator()                         => GetEnumerator();
 }

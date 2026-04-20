@@ -1,52 +1,50 @@
 ﻿using CatDb.General.Extensions;
 
-namespace CatDb.Remote.Commands
+namespace CatDb.Remote.Commands;
+public class CommandCollection : List<ICommand>
 {
-    public class CommandCollection : List<ICommand>
+    public bool AreAllCommon { get; private set; }
+    public int CommonAction { get; private set; }
+
+    public CommandCollection(ICommand[] operations, bool areAllCommon, int commonCode)
     {
-        public bool AreAllCommon { get; private set; }
-        public int CommonAction { get; private set; }
+        this.SetArray(operations);
 
-        public CommandCollection(ICommand[] operations, bool areAllCommon, int commonCode)
+        AreAllCommon = areAllCommon;
+        CommonAction = commonCode;
+    }
+
+    public CommandCollection(int capacity)
+        : base(capacity)
+    {
+        AreAllCommon = true;
+        CommonAction = CommandCode.UNDEFINED;
+    }
+
+    public new void Add(ICommand command)
+    {
+        if (AreAllCommon)
         {
-            this.SetArray(operations);
+            if (Count == 0)
+                CommonAction = command.Code;
 
-            AreAllCommon = areAllCommon;
-            CommonAction = commonCode;
-        }
-
-        public CommandCollection(int capacity)
-            : base(capacity)
-        {
-            AreAllCommon = true;
-            CommonAction = CommandCode.UNDEFINED;
-        }
-
-        public new void Add(ICommand command)
-        {
-            if (AreAllCommon)
+            if (command.Code != CommonAction)
             {
-                if (Count == 0)
-                    CommonAction = command.Code;
-
-                if (command.Code != CommonAction)
-                {
-                    AreAllCommon = false;
-                    CommonAction = CommandCode.UNDEFINED;
-                }
+                AreAllCommon = false;
+                CommonAction = CommandCode.UNDEFINED;
             }
-
-            base.Add(command);
         }
 
-        public new ICommand this[int index] => base[index];
+        base.Add(command);
+    }
 
-        public new void Clear()
-        {
-            base.Clear();
+    public new ICommand this[int index] => base[index];
 
-            AreAllCommon = true;
-            CommonAction = CommandCode.UNDEFINED;
-        }
+    public new void Clear()
+    {
+        base.Clear();
+
+        AreAllCommon = true;
+        CommonAction = CommandCode.UNDEFINED;
     }
 }

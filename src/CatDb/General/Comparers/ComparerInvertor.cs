@@ -1,17 +1,15 @@
-﻿namespace CatDb.General.Comparers
+﻿namespace CatDb.General.Comparers;
+public class ComparerInvertor<T> : IComparer<T>
 {
-    public class ComparerInvertor<T> : IComparer<T>
+    public readonly IComparer<T> Comparer;
+
+    public ComparerInvertor(IComparer<T> comparer)
     {
-        public readonly IComparer<T> Comparer;
+        Comparer = comparer;
+    }
 
-        public ComparerInvertor(IComparer<T> comparer)
-        {
-            Comparer = comparer;
-        }
-
-        public int Compare(T x, T y)
-        {
-            return -Comparer.Compare(x, y);
-        }
+    public int Compare(T x, T y)
+    {
+        return -Comparer.Compare(x, y);
     }
 }

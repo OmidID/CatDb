@@ -1,64 +1,47 @@
-﻿using CatDb.Database;
+﻿using System.Configuration;
+using System.ServiceProcess;
+using System.Windows.Forms;
+using CatDb.Database;
 using CatDb.General.Communication;
 using CatDb.Remote;
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Configuration;
-using System.Data;
-using System.Diagnostics;
-using System.Linq;
-using System.ServiceProcess;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Windows.Forms;
 
-namespace CatDb.Server
+namespace CatDb.Server;
+
+public partial class CatDbService : ServiceBase
 {
-    public partial class CatDbService : ServiceBase
+    internal static CatDbService Service { get; private set; }
+
+    private MainForm _form;
+    private IStorageEngine _storageEngine;
+    private TcpServer _tcpServer;
+
+    public CatDbService() => InitializeComponent();
+
+    public void Start() => OnStart([]);
+
+    protected override void OnStart(string[] args)
     {
-        internal static CatDbService Service { get; private set; }
-        private MainForm Form;
-        private IStorageEngine StorageEngine;
-        private TcpServer TcpServer;
+        var fileName = ConfigurationManager.AppSettings["FileName"];
+        var port     = int.Parse(ConfigurationManager.AppSettings["Port"]);
+        Service = this;
 
-        public CatDbService()
-        {
-            InitializeComponent();
-        }
+        _storageEngine = Database.CatDb.FromFile(fileName);
+        _tcpServer     = new TcpServer(port);
 
-        public void Start()
-        {
-            OnStart(new string[] { });
-        }
+        Program.StorageEngineServer = new StorageEngineServer(_storageEngine, _tcpServer);
+        Program.StorageEngineServer.Start();
 
-        protected override void OnStart(string[] args)
-        {
-            string FileName = ConfigurationSettings.AppSettings["FileName"];
-            int port = int.Parse(ConfigurationSettings.AppSettings["Port"]);
-            int boundedCapacity = int.Parse(ConfigurationSettings.AppSettings["BoundedCapacity"]);
-            Service = this;
+        _form = new MainForm();
+        Application.Run(_form);
 
-            StorageEngine = STSdb.FromFile(FileName);
-            TcpServer = new TcpServer(port);
-            Program.StorageEngineServer = new StorageEngineServer(StorageEngine, TcpServer);
-            Program.StorageEngineServer.Start();
+        Program.StorageEngineServer.Stop();
+        _storageEngine.Close();
+    }
 
-            Form = new MainForm();
-            Application.Run(Form);
-            Program.StorageEngineServer.Stop();
-            StorageEngine.Close();
-        }
-
-        protected override void OnStop()
-        {
-            if (Form != null)
-                Form.Close();
-            if (StorageEngine != null)
-                StorageEngine.Close();
-            if (Program.StorageEngineServer != null)
-                Program.StorageEngineServer.Stop();
-        }
+    protected override void OnStop()
+    {
+        _form?.Close();
+        _storageEngine?.Close();
+        Program.StorageEngineServer?.Stop();
     }
 }

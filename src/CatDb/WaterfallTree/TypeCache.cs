@@ -1,28 +1,26 @@
 ﻿using System.Collections.Concurrent;
 
-namespace CatDb.WaterfallTree
+namespace CatDb.WaterfallTree;
+
+public static class TypeCache
 {
-    public class TypeCache
+    private static readonly ConcurrentDictionary<string, Type> Cache = new();
+
+    public static Type GetType(string fullName)
     {
-        private static readonly ConcurrentDictionary<string, Type> Cache = new();
+        var type = Type.GetType(fullName, false);
+        if (type is not null)
+            return type;
 
-        public static Type GetType(string fullName)
+        return Cache.GetOrAdd(fullName, x =>
         {
-            var type = Type.GetType(fullName, false);
-            if (type != null)
-                return type;
-
-            return Cache.GetOrAdd(fullName, x =>
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    type = assembly.GetType(fullName);
-                    if (type != null)
-                        return type;
-                }
-
-                return null; //once return null - always return null
-            });
-        }
+                var t = assembly.GetType(fullName);
+                if (t is not null)
+                    return t;
+            }
+            return null;
+        });
     }
 }

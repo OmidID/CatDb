@@ -1,8 +1,7 @@
-﻿namespace CatDb.WaterfallTree
+﻿namespace CatDb.WaterfallTree;
+
+public interface IOperationCollectionFactory
 {
-    public interface IOperationCollectionFactory
-    {
-        IOperationCollection Create(int capacity);
-        IOperationCollection Create(IOperation[] operations, int commonAction, bool areAllMonotoneAndPoint);
-    }
+    IOperationCollection Create(int capacity);
+    IOperationCollection Create(IOperation[] operations, int commonAction, bool areAllMonotoneAndPoint);
 }

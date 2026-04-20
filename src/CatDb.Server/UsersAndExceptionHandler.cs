@@ -1,152 +1,125 @@
-﻿using CatDb.General.Communication;
-using System;
-using System.Collections;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections.Concurrent;
 using System.Net;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
+using CatDb.General.Communication;
 
-namespace CatDb.Server
+namespace CatDb.Server;
+
+public class UsersAndExceptionHandler
 {
-    public class UsersAndExceptionHandler
+    private Thread _worker;
+    private volatile bool _shutDown;
+    private bool _disconnecting;
+    private volatile bool _hasNewExceptions;
+    private volatile bool _refreshed;
+
+    private readonly ConcurrentDictionary<ServerConnection, string> _clientsList = new();
+    private readonly List<KeyValuePair<string, string>> _exceptionsList = new(100);
+    private readonly ConcurrentBag<string> _clientsForDisconnects = new();
+
+    public bool IsFinishRefresh   => _refreshed;
+    public bool IsWorking         => _worker is not null;
+    public bool IsDisconnecting   => _disconnecting;
+
+    public void Start()
     {
-        private Thread Worker;
+        Stop();
+        _shutDown = false;
+        _worker = new Thread(RefreshList);
+        _worker.Start();
+    }
 
-        private bool Disconnecting = false;
-        private volatile bool HasNewExceptions = false;
-        private bool ShutDown;
-        private volatile bool Refreshed = false;
+    public void Stop()
+    {
+        if (!IsWorking) return;
 
-        private readonly ConcurrentDictionary<ServerConnection, string> clientsList = new ConcurrentDictionary<ServerConnection, string>();
-        private readonly List<KeyValuePair<string, string>> ExceptionsList = new List<KeyValuePair<string, string>>(100);
-        private readonly ConcurrentBag<string> ClientsForDisconnects = new ConcurrentBag<string>();
+        _shutDown = true;
+        _worker?.Join(5_000);
+        _worker = null;
+    }
 
-        public bool IsFinishRefresh { get { return Refreshed; } }
-        public bool IsWorking { get { return Worker != null; } }
-        public bool IsDisconnecting { get { return Disconnecting; } }
+    public void Disconnect(ListView.SelectedListViewItemCollection clientsForDisconnect)
+    {
+        if (!IsWorking) return;
 
-        public UsersAndExceptionHandler()
+        foreach (ListViewItem client in clientsForDisconnect)
+            _clientsForDisconnects.Add(client.Text);
+
+        _disconnecting = true;
+    }
+
+    private void DisconnectClient(string client)
+    {
+        lock (_clientsList)
         {
-        }
-
-        public void Start()
-        {
-            Stop();
-            ShutDown = false;
-
-            Worker = new Thread(RefreshList);
-            Worker.Start();
-        }
-
-        public void Stop()
-        {
-            if (!IsWorking)
-                return;
-
-            ShutDown = true;
-
-            Thread thread = Worker;
-            if (thread != null)
+            foreach (var item in _clientsList)
             {
-                if (thread.Join(5000))
-                    thread.Abort();
-            }
-
-            Worker = null;
-        }
-
-        public void Disconnect(ListView.SelectedListViewItemCollection clientsForDisconnect)
-        {
-            if (IsWorking)
-            {
-                foreach (var client in clientsForDisconnect)
-                    ClientsForDisconnects.Add(((ListViewItem)client).Text);
-
-                Disconnecting = true;
+                if (item.Value.Equals(client))
+                    item.Key.Disconnect();
             }
         }
+    }
 
-        private void DisconnectClient(string client)
+    private void RefreshList()
+    {
+        while (!_shutDown)
         {
-            lock (clientsList)
+            lock (_clientsList)
+                _clientsList.Clear();
+
+            var id = 0;
+            foreach (var connection in Program.StorageEngineServer.TcpServer.ServerConnections)
             {
-                foreach (var item in clientsList)
+                if (connection.Key.TcpClient.Connected)
                 {
-                    if (item.Value.Equals(client))
-                        item.Key.Disconnect();
+                    var clientIp = IPAddress.Parse(
+                        ((IPEndPoint)connection.Key.TcpClient.Client.RemoteEndPoint).Address.ToString()).ToString();
+                    _clientsList.TryAdd(connection.Key, $"{clientIp} ID:{id++}");
                 }
             }
-        }
 
-        private void RefreshList()
-        {
-            while (!ShutDown)
+            _refreshed = true;
+
+            if (Program.StorageEngineServer.TcpServer.Errors.TryDequeue(out var error))
             {
-                lock (clientsList)
+                lock (_exceptionsList)
                 {
-                    clientsList.Clear();
+                    _exceptionsList.Insert(0, new KeyValuePair<string, string>(error.Key.ToString(), error.Value.Message));
+                    _hasNewExceptions = true;
                 }
-
-                int id = 0;
-                foreach (var connection in Program.StorageEngineServer.TcpServer.ServerConnections)
-                {
-                    if (connection.Key.TcpClient.Connected)
-                    {
-                        string clientIp = IPAddress.Parse(((IPEndPoint)connection.Key.TcpClient.Client.RemoteEndPoint).Address.ToString()).ToString();
-                        clientsList.TryAdd(connection.Key, (clientIp + " ID:" + id.ToString()));
-                        id++;
-                    }
-                }
-
-                Refreshed = true;
-
-                KeyValuePair<DateTime, Exception> error;
-                if (Program.StorageEngineServer.TcpServer.Errors.TryDequeue(out error))
-                {
-                    lock (ExceptionsList)
-                    {
-                        ExceptionsList.Insert(0, new KeyValuePair<string, string>(error.Key.ToString(), error.Value.Message));
-                        HasNewExceptions = true;
-                    }
-                }
-
-                if (IsDisconnecting)
-                {
-                    foreach (var client in ClientsForDisconnects)
-                        DisconnectClient(client);
-                    Disconnecting = false;
-                }
-
-                Thread.Sleep(300);
             }
 
-            Worker = null;
-        }
-
-        public IEnumerable<string> GetClients()
-        {
-            Refreshed = false;
-            foreach (var client in clientsList)
-                yield return client.Value;
-        }
-
-        public IEnumerable<KeyValuePair<string, string>> GetExceptions()
-        {
-            if (HasNewExceptions)
+            if (IsDisconnecting)
             {
-                lock (ExceptionsList)
-                {
-                    foreach (var excetion in ExceptionsList)
-                        yield return excetion;
-
-                    ExceptionsList.Clear();
-                    HasNewExceptions = false;
-                }
+                foreach (var client in _clientsForDisconnects)
+                    DisconnectClient(client);
+                _disconnecting = false;
             }
+
+            Thread.Sleep(300);
+        }
+
+        _worker = null;
+    }
+
+    public IEnumerable<string> GetClients()
+    {
+        _refreshed = false;
+        foreach (var client in _clientsList)
+            yield return client.Value;
+    }
+
+    public IEnumerable<KeyValuePair<string, string>> GetExceptions()
+    {
+        if (!_hasNewExceptions) yield break;
+
+        lock (_exceptionsList)
+        {
+            foreach (var exception in _exceptionsList)
+                yield return exception;
+
+            _exceptionsList.Clear();
+            _hasNewExceptions = false;
         }
     }
 }

@@ -1,9 +1,7 @@
 ﻿using CatDb.Data;
 
-namespace CatDb.General.Collections
+namespace CatDb.General.Collections;
+public interface IOrderedSetFactory
 {
-    public interface IOrderedSetFactory
-    {
-        IOrderedSet<IData, IData> Create();
-    }
+    IOrderedSet<IData, IData> Create();
 }

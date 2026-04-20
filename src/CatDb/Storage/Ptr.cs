@@ -1,105 +1,103 @@
 ﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace CatDb.Storage
+namespace CatDb.Storage;
+[StructLayout(LayoutKind.Sequential)]
+public struct Ptr : IEquatable<Ptr>, IComparable<Ptr>
 {
-    [StructLayout(LayoutKind.Sequential)]
-    public struct Ptr : IEquatable<Ptr>, IComparable<Ptr>
+    public static readonly Ptr NULL = new(0, 0);
+
+    public long Position;
+    public long Size;
+
+    public const int SIZE = sizeof(long) + sizeof(long);
+
+    [DebuggerStepThrough]
+    public Ptr(long position, long size)
     {
-        public static readonly Ptr NULL = new(0, 0);
+        Position = position;
+        Size = size;
+    }
 
-        public long Position;
-        public long Size;
+    #region IEquatable<Ptr> Members
 
-        public const int SIZE = sizeof(long) + sizeof(long);
+    public bool Equals(Ptr other)
+    {
+        return Position == other.Position &&
+            Size == other.Size;
+    }
 
-        [DebuggerStepThrough]
-        public Ptr(long position, long size)
-        {
-            Position = position;
-            Size = size;
-        }
+    #endregion
 
-        #region IEquatable<Ptr> Members
+    #region IComparable<Ptr> Members
 
-        public bool Equals(Ptr other)
-        {
-            return Position == other.Position &&
-                Size == other.Size;
-        }
+    public int CompareTo(Ptr other)
+    {
+        return Position.CompareTo(other.Position);
+    }
 
-        #endregion
+    #endregion
 
-        #region IComparable<Ptr> Members
+    public override bool Equals(object obj)
+    {
+        return obj is Ptr && Equals((Ptr)obj);
+    }
 
-        public int CompareTo(Ptr other)
-        {
-            return Position.CompareTo(other.Position);
-        }
+    public override int GetHashCode()
+    {
+        return Position.GetHashCode() ^ Size.GetHashCode();
+    }
 
-        #endregion
+    public override string ToString()
+    {
+        return $"({Position}, {Size})";
+    }
 
-        public override bool Equals(object obj)
-        {
-            return obj is Ptr && Equals((Ptr)obj);
-        }
+    public static bool operator ==(Ptr ptr1, Ptr ptr2)
+    {
+        return ptr1.Equals(ptr2);
+    }
 
-        public override int GetHashCode()
-        {
-            return Position.GetHashCode() ^ Size.GetHashCode();
-        }
+    public static bool operator !=(Ptr ptr1, Ptr ptr2)
+    {
+        return !(ptr1 == ptr2);
+    }
 
-        public override string ToString()
-        {
-            return $"({Position}, {Size})";
-        }
+    public static Ptr operator +(Ptr ptr, long offset)
+    {
+        return new Ptr(ptr.Position + offset, ptr.Size);
+    }
 
-        public static bool operator ==(Ptr ptr1, Ptr ptr2)
-        {
-            return ptr1.Equals(ptr2);
-        }
+    /// <summary>
+    /// Checking whether the pointer is invalid.
+    /// </summary>
+    public bool IsNull => Equals(NULL);
 
-        public static bool operator !=(Ptr ptr1, Ptr ptr2)
-        {
-            return !(ptr1 == ptr2);
-        }
+    /// <summary>
+    /// Returns index of the block after fragment.
+    /// </summary>
+    public long PositionPlusSize => checked(Position + Size);
 
-        public static Ptr operator +(Ptr ptr, long offset)
-        {
-            return new Ptr(ptr.Position + offset, ptr.Size);
-        }
+    #region Serialize/Deserialize
 
-        /// <summary>
-        /// Checking whether the pointer is invalid.
-        /// </summary>
-        public bool IsNull => Equals(NULL);
+    public void Serialize(BinaryWriter writer)
+    {
+        writer.Write(Position);
+        writer.Write(Size);
+    }
 
-        /// <summary>
-        /// Returns index of the block after fragment.
-        /// </summary>
-        public long PositionPlusSize => checked(Position + Size);
+    public static Ptr Deserialize(BinaryReader reader)
+    {
+        var position = reader.ReadInt64();
+        var size = reader.ReadInt64();
 
-        #region Serialize/Deserialize
+        return new Ptr(position, size);
+    }
 
-        public void Serialize(BinaryWriter writer)
-        {
-            writer.Write(Position);
-            writer.Write(Size);
-        }
+    #endregion
 
-        public static Ptr Deserialize(BinaryReader reader)
-        {
-            var position = reader.ReadInt64();
-            var size = reader.ReadInt64();
-
-            return new Ptr(position, size);
-        }
-
-        #endregion
-
-        public bool Contains(long position)
-        {
-            return Position <= position && position < PositionPlusSize;
-        }
+    public bool Contains(long position)
+    {
+        return Position <= position && position < PositionPlusSize;
     }
 }

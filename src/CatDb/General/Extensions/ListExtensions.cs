@@ -1,67 +1,65 @@
 ﻿using System.Linq.Expressions;
 
-namespace CatDb.General.Extensions
+namespace CatDb.General.Extensions;
+public class ListHelper<T>
 {
-    public class ListHelper<T>
+    public static readonly ListHelper<T> Instance = new();
+
+    public Action<List<T>, T[]> SetArray { get; private set; }
+    public Func<List<T>, T[]> GetArray { get; private set; }
+    public Action<List<T>, int> SetCount { get; private set; }
+    public Action<List<T>> IncrementVersion { get; private set; }
+
+    public ListHelper()
     {
-        public static readonly ListHelper<T> Instance = new();
+        var setArrayLambda = CreateSetArrayMethod();
+        SetArray = setArrayLambda.Compile();
 
-        public Action<List<T>, T[]> SetArray { get; private set; }
-        public Func<List<T>, T[]> GetArray { get; private set; }
-        public Action<List<T>, int> SetCount { get; private set; }
-        public Action<List<T>> IncrementVersion { get; private set; }
+        var getArrayLambda = CreateGetArrayMethod();
+        GetArray = getArrayLambda.Compile();
 
-        public ListHelper()
-        {
-            var setArrayLambda = CreateSetArrayMethod();
-            SetArray = setArrayLambda.Compile();
+        var setCountLambda = CreateSetCountMethod();
+        SetCount = setCountLambda.Compile();
 
-            var getArrayLambda = CreateGetArrayMethod();
-            GetArray = getArrayLambda.Compile();
+        var incrementVersionLambda = CreateIncremetVersionMethod();
+        IncrementVersion = incrementVersionLambda.Compile();
+    }
 
-            var setCountLambda = CreateSetCountMethod();
-            SetCount = setCountLambda.Compile();
+    public Expression<Action<List<T>, T[]>> CreateSetArrayMethod()
+    {
+        var list = Expression.Parameter(typeof(List<T>), "list");
+        var array = Expression.Parameter(typeof(T[]), "array");
 
-            var incrementVersionLambda = CreateIncremetVersionMethod();
-            IncrementVersion = incrementVersionLambda.Compile();
-        }
+        var assign = Expression.Assign(Expression.PropertyOrField(list, "_items"), array);
 
-        public Expression<Action<List<T>, T[]>> CreateSetArrayMethod()
-        {
-            var list = Expression.Parameter(typeof(List<T>), "list");
-            var array = Expression.Parameter(typeof(T[]), "array");
+        return Expression.Lambda<Action<List<T>, T[]>>(assign, list, array);
+    }
 
-            var assign = Expression.Assign(Expression.PropertyOrField(list, "_items"), array);
+    public Expression<Func<List<T>, T[]>> CreateGetArrayMethod()
+    {
+        var list = Expression.Parameter(typeof(List<T>), "list");
+        var items = Expression.PropertyOrField(list, "_items");
 
-            return Expression.Lambda<Action<List<T>, T[]>>(assign, list, array);
-        }
+        return Expression.Lambda<Func<List<T>, T[]>>(Expression.Label(Expression.Label(typeof(T[])), items), list);
+    }
 
-        public Expression<Func<List<T>, T[]>> CreateGetArrayMethod()
-        {
-            var list = Expression.Parameter(typeof(List<T>), "list");
-            var items = Expression.PropertyOrField(list, "_items");
+    public Expression<Action<List<T>, int>> CreateSetCountMethod()
+    {
+        var list = Expression.Parameter(typeof(List<T>), "list");
+        var count = Expression.Parameter(typeof(int), "count");
 
-            return Expression.Lambda<Func<List<T>, T[]>>(Expression.Label(Expression.Label(typeof(T[])), items), list);
-        }
+        var assign = Expression.Assign(Expression.PropertyOrField(list, "_size"), count);
 
-        public Expression<Action<List<T>, int>> CreateSetCountMethod()
-        {
-            var list = Expression.Parameter(typeof(List<T>), "list");
-            var count = Expression.Parameter(typeof(int), "count");
+        return Expression.Lambda<Action<List<T>, int>>(assign, list, count);
+    }
 
-            var assign = Expression.Assign(Expression.PropertyOrField(list, "_size"), count);
+    public Expression<Action<List<T>>> CreateIncremetVersionMethod()
+    {
+        var list = Expression.Parameter(typeof(List<T>), "list");
 
-            return Expression.Lambda<Action<List<T>, int>>(assign, list, count);
-        }
+        var version = Expression.PropertyOrField(list, "_version");
+        var assign = Expression.Assign(version, Expression.Add(version, Expression.Constant(1, typeof(int))));
 
-        public Expression<Action<List<T>>> CreateIncremetVersionMethod()
-        {
-            var list = Expression.Parameter(typeof(List<T>), "list");
-
-            var version = Expression.PropertyOrField(list, "_version");
-            var assign = Expression.Assign(version, Expression.Add(version, Expression.Constant(1, typeof(int))));
-
-            return Expression.Lambda<Action<List<T>>>(assign, list);
-        }
+        return Expression.Lambda<Action<List<T>>>(assign, list);
     }
 }

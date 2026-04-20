@@ -1,9 +1,7 @@
-﻿namespace CatDb.General.Comparers
+﻿namespace CatDb.General.Comparers;
+public enum SortOrder : byte
 {
-    public enum SortOrder : byte
-    {
-        Unspecified = 0,
-        Ascending = 1,
-        Descending = 2
-    }
+    Unspecified = 0,
+    Ascending = 1,
+    Descending = 2
 }

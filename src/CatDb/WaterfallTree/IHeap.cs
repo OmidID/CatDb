@@ -1,59 +1,36 @@
-﻿namespace CatDb.WaterfallTree
+﻿namespace CatDb.WaterfallTree;
+
+/// Provides block-based storage referenced by logical handles.
+/// Implementations must offer atomic commit (all-or-nothing) and be thread-safe.
+public interface IHeap
 {
-    /// <summary>
-    /// Gives opportunity to write and read blocks referenced by logical keys (handles). The heap implementations must provide atomic commit of all writes (all or nothing) and must be thread-safe.
-    /// The heap implementation can rely on the fact that the majority of the created by the engine blocks are with relatively large size (> 2MB).
-    /// </summary>
-    public interface IHeap
-    {
-        /// <summary>
-        /// Register new handle. The returned handle must be always unique.
-        /// </summary>
-        long ObtainNewHandle();
+    /// Register a new handle. The returned handle must always be unique.
+    long ObtainNewHandle();
 
-        /// <summary>
-        /// Release the allocated space behind the handle.
-        /// </summary>
-        void Release(long handle);
+    /// Release the allocated space behind the handle.
+    void Release(long handle);
 
-        /// <summary>
-        /// Is there such handle in the heap
-        /// </summary>
-        bool Exists(long handle);
+    /// Whether the handle exists in the heap.
+    bool Exists(long handle);
 
-        /// <summary>
-        /// Write data with the specified handle
-        /// </summary>
-        void Write(long handle, byte[] buffer, int index, int count);
+    /// Write data at the specified handle.
+    void Write(long handle, byte[] buffer, int index, int count);
 
-        /// <summary>
-        /// Read the current data behind the handle
-        /// </summary>
-        byte[] Read(long handle);
+    /// Read the data stored at the handle.
+    byte[] Read(long handle);
 
-        /// <summary>
-        /// Atomic commit ALL changes in the heap (all or nothing).
-        /// </summary>
-        void Commit();
+    /// Atomically commit ALL changes (all or nothing).
+    void Commit();
 
-        /// <summary>
-        /// Close the heap and release any resources
-        /// </summary>
-        void Close();
+    /// Close the heap and release all resources.
+    void Close();
 
-        /// <summary>
-        /// Small user data (usually less than one physical sector), atomic written with the Commit()
-        /// </summary>
-        byte[] Tag { get; set; }
+    /// Small user data written atomically with Commit().
+    byte[] Tag { get; set; }
 
-        /// <summary>
-        /// Total size in bytes of the user data
-        /// </summary>
-        long DataSize { get; }
+    /// Total size in bytes of the user data.
+    long DataSize { get; }
 
-        /// <summary>
-        /// Total size in bytes of the heap.
-        /// </summary>
-        long Size { get; }
-    }
+    /// Total size in bytes of the heap.
+    long Size { get; }
 }

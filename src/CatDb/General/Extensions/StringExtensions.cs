@@ -1,30 +1,28 @@
-﻿namespace CatDb.General.Extensions
+﻿namespace CatDb.General.Extensions;
+public static class StringExtensions
 {
-    public static class StringExtensions
+    /// <summary>
+    /// Convert string to byte array
+    /// </summary>
+    /// <param name="hex"></param>
+    /// <returns></returns>
+    public static byte[] ParseHex(this string hex)
     {
-        /// <summary>
-        /// Convert string to byte array
-        /// </summary>
-        /// <param name="hex"></param>
-        /// <returns></returns>
-        public static byte[] ParseHex(this string hex)
+        if ((hex.Length & 1) != 0)
+            throw new ArgumentException("Input must have even number of characters");
+
+        var result = new byte[hex.Length / 2];
+
+        for (var i = 0; i < result.Length; i++)
         {
-            if ((hex.Length & 1) != 0)
-                throw new ArgumentException("Input must have even number of characters");
+            int high = hex[i * 2];
+            int low = hex[i * 2 + 1];
+            high = (high & 0xf) + ((high & 0x40) >> 6) * 9;
+            low = (low & 0xf) + ((low & 0x40) >> 6) * 9;
 
-            var result = new byte[hex.Length / 2];
-
-            for (var i = 0; i < result.Length; i++)
-            {
-                int high = hex[i * 2];
-                int low = hex[i * 2 + 1];
-                high = (high & 0xf) + ((high & 0x40) >> 6) * 9;
-                low = (low & 0xf) + ((low & 0x40) >> 6) * 9;
-
-                result[i] = (byte)((high << 4) | low);
-            }
-
-            return result;
+            result[i] = (byte)((high << 4) | low);
         }
+
+        return result;
     }
 }

@@ -1,6 +1,4 @@
-﻿namespace CatDb.Data
+﻿namespace CatDb.Data;
+public interface IToObjects<T> : ITransformer<T, object[]>
 {
-    public interface IToObjects<T> : ITransformer<T, object[]>
-    {
-    }
 }

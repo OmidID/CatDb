@@ -1,8 +1,6 @@
-﻿namespace CatDb.Remote.Commands
+﻿namespace CatDb.Remote.Commands;
+public interface ICommand
 {
-    public interface ICommand
-    {
-        int Code { get; }
-        bool IsSynchronous { get; }
-    }
+    int Code { get; }
+    bool IsSynchronous { get; }
 }

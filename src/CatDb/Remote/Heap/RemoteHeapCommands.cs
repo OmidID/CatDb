@@ -1,280 +1,278 @@
 ﻿using CatDb.General.Compression;
 
-namespace CatDb.Remote.Heap
+namespace CatDb.Remote.Heap;
+public class HeapCommand
 {
-    public class HeapCommand
+}
+
+public class ObtainHandleCommand : HeapCommand
+{
+    public long Handle;
+
+    public static void WriteRequest(BinaryWriter writer)
     {
+        writer.Write((byte)RemoteHeapCommandCodes.ObtainHandle);
     }
 
-    public class ObtainHandleCommand : HeapCommand
+    public static void WriteResponse(BinaryWriter writer, long handle)
     {
-        public long Handle;
-
-        public static void WriteRequest(BinaryWriter writer)
-        {
-            writer.Write((byte)RemoteHeapCommandCodes.ObtainHandle);
-        }
-
-        public static void WriteResponse(BinaryWriter writer, long handle)
-        {
-            CountCompression.Serialize(writer, (ulong)handle);
-        }
-
-        public static ObtainHandleCommand ReadResponse(BinaryReader reader)
-        {
-            return new ObtainHandleCommand
-            {
-                Handle = (long)CountCompression.Deserialize(reader)
-            };
-        }
+        CountCompression.Serialize(writer, (ulong)handle);
     }
 
-    public class ReleaseHandleCommand : HeapCommand
+    public static ObtainHandleCommand ReadResponse(BinaryReader reader)
     {
-        public long Handle;
-
-        public static void WriteRequest(BinaryWriter writer, long handle)
+        return new ObtainHandleCommand
         {
-            writer.Write((byte)RemoteHeapCommandCodes.ReleaseHandle);
-            writer.Write(handle);
-        }
+            Handle = (long)CountCompression.Deserialize(reader)
+        };
+    }
+}
 
-        public static ReleaseHandleCommand ReadRequest(BinaryReader reader)
-        {
-            return new ReleaseHandleCommand
-            {
-                Handle = (long)CountCompression.Deserialize(reader)
-            };
-        }
+public class ReleaseHandleCommand : HeapCommand
+{
+    public long Handle;
+
+    public static void WriteRequest(BinaryWriter writer, long handle)
+    {
+        writer.Write((byte)RemoteHeapCommandCodes.ReleaseHandle);
+        writer.Write(handle);
     }
 
-    public class HandleExistCommand : HeapCommand
+    public static ReleaseHandleCommand ReadRequest(BinaryReader reader)
     {
-        public bool Exist;
-        public long Handle;
-
-        public static void WriteRequest(BinaryWriter writer, long handle)
+        return new ReleaseHandleCommand
         {
-            writer.Write((byte)RemoteHeapCommandCodes.HandleExist);
-            CountCompression.Serialize(writer, (ulong)handle);
-        }
+            Handle = (long)CountCompression.Deserialize(reader)
+        };
+    }
+}
 
-        public static HandleExistCommand ReadRequest(BinaryReader reader)
-        {
-            return new HandleExistCommand
-            {
-                Handle = (long)CountCompression.Deserialize(reader)
-            };
-        }
+public class HandleExistCommand : HeapCommand
+{
+    public bool Exist;
+    public long Handle;
 
-        public static void WriteResponse(BinaryWriter writer, bool exist)
-        {
-            writer.Write(exist);
-        }
-
-        public static HandleExistCommand ReadResponse(BinaryReader reader)
-        {
-            return new HandleExistCommand
-            {
-                Exist = reader.ReadBoolean()
-            };
-        }
+    public static void WriteRequest(BinaryWriter writer, long handle)
+    {
+        writer.Write((byte)RemoteHeapCommandCodes.HandleExist);
+        CountCompression.Serialize(writer, (ulong)handle);
     }
 
-    public class WriteCommand : HeapCommand
+    public static HandleExistCommand ReadRequest(BinaryReader reader)
     {
-        public long Handle;
-
-        public int Index;
-        public int Count;
-        public byte[] Buffer;
-
-        public static void WriteRequest(BinaryWriter writer, long handle, int index, int count, byte[] buffer)
+        return new HandleExistCommand
         {
-            writer.Write((byte)RemoteHeapCommandCodes.WriteCommand);
-            CountCompression.Serialize(writer, (ulong)handle);
-
-            CountCompression.Serialize(writer, (ulong)index);
-            CountCompression.Serialize(writer, (ulong)count);
-
-            CountCompression.Serialize(writer, (ulong)(count + index));
-            writer.Write(buffer, 0, index + count);
-        }
-
-        public static WriteCommand ReadRequest(BinaryReader reader)
-        {
-            return new WriteCommand
-            {
-                Handle = (long)CountCompression.Deserialize(reader),
-
-                Index = (int)CountCompression.Deserialize(reader),
-                Count = (int)CountCompression.Deserialize(reader),
-
-                Buffer = reader.ReadBytes((int)CountCompression.Deserialize(reader))
-            };
-        }
+            Handle = (long)CountCompression.Deserialize(reader)
+        };
     }
 
-    public class ReadCommand : HeapCommand
+    public static void WriteResponse(BinaryWriter writer, bool exist)
     {
-        public long Handle;
-        public byte[] Buffer;
-
-        public static void WriteRequest(BinaryWriter writer, long handle)
-        {
-            writer.Write((byte)RemoteHeapCommandCodes.ReadCommand);
-            CountCompression.Serialize(writer, (ulong)handle);
-        }
-
-        public static ReadCommand ReadRequest(BinaryReader reader)
-        {
-            return new ReadCommand
-            {
-                Handle = (long)CountCompression.Deserialize(reader)
-            };
-        }
-
-        public static void WriteResponse(BinaryWriter writer, byte[] buffer)
-        {
-            CountCompression.Serialize(writer, (ulong)buffer.Length);
-            writer.Write(buffer, 0, buffer.Length);
-        }
-
-        public static ReadCommand ReadResponse(BinaryReader reader)
-        {
-            return new ReadCommand
-            {
-                Buffer = reader.ReadBytes((int)CountCompression.Deserialize(reader))
-            };
-        }
+        writer.Write(exist);
     }
 
-    public class CommitCommand : HeapCommand
+    public static HandleExistCommand ReadResponse(BinaryReader reader)
     {
-        public static void WriteRequest(BinaryWriter writer)
+        return new HandleExistCommand
         {
-            writer.Write((byte)RemoteHeapCommandCodes.CommitCommand);
-        }
+            Exist = reader.ReadBoolean()
+        };
+    }
+}
+
+public class WriteCommand : HeapCommand
+{
+    public long Handle;
+
+    public int Index;
+    public int Count;
+    public byte[] Buffer;
+
+    public static void WriteRequest(BinaryWriter writer, long handle, int index, int count, byte[] buffer)
+    {
+        writer.Write((byte)RemoteHeapCommandCodes.WriteCommand);
+        CountCompression.Serialize(writer, (ulong)handle);
+
+        CountCompression.Serialize(writer, (ulong)index);
+        CountCompression.Serialize(writer, (ulong)count);
+
+        CountCompression.Serialize(writer, (ulong)(count + index));
+        writer.Write(buffer, 0, index + count);
     }
 
-    public class CloseCommand : HeapCommand
+    public static WriteCommand ReadRequest(BinaryReader reader)
     {
-        public static void WriteRequest(BinaryWriter writer)
+        return new WriteCommand
         {
-            writer.Write((byte)RemoteHeapCommandCodes.CloseCommand);
-        }
+            Handle = (long)CountCompression.Deserialize(reader),
+
+            Index = (int)CountCompression.Deserialize(reader),
+            Count = (int)CountCompression.Deserialize(reader),
+
+            Buffer = reader.ReadBytes((int)CountCompression.Deserialize(reader))
+        };
+    }
+}
+
+public class ReadCommand : HeapCommand
+{
+    public long Handle;
+    public byte[] Buffer;
+
+    public static void WriteRequest(BinaryWriter writer, long handle)
+    {
+        writer.Write((byte)RemoteHeapCommandCodes.ReadCommand);
+        CountCompression.Serialize(writer, (ulong)handle);
     }
 
-    public class SetTagCommand : HeapCommand
+    public static ReadCommand ReadRequest(BinaryReader reader)
     {
-        public byte[] Tag;
-
-        public static void WriteRequest(BinaryWriter writer, byte[] tag)
+        return new ReadCommand
         {
-            writer.Write((byte)RemoteHeapCommandCodes.SetTag);
-            writer.Write(tag != null);
-            if (tag != null)
-            {
-                CountCompression.Serialize(writer, (ulong)tag.Length);
-                writer.Write(tag, 0, tag.Length);
-            }
-        }
+            Handle = (long)CountCompression.Deserialize(reader)
+        };
+    }
 
-        public static SetTagCommand ReadRequest(BinaryReader reader)
+    public static void WriteResponse(BinaryWriter writer, byte[] buffer)
+    {
+        CountCompression.Serialize(writer, (ulong)buffer.Length);
+        writer.Write(buffer, 0, buffer.Length);
+    }
+
+    public static ReadCommand ReadResponse(BinaryReader reader)
+    {
+        return new ReadCommand
         {
-            return new SetTagCommand
-            {
-                Tag = reader.ReadBoolean() ? reader.ReadBytes((int)CountCompression.Deserialize(reader)) : null
-            };
+            Buffer = reader.ReadBytes((int)CountCompression.Deserialize(reader))
+        };
+    }
+}
+
+public class CommitCommand : HeapCommand
+{
+    public static void WriteRequest(BinaryWriter writer)
+    {
+        writer.Write((byte)RemoteHeapCommandCodes.CommitCommand);
+    }
+}
+
+public class CloseCommand : HeapCommand
+{
+    public static void WriteRequest(BinaryWriter writer)
+    {
+        writer.Write((byte)RemoteHeapCommandCodes.CloseCommand);
+    }
+}
+
+public class SetTagCommand : HeapCommand
+{
+    public byte[] Tag;
+
+    public static void WriteRequest(BinaryWriter writer, byte[] tag)
+    {
+        writer.Write((byte)RemoteHeapCommandCodes.SetTag);
+        writer.Write(tag != null);
+        if (tag != null)
+        {
+            CountCompression.Serialize(writer, (ulong)tag.Length);
+            writer.Write(tag, 0, tag.Length);
         }
     }
 
-    public class GetTagCommand : HeapCommand
+    public static SetTagCommand ReadRequest(BinaryReader reader)
     {
-        public byte[] Tag;
-
-        public static void WriteRequest(BinaryWriter writer)
+        return new SetTagCommand
         {
-            writer.Write((byte)RemoteHeapCommandCodes.GetTag);
-        }
+            Tag = reader.ReadBoolean() ? reader.ReadBytes((int)CountCompression.Deserialize(reader)) : null
+        };
+    }
+}
 
-        public static void WriteResponse(BinaryWriter writer, byte[] tag)
-        {
-            writer.Write(tag != null);
-            if (tag != null)
-            {
-                CountCompression.Serialize(writer, (ulong)tag.Length);
-                writer.Write(tag, 0, tag.Length);
-            }
-        }
+public class GetTagCommand : HeapCommand
+{
+    public byte[] Tag;
 
-        public static GetTagCommand ReadResponse(BinaryReader reader)
+    public static void WriteRequest(BinaryWriter writer)
+    {
+        writer.Write((byte)RemoteHeapCommandCodes.GetTag);
+    }
+
+    public static void WriteResponse(BinaryWriter writer, byte[] tag)
+    {
+        writer.Write(tag != null);
+        if (tag != null)
         {
-            return new GetTagCommand
-            {
-                Tag = reader.ReadBoolean() ? reader.ReadBytes((int)CountCompression.Deserialize(reader)) : null
-            };
+            CountCompression.Serialize(writer, (ulong)tag.Length);
+            writer.Write(tag, 0, tag.Length);
         }
     }
 
-    public class DataBaseSizeCommand : HeapCommand
+    public static GetTagCommand ReadResponse(BinaryReader reader)
     {
-        public long DataBaseSize;
-
-        public static void WriteRequest(BinaryWriter writer)
+        return new GetTagCommand
         {
-            writer.Write((byte)RemoteHeapCommandCodes.DataBaseSize);
-        }
+            Tag = reader.ReadBoolean() ? reader.ReadBytes((int)CountCompression.Deserialize(reader)) : null
+        };
+    }
+}
 
-        public static void WriteResponse(BinaryWriter writer, long size)
-        {
-            CountCompression.Serialize(writer, (ulong)size);
-        }
+public class DataBaseSizeCommand : HeapCommand
+{
+    public long DataBaseSize;
 
-        public static DataBaseSizeCommand ReadResponse(BinaryReader reader)
-        {
-            return new DataBaseSizeCommand
-            {
-                 DataBaseSize = (long)CountCompression.Deserialize(reader)
-             };
-        }
+    public static void WriteRequest(BinaryWriter writer)
+    {
+        writer.Write((byte)RemoteHeapCommandCodes.DataBaseSize);
     }
 
-    public class SizeCommand : HeapCommand
+    public static void WriteResponse(BinaryWriter writer, long size)
     {
-        public long Size;
-
-        public static void WriteRequest(BinaryWriter writer)
-        {
-            writer.Write((byte)RemoteHeapCommandCodes.Size);
-        }
-
-        public static void WriteResponse(BinaryWriter writer, long size)
-        {
-            CountCompression.Serialize(writer, (ulong)size);
-        }
-
-        public static DataBaseSizeCommand ReadResponse(BinaryReader reader)
-        {
-            return new DataBaseSizeCommand
-            {
-                DataBaseSize = (long)CountCompression.Deserialize(reader)
-            };
-        }
+        CountCompression.Serialize(writer, (ulong)size);
     }
 
-    public enum RemoteHeapCommandCodes : byte
+    public static DataBaseSizeCommand ReadResponse(BinaryReader reader)
     {
-        ObtainHandle = 1,
-        ReleaseHandle = 2,
-        HandleExist = 3,
-        WriteCommand = 4,
-        ReadCommand = 5,
-        CommitCommand = 6,
-        CloseCommand = 7,
-        SetTag = 8,
-        GetTag = 9,
-        DataBaseSize = 10,
-        Size = 11
+        return new DataBaseSizeCommand
+        {
+             DataBaseSize = (long)CountCompression.Deserialize(reader)
+         };
     }
+}
+
+public class SizeCommand : HeapCommand
+{
+    public long Size;
+
+    public static void WriteRequest(BinaryWriter writer)
+    {
+        writer.Write((byte)RemoteHeapCommandCodes.Size);
+    }
+
+    public static void WriteResponse(BinaryWriter writer, long size)
+    {
+        CountCompression.Serialize(writer, (ulong)size);
+    }
+
+    public static DataBaseSizeCommand ReadResponse(BinaryReader reader)
+    {
+        return new DataBaseSizeCommand
+        {
+            DataBaseSize = (long)CountCompression.Deserialize(reader)
+        };
+    }
+}
+
+public enum RemoteHeapCommandCodes : byte
+{
+    ObtainHandle = 1,
+    ReleaseHandle = 2,
+    HandleExist = 3,
+    WriteCommand = 4,
+    ReadCommand = 5,
+    CommitCommand = 6,
+    CloseCommand = 7,
+    SetTag = 8,
+    GetTag = 9,
+    DataBaseSize = 10,
+    Size = 11
 }
