@@ -44,7 +44,7 @@ public partial class WTree
 
         public bool IsNodeLoaded => _node != null;
 
-        private Node _node;
+        private Node? _node;
 
         public Node Node
         {

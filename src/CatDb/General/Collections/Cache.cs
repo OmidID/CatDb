@@ -1,15 +1,16 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections;
 
 namespace CatDb.General.Collections;
 public class Cache<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>
-    //where TKey : IEquatable<TKey>//, IComparable<TKey>
+    where TKey : notnull
 {
     private readonly IDictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>> _mapping;//mapping between link and element in Items
     private readonly LinkedList<KeyValuePair<TKey, TValue>> _items = new();//The newer and/or most used elements emerges on top(begining)
     private int _capacity;
 
     public readonly object SyncRoot = new();
-    public event OverflowDelegate Overflow;
+    public event OverflowDelegate? Overflow;
 
     //Comparer<TKey>.Default
     public Cache(int capacity, IComparer<TKey> comparer)

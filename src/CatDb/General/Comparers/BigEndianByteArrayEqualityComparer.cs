@@ -5,8 +5,9 @@ public class BigEndianByteArrayEqualityComparer : IEqualityComparer<byte[]>
 {
     public static readonly BigEndianByteArrayEqualityComparer Instance = new();
     
-    public bool Equals(byte[] x, byte[] y)
+    public bool Equals(byte[]? x, byte[]? y)
     {
+        if (x is null || y is null) return x is null && y is null;
         if (x.Length != y.Length)
             return false;
 
@@ -14,9 +15,9 @@ public class BigEndianByteArrayEqualityComparer : IEqualityComparer<byte[]>
         {
             ByteArray = x
         };
-        var array1 = common.UInt64Array;
+        var array1 = common.UInt64Array!;
         common.ByteArray = y;
-        var array2 = common.UInt64Array;
+        var array2 = common.UInt64Array!;
 
         var length = x.Length;
         var len = length >> 3;
@@ -79,8 +80,9 @@ public class BigEndianByteArrayEqualityComparer : IEqualityComparer<byte[]>
         return true;
     }
 
-    public int GetHashCode(byte[] obj)
+    public int GetHashCode(byte[]? obj)
     {
+        if (obj is null) return 0;
         return obj.GetHashCodeEx();
     }
 }

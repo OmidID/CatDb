@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections;
 using System.Diagnostics;
 
@@ -6,8 +7,8 @@ public partial class WTree
 {
     private class BranchCache : IEnumerable<KeyValuePair<Locator, IOperationCollection>>
     {
-        private Dictionary<Locator, IOperationCollection> _cache;
-        private IOperationCollection _operations;
+        private Dictionary<Locator, IOperationCollection>? _cache;
+        private IOperationCollection? _operations;
 
         /// <summary>
         /// Number of all operations in cache
@@ -96,12 +97,12 @@ public partial class WTree
             return false;
         }
                     
-        public IOperationCollection Exclude(Locator locator)
+        public IOperationCollection? Exclude(Locator locator)
         {
             if (Count == 0)
                 return null;
 
-            IOperationCollection operations;
+            IOperationCollection? operations;
 
             if (!_operations.Locator.Equals(locator))
             {

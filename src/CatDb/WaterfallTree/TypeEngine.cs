@@ -7,10 +7,10 @@ public class TypeEngine
 {
     private static readonly ConcurrentDictionary<Type, TypeEngine> Map = new();
 
-    public IComparer<IData> Comparer { get; set; }
-    public IEqualityComparer<IData> EqualityComparer { get; set; }
-    public IPersist<IData> Persist { get; set; }
-    public IIndexerPersist<IData> IndexerPersist { get; set; }
+    public IComparer<IData>? Comparer { get; set; }
+    public IEqualityComparer<IData>? EqualityComparer { get; set; }
+    public IPersist<IData>? Persist { get; set; }
+    public IIndexerPersist<IData>? IndexerPersist { get; set; }
 
     private static TypeEngine Create(Type type)
     {

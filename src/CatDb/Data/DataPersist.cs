@@ -9,10 +9,10 @@ public class DataPersist : IPersist<IData>
     private readonly Func<BinaryReader, IData> _read;
 
     private readonly Type _type;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
     private readonly AllowNull _allowNull;
 
-    public DataPersist(Type type, Func<Type, MemberInfo, int> membersOrder = null, AllowNull allowNull = AllowNull.None)
+    public DataPersist(Type type, Func<Type, MemberInfo, int>? membersOrder = null, AllowNull allowNull = AllowNull.None)
     {
         _type = type;
         _membersOrder = membersOrder;
@@ -52,7 +52,7 @@ public class DataPersist : IPersist<IData>
         var dataType = typeof(Data<>).MakeGenericType(_type);
 
         return Expression.Lambda<Func<BinaryReader, IData>>(
-                Expression.Label(Expression.Label(dataType), Expression.New(dataType.GetConstructor(new[] { _type }), PersistHelper.CreateReadBody(reader, _type, _membersOrder, _allowNull))),
+                Expression.Label(Expression.Label(dataType), Expression.New(dataType.GetConstructor(new[] { _type })!, PersistHelper.CreateReadBody(reader, _type, _membersOrder, _allowNull))),
                 reader
             );
     }

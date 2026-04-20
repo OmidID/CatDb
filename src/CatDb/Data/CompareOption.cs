@@ -52,8 +52,9 @@ public class CompareOption : IEquatable<CompareOption>
         return new CompareOption(sortOrder, byteOrder, ignoreCase);
     }
 
-    public bool Equals(CompareOption other)
+    public bool Equals(CompareOption? other)
     {
+        if (other is null) return false;
         return SortOrder == other.SortOrder && ByteOrder == other.ByteOrder && IgnoreCase == other.IgnoreCase;
     }
 
@@ -70,7 +71,7 @@ public class CompareOption : IEquatable<CompareOption>
         return new CompareOption(SortOrder.Ascending);
     }
 
-    public static CompareOption[] GetDefaultCompareOptions(Type type, Func<Type, MemberInfo, int> memberOrder = null)
+    public static CompareOption[] GetDefaultCompareOptions(Type type, Func<Type, MemberInfo, int>? memberOrder = null)
     {
         if (DataType.IsPrimitiveType(type))
             return new[] { GetDefaultCompareOption(type) };
@@ -106,7 +107,7 @@ public class CompareOption : IEquatable<CompareOption>
         }
     }
 
-    public static void CheckCompareOptions(Type type, CompareOption[] compareOptions, Func<Type, MemberInfo, int> memberOrder = null)
+    public static void CheckCompareOptions(Type type, CompareOption[] compareOptions, Func<Type, MemberInfo, int>? memberOrder = null)
     {
         if (type.IsClass || type.IsStruct())
         {

@@ -9,9 +9,9 @@ public class DataToObjects : IToObjects<IData>
     private readonly Func<object[], IData> _from;
 
     private readonly Type _type;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
 
-    public DataToObjects(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public DataToObjects(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         if (!DataType.IsPrimitiveType(type) && !type.HasDefaultConstructor())
             throw new NotSupportedException("No default constructor.");

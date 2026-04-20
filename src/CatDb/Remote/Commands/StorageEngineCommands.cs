@@ -11,14 +11,14 @@ public class StorageEngineCommitCommand : ICommand
 
 public class StorageEngineGetEnumeratorCommand : ICommand
 {
-    public List<IDescriptor> Descriptions;
+    public List<IDescriptor>? Descriptions;
 
     public StorageEngineGetEnumeratorCommand()
         : this(null)
     {
     }
 
-    public StorageEngineGetEnumeratorCommand(List<IDescriptor> descriptions)
+    public StorageEngineGetEnumeratorCommand(List<IDescriptor>? descriptions)
     {
         Descriptions = descriptions;
     }
@@ -30,8 +30,8 @@ public class StorageEngineGetEnumeratorCommand : ICommand
 
 public class StorageEngineRenameCommand : ICommand
 {
-    public string Name;
-    public string NewName;
+    public string Name = default!;
+    public string NewName = default!;
 
     public StorageEngineRenameCommand(string name, string newName)
     {
@@ -46,7 +46,7 @@ public class StorageEngineRenameCommand : ICommand
 
 public class StorageEngineExistsCommand : ICommand
 {
-    public string Name;
+    public string Name = default!;
     public bool Exist;
 
     public StorageEngineExistsCommand(string name)
@@ -67,10 +67,10 @@ public class StorageEngineExistsCommand : ICommand
 
 public class StorageEngineFindByIdCommand : ICommand
 {
-    public IDescriptor Descriptor;
+    public IDescriptor? Descriptor;
     public long Id;
 
-    public StorageEngineFindByIdCommand(IDescriptor descriptor, long id)
+    public StorageEngineFindByIdCommand(IDescriptor? descriptor, long id)
     {
         Descriptor = descriptor;
         Id = id;
@@ -83,16 +83,16 @@ public class StorageEngineFindByIdCommand : ICommand
 
 public class StorageEngineFindByNameCommand : ICommand
 {
-    public string Name;
-    public IDescriptor Descriptor;
+    public string? Name;
+    public IDescriptor? Descriptor;
 
-    public StorageEngineFindByNameCommand(string name, IDescriptor descriptor)
+    public StorageEngineFindByNameCommand(string? name, IDescriptor? descriptor)
     {
         Name = name;
         Descriptor = descriptor;
     }
 
-    public StorageEngineFindByNameCommand(IDescriptor descriptor)
+    public StorageEngineFindByNameCommand(IDescriptor? descriptor)
         : this(null, descriptor)
     {
     }
@@ -105,10 +105,10 @@ public class StorageEngineFindByNameCommand : ICommand
 public class StorageEngineOpenXIndexCommand : ICommand
 {
     public long Id;
-    public string Name;
+    public string Name = default!;
 
-    public DataType KeyType;
-    public DataType RecordType;
+    public DataType KeyType = default!;
+    public DataType RecordType = default!;
 
     public DateTime CreateTime;
 
@@ -141,7 +141,7 @@ public class StorageEngineOpenXIndexCommand : ICommand
 public class StorageEngineOpenXFileCommand : ICommand
 {
     public long Id;
-    public string Name;
+    public string Name = default!;
 
     public StorageEngineOpenXFileCommand(string name)
     {
@@ -160,7 +160,7 @@ public class StorageEngineOpenXFileCommand : ICommand
 
 public class StorageEngineDeleteCommand : ICommand
 {
-    public string Name;
+    public string Name = default!;
 
     public StorageEngineDeleteCommand(string name)
     {
@@ -193,9 +193,9 @@ public class StorageEngineCountCommand : ICommand
 
 public class StorageEngineDescriptionCommand : ICommand
 {
-    public IDescriptor Descriptor;
+    public IDescriptor? Descriptor;
 
-    public StorageEngineDescriptionCommand(IDescriptor description)
+    public StorageEngineDescriptionCommand(IDescriptor? description)
     {
         Descriptor = description;
     }

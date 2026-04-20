@@ -12,9 +12,9 @@ public class IndexerPersist<T> : IIndexerPersist<T>
 
     private readonly Type _type;
     private readonly IIndexerPersist[] _persists;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
 
-    public IndexerPersist(IIndexerPersist[] persists, Func<Type, MemberInfo, int> membersOrder = null)
+    public IndexerPersist(IIndexerPersist[] persists, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         _type = typeof(T);
         _persists = persists;
@@ -24,7 +24,7 @@ public class IndexerPersist<T> : IIndexerPersist<T>
         _load = CreateLoadMethod().Compile();
     }
 
-    public IndexerPersist(Func<Type, MemberInfo, int> membersOrder = null)
+    public IndexerPersist(Func<Type, MemberInfo, int>? membersOrder = null)
         : this(IndexerPersistHelper.GetDefaultPersists(typeof(T), membersOrder), membersOrder)
     {
     }
@@ -36,7 +36,7 @@ public class IndexerPersist<T> : IIndexerPersist<T>
         var count = Expression.Parameter(typeof(int), "count");
 
         var idx = Expression.Variable(typeof(int), "idx");
-        var callValues = Expression.Call(values, values.Type.GetMethod("Invoke"), idx);
+        var callValues = Expression.Call(values, values.Type.GetMethod("Invoke")!, idx);
 
         var body = IndexerPersistHelper.CreateStoreBody(_type, _persists, writer, callValues, idx, count, _membersOrder);
 
@@ -57,11 +57,11 @@ public class IndexerPersist<T> : IIndexerPersist<T>
         var body = DataType.IsPrimitiveType(_type) ?
                 IndexerPersistHelper.SingleSlotCreateLoadBody(_type, false, values, reader, count, _persists) :
                 Expression.Block(new[] { array },
-                Expression.Assign(array, Expression.New(array.Type.GetConstructor(new[] { typeof(int) }), count)),
+                Expression.Assign(array, Expression.New(array.Type.GetConstructor(new[] { typeof(int) })!, count)),
                 array.For(i =>
                     {
                         return Expression.Block(Expression.Assign(Expression.ArrayAccess(array, i), Expression.New(typeof(T))),
-                                Expression.Call(values, values.Type.GetMethod("Invoke"), i, Expression.ArrayAccess(array, i)));
+                                Expression.Call(values, values.Type.GetMethod("Invoke")!, i, Expression.ArrayAccess(array, i)));
                     }, Expression.Label(), count),
                 IndexerPersistHelper.CreateLoadBody(_type, false, reader, array, count, _membersOrder, _persists)
                 );
@@ -96,9 +96,9 @@ public class IndexerPersist<T> : IIndexerPersist<T>
     //    public Type Type { get; private set; }
     //    public IIndexerPersist[] Persists { get; private set; }
 
-    //    public readonly Func<Type, MemberInfo, int> MembersOrder;
+    //    public readonly Func<Type, MemberInfo, int>? MembersOrder;
 
-    //    public TickIndexerPersist(Type type, IIndexerPersist[] persist, Func<Type, MemberInfo, int> membersOrder = null)
+    //    public TickIndexerPersist(Type type, IIndexerPersist[] persist, Func<Type, MemberInfo, int>? membersOrder = null)
     //    {
     //        Persists = persist;
     //        Type = type;
@@ -220,22 +220,22 @@ public class IndexerPersist<T> : IIndexerPersist<T>
 
 public static class IndexerPersistHelper
 {
-    public static Expression CreateLoadBody(Type type, bool isData, Expression reader, ParameterExpression array, ParameterExpression count, Func<Type, MemberInfo, int> membersOrder, IIndexerPersist[] persists)
+    public static Expression CreateLoadBody(Type type, bool isData, Expression reader, ParameterExpression array, ParameterExpression count, Func<Type, MemberInfo, int>? membersOrder, IIndexerPersist[] persists)
     {
         var countOfType = type.GetPublicReadWritePropertiesAndFields().Count();
 
         var list = new List<Expression>();
 
         var actionsArray = Expression.Variable(typeof(Action[]));
-        list.Add(Expression.Assign(actionsArray, Expression.New(actionsArray.Type.GetConstructor(new[] { typeof(int) }), Expression.Constant(countOfType))));
+        list.Add(Expression.Assign(actionsArray, Expression.New(actionsArray.Type.GetConstructor(new[] { typeof(int) })!, Expression.Constant(countOfType))));
 
         var buffers = Expression.Variable(typeof(byte[][]));
-        list.Add(Expression.Assign(buffers, Expression.New(buffers.Type.GetConstructor(new[] { typeof(int) }), Expression.Constant(countOfType))));
+        list.Add(Expression.Assign(buffers, Expression.New(buffers.Type.GetConstructor(new[] { typeof(int) })!, Expression.Constant(countOfType))));
 
         list.Add(buffers.For(i =>
             Expression.Assign(Expression.ArrayAccess(buffers, i),
-                Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBytes"),
-                    Expression.Convert(Expression.Call(typeof(CountCompression).GetMethod("Deserialize"), reader), typeof(int)))), Expression.Label(), Expression.Constant(countOfType))
+                Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBytes")!,
+                    Expression.Convert(Expression.Call(typeof(CountCompression).GetMethod("Deserialize")!, reader), typeof(int)))), Expression.Label(), Expression.Constant(countOfType))
                 );
 
         var ms = Expression.Variable(typeof(MemoryStream));
@@ -243,11 +243,11 @@ public static class IndexerPersistHelper
         var j = 0;
         foreach (var member in type.GetPublicReadWritePropertiesAndFields())
             list.Add(Expression.Assign(Expression.ArrayAccess(actionsArray, Expression.Constant(j)),
-                                       Expression.Lambda(ms.Using(Expression.New(typeof(MemoryStream).GetConstructor(new[] { typeof(byte[]) }),
+                                       Expression.Lambda(ms.Using(Expression.New(typeof(MemoryStream).GetConstructor(new[] { typeof(byte[]) })!,
                                         Expression.ArrayAccess(buffers, Expression.Constant(j))), GetLoadPersistCall(j++, isData, member, array, ms, count, persists))))
                     );
 
-        list.Add(Expression.Call(typeof(Parallel).GetMethod("Invoke", new[] { typeof(Action[]) }), actionsArray));
+        list.Add(Expression.Call(typeof(Parallel).GetMethod("Invoke", new[] { typeof(Action[]) })!, actionsArray));
 
         return Expression.Block(new[] { actionsArray, buffers, ms }, list);
     }
@@ -261,8 +261,8 @@ public static class IndexerPersistHelper
 
         var field = isData ? Expression.PropertyOrField(Expression.ArrayAccess(array, idx).Value(), member.Name) : Expression.PropertyOrField(Expression.ArrayAccess(array, idx), member.Name);
 
-        return Expression.Call(Expression.Convert(Expression.Constant(persists[index]), persists[index].GetType()), persists[index].GetType().GetMethod("Load"),
-           Expression.New(typeof(BinaryReader).GetConstructor(new[] { typeof(MemoryStream) }), ms),
+        return Expression.Call(Expression.Convert(Expression.Constant(persists[index]), persists[index].GetType()), persists[index].GetType().GetMethod("Load")!,
+           Expression.New(typeof(BinaryReader).GetConstructor(new[] { typeof(MemoryStream) })!, ms),
            Expression.Lambda(typeof(Action<,>).MakeGenericType(typeof(int), member.GetPropertyOrFieldType()), Expression.Assign(field, value), idx, value),
            count);
     }
@@ -271,26 +271,26 @@ public static class IndexerPersistHelper
     {
         var list = new List<Expression>();
         var buffers = Expression.Variable(typeof(byte[]));
-        list.Add(Expression.Assign(buffers, Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBytes"), Expression.Convert(Expression.Call(typeof(CountCompression).GetMethod("Deserialize"), reader), typeof(int)))));
+        list.Add(Expression.Assign(buffers, Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBytes")!, Expression.Convert(Expression.Call(typeof(CountCompression).GetMethod("Deserialize")!, reader), typeof(int)))));
 
         var ms = Expression.Variable(typeof(MemoryStream));
         var idx = Expression.Variable(typeof(int), "idx");
         var value = Expression.Variable(type, "value");
 
-        list.Add(ms.Using(Expression.New(typeof(MemoryStream).GetConstructor(new[] { typeof(byte[]) }), buffers),
+        list.Add(ms.Using(Expression.New(typeof(MemoryStream).GetConstructor(new[] { typeof(byte[]) })!, buffers),
                Expression.Call(Expression.Convert(Expression.Constant(persists[0]),
-                   persists[0].GetType()), persists[0].GetType().GetMethod("Load"),
-                   Expression.New(typeof(BinaryReader).GetConstructor(new[] { typeof(MemoryStream) }), ms),
+                   persists[0].GetType()), persists[0].GetType().GetMethod("Load")!,
+                   Expression.New(typeof(BinaryReader).GetConstructor(new[] { typeof(MemoryStream) })!, ms),
                    Expression.Lambda(isData ?
-                       Expression.Call(values, values.Type.GetMethod("Invoke"), idx, Expression.New(typeof(Data<>).MakeGenericType(type).GetConstructor(new[] { type }), value))
-                       : Expression.Call(values, values.Type.GetMethod("Invoke"), idx, value),
+                       Expression.Call(values, values.Type.GetMethod("Invoke")!, idx, Expression.New(typeof(Data<>).MakeGenericType(type).GetConstructor(new[] { type })!, value))
+                       : Expression.Call(values, values.Type.GetMethod("Invoke")!, idx, value),
                        idx, value),
                    count)));
 
         return Expression.Block(new[] { buffers }, list);
     }
 
-    internal static Expression CreateStoreBody(Type type, IIndexerPersist[] persists, Expression writer, Expression callValues, ParameterExpression idx, Expression count, Func<Type, MemberInfo, int> membersOrder)
+    internal static Expression CreateStoreBody(Type type, IIndexerPersist[] persists, Expression writer, Expression callValues, ParameterExpression idx, Expression count, Func<Type, MemberInfo, int>? membersOrder)
     {
         var list = new List<Expression>();
         var itemsCount = DataTypeUtils.GetPublicMembers(type, membersOrder).Count();
@@ -303,19 +303,19 @@ public static class IndexerPersistHelper
             var func = Expression.Lambda(itemsCount == 0 ? callValues : Expression.PropertyOrField(callValues, DataTypeUtils.GetPublicMembers(type, membersOrder).First().Name), idx);
 
             return ms.Using(Expression.Block(
-                    Expression.Assign(ms, Expression.New(typeof(MemoryStream).GetConstructor(new Type[] { }))),
-                    Expression.Call(persist, persist.Type.GetMethod("Store"), Expression.New(typeof(BinaryWriter).GetConstructor(new[] { typeof(MemoryStream) }), ms), func, count),
-                    Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.ConvertChecked(Expression.Property(ms, "Length"), typeof(ulong))),
-                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(byte[]), typeof(int), typeof(int) }),
-                        Expression.Call(ms, typeof(MemoryStream).GetMethod("GetBuffer")), Expression.Constant(0), Expression.Convert(Expression.Property(ms, "Length"), typeof(int)))
+                    Expression.Assign(ms, Expression.New(typeof(MemoryStream).GetConstructor(new Type[] { })!)),
+                    Expression.Call(persist, persist.Type.GetMethod("Store")!, Expression.New(typeof(BinaryWriter).GetConstructor(new[] { typeof(MemoryStream) })!, ms), func, count),
+                    Expression.Call(typeof(CountCompression).GetMethod("Serialize")!, writer, Expression.ConvertChecked(Expression.Property(ms, "Length"), typeof(ulong))),
+                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(byte[]), typeof(int), typeof(int) })!,
+                        Expression.Call(ms, typeof(MemoryStream).GetMethod("GetBuffer")!), Expression.Constant(0), Expression.Convert(Expression.Property(ms, "Length"), typeof(int)))
                 ));
         }
 
         var streams = Expression.Variable(typeof(MemoryStream[]), "streams");
         var actions = Expression.Variable(typeof(Action[]), "actions");
 
-        list.Add(Expression.Assign(streams, Expression.New(typeof(MemoryStream[]).GetConstructor(new[] { typeof(int) }), Expression.Constant(itemsCount, typeof(int)))));
-        list.Add(Expression.Assign(actions, Expression.New(typeof(Action[]).GetConstructor(new[] { typeof(int) }), Expression.Constant(itemsCount, typeof(int)))));
+        list.Add(Expression.Assign(streams, Expression.New(typeof(MemoryStream[]).GetConstructor(new[] { typeof(int) })!, Expression.Constant(itemsCount, typeof(int)))));
+        list.Add(Expression.Assign(actions, Expression.New(typeof(Action[]).GetConstructor(new[] { typeof(int) })!, Expression.Constant(itemsCount, typeof(int)))));
 
         var counter = 0;
         foreach (var member in DataTypeUtils.GetPublicMembers(type, membersOrder))
@@ -324,18 +324,18 @@ public static class IndexerPersistHelper
             var ms = Expression.ArrayAccess(streams, Expression.Constant(counter, typeof(int)));
             var func = Expression.Lambda(Expression.PropertyOrField(callValues, member.Name), idx);
 
-            var writerNew = Expression.New(typeof(BinaryWriter).GetConstructor(new[] { typeof(MemoryStream) }), ms);
+            var writerNew = Expression.New(typeof(BinaryWriter).GetConstructor(new[] { typeof(MemoryStream) })!, ms);
 
             var action = Expression.Lambda(Expression.Block(
-                Expression.Assign(ms, Expression.New(typeof(MemoryStream).GetConstructor(new Type[] { }))),
-                Expression.Call(persist, persist.Type.GetMethod("Store"), writerNew, func, count)
+                Expression.Assign(ms, Expression.New(typeof(MemoryStream).GetConstructor(new Type[] { })!)),
+                Expression.Call(persist, persist.Type.GetMethod("Store")!, writerNew, func, count)
             ));
 
             list.Add(Expression.Assign(Expression.ArrayAccess(actions, Expression.Constant(counter)), action));
             counter++;
         }
 
-        list.Add(Expression.Call(typeof(Parallel).GetMethod("Invoke", new[] { typeof(Action[]) }), actions));
+        list.Add(Expression.Call(typeof(Parallel).GetMethod("Invoke", new[] { typeof(Action[]) })!, actions));
 
         list.Add(streams.For(
             i =>
@@ -344,9 +344,9 @@ public static class IndexerPersistHelper
 
                 return stream.Using(Expression.Block(
                     Expression.Assign(stream, Expression.ArrayAccess(streams, i)),
-                    Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.ConvertChecked(Expression.Property(stream, "Length"), typeof(ulong))),
-                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(byte[]), typeof(int), typeof(int) }),
-                        Expression.Call(stream, typeof(MemoryStream).GetMethod("GetBuffer")), Expression.Constant(0), Expression.Convert(Expression.Property(stream, "Length"), typeof(int)))
+                    Expression.Call(typeof(CountCompression).GetMethod("Serialize")!, writer, Expression.ConvertChecked(Expression.Property(stream, "Length"), typeof(ulong))),
+                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(byte[]), typeof(int), typeof(int) })!,
+                        Expression.Call(stream, typeof(MemoryStream).GetMethod("GetBuffer")!), Expression.Constant(0), Expression.Convert(Expression.Property(stream, "Length"), typeof(int)))
                 ));
             },
             Expression.Label()
@@ -355,7 +355,7 @@ public static class IndexerPersistHelper
         return Expression.Block(new[] { actions, streams }, list);
     }
 
-    public static IIndexerPersist[] GetDefaultPersists(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public static IIndexerPersist[] GetDefaultPersists(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         if (DataType.IsPrimitiveType(type))
             return new[] { GetDefaultPersist(type) };

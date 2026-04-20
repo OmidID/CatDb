@@ -11,9 +11,9 @@ public class DataToString : IToString<IData>
     private readonly int _stringBuilderCapacity;
     private readonly IFormatProvider[] _providers;
     private readonly char[] _delimiters;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
 
-    public DataToString(Type type, int stringBuilderCapacity, IFormatProvider[] providers, char[] delimiters, Func<Type, MemberInfo, int> membersOrder = null)
+    public DataToString(Type type, int stringBuilderCapacity, IFormatProvider[] providers, char[] delimiters, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         _type = type;
         _stringBuilderCapacity = stringBuilderCapacity;
@@ -29,12 +29,12 @@ public class DataToString : IToString<IData>
         _from = CreateFromMethod().Compile();
     }
 
-    public DataToString(Type type, int stringBuilderCapacity, char[] delimiters, Func<Type, MemberInfo, int> membersOrder = null)
+    public DataToString(Type type, int stringBuilderCapacity, char[] delimiters, Func<Type, MemberInfo, int>? membersOrder = null)
         : this(type, stringBuilderCapacity, ValueToStringHelper.GetDefaultProviders(type, membersOrder), delimiters, membersOrder)
     {
     }
 
-    public DataToString(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public DataToString(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
         : this(type, 16, new[] { ';' }, membersOrder)
     {
     }

@@ -52,7 +52,7 @@ public static class TypeExtensions
 
     public static bool HasDefaultConstructor(this Type type)
     {
-        return type.GetConstructor(new Type[] { }) != null;
+        return type.GetConstructor(new Type[] { })! != null;
     }
 
     public static bool IsDictionary(this Type type)

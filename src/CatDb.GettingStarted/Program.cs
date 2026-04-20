@@ -6,7 +6,7 @@ using CatDb.Database;
 using Database = CatDb.Database;
 
 // ── Switch between local file and remote server ───────────────────────────────
-const bool   USE_SERVER  = true;          // true = connect to CatDb.Server
+const bool   USE_SERVER  = false;          // true = connect to CatDb.Server
 const string SERVER_HOST = "localhost";
 const int    SERVER_PORT = 7182;
 const string FILE_NAME   = "test.CatDb";
@@ -15,7 +15,8 @@ const string FILE_NAME   = "test.CatDb";
 Example(1_000_000, KeysType.Random);
 Console.ReadKey();
 
-static IStorageEngine OpenEngine()
+#pragma warning disable CS0162 // const-bool branch — flip USE_SERVER to enable
+static IStorageEngine OpenEngine(bool fresh = false)
 {
     if (USE_SERVER)
     {
@@ -23,9 +24,10 @@ static IStorageEngine OpenEngine()
         return Database.CatDb.FromNetwork(SERVER_HOST, SERVER_PORT);
     }
 
-    File.Delete(FILE_NAME);
+    if (fresh) File.Delete(FILE_NAME);
     return Database.CatDb.FromFile(FILE_NAME);
 }
+#pragma warning restore CS0162
 
 static void Example(int tickCount, KeysType keysType)
 {
@@ -35,7 +37,7 @@ static void Example(int tickCount, KeysType keysType)
     Console.WriteLine("Inserting...");
     sw.Restart();
     var c = 0;
-    using (var engine = OpenEngine())
+    using (var engine = OpenEngine(fresh: true))
     {
         var table = engine.OpenXTable<long, Tick>("table");
 

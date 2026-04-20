@@ -9,7 +9,7 @@ public class AtomicHeader
     public const int SIZE = 4 * 1024;
     public const int MAX_TAG_DATA = 256;
 
-    private byte[] _tag;
+    private byte[]? _tag;
     private int _version;
     public bool UseCompression;
 
@@ -77,7 +77,7 @@ public class AtomicHeader
         return header;
     }
 
-    public byte[] Tag
+    public byte[]? Tag
     {
         get => _tag;
         set

@@ -8,6 +8,13 @@ using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ── CLI overrides: --catdb-port 7183  --catdb-file ~/newdb.catdb ──────────────
+builder.Configuration.AddCommandLine(args, new Dictionary<string, string>
+{
+    ["--catdb-port"] = "CatDb:Port",
+    ["--catdb-file"] = "CatDb:FileName",
+});
+
 // ── Background service ────────────────────────────────────────────────────────
 builder.Services.AddSingleton<ServerState>();
 builder.Services.AddHostedService<CatDbServerService>();

@@ -3,16 +3,18 @@ using System.Diagnostics;
 using CatDb.General.Comparers;
 using CatDb.General.Extensions;
 
+#pragma warning disable CS8602, CS8604, CS8600, CS8601, CS8603
 namespace CatDb.General.Collections;
 public class OrderedSet<TKey, TValue> : IOrderedSet<TKey, TValue>
+    where TKey : notnull
 {
-    protected List<KeyValuePair<TKey, TValue>> List;
-    private Dictionary<TKey, TValue> _dictionary;
-    private SortedSet<KeyValuePair<TKey, TValue>> _set;
+    protected List<KeyValuePair<TKey, TValue>>? List;
+    private Dictionary<TKey, TValue>? _dictionary;
+    private SortedSet<KeyValuePair<TKey, TValue>>? _set;
 
     private readonly IComparer<TKey> _comparer;
     private readonly IEqualityComparer<TKey> _equalityComparer;
-    protected KeyValuePairComparer<TKey, TValue> KvComparer;
+    protected KeyValuePairComparer<TKey, TValue> KvComparer = null!;
 
     protected OrderedSet(IComparer<TKey> comparer, IEqualityComparer<TKey> equalityComparer, List<KeyValuePair<TKey, TValue>> list)
     {

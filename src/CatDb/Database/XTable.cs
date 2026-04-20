@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections;
 using CatDb.Data;
 using CatDb.WaterfallTree;
@@ -34,14 +35,14 @@ public class XTable<TKey, TRecord>(ITable<IData, IData> table) : ITable<TKey, TR
     public long Count()                                   => Table.Count();
     public IDescriptor Descriptor                         => Table.Descriptor;
 
-    public bool TryGet(TKey key, out TRecord record)
+    public bool TryGet(TKey key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out TRecord? record)
     {
         if (!Table.TryGet(K(key), out var irec))
         {
             record = default;
             return false;
         }
-        record = FromR(irec);
+        record = FromR(irec)!;
         return true;
     }
 
@@ -83,8 +84,8 @@ public class XTable<TKey, TRecord>(ITable<IData, IData> table) : ITable<TKey, TR
         foreach (var kv in Table.Backward(ito, hasTo, ifrom, hasFrom)) yield return Pair(kv);
     }
 
-    public KeyValuePair<TKey, TRecord> FirstRow => Pair(Table.FirstRow);
-    public KeyValuePair<TKey, TRecord> LastRow  => Pair(Table.LastRow);
+    public KeyValuePair<TKey, TRecord>? FirstRow => Nullable(Table.FirstRow);
+    public KeyValuePair<TKey, TRecord>? LastRow  => Nullable(Table.LastRow);
 
     public IEnumerator<KeyValuePair<TKey, TRecord>> GetEnumerator() => Forward().GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator()                         => GetEnumerator();

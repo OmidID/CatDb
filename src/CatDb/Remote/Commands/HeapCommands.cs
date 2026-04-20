@@ -55,11 +55,11 @@ public class HeapWriteCommand : ICommand
 {
     public long Handle;
 
-    public byte[] Buffer;
+    public byte[]? Buffer;
     public int Index;
     public int Count;
 
-    public HeapWriteCommand(long handle, byte[] buffer, int index, int count)
+    public HeapWriteCommand(long handle, byte[]? buffer, int index, int count)
     {
         Handle = handle;
         Buffer = buffer;
@@ -80,9 +80,9 @@ public class HeapWriteCommand : ICommand
 public class HeapReadCommand : ICommand
 {
     public long Handle;
-    public byte[] Buffer;
+    public byte[]? Buffer;
 
-    public HeapReadCommand(long handle, byte[] buffer)
+    public HeapReadCommand(long handle, byte[]? buffer)
     {
         Handle = handle;
         Buffer = buffer;
@@ -109,9 +109,9 @@ public class HeapCloseCommand : ICommand
 
 public class HeapGetTagCommand : ICommand
 {
-    public byte[] Tag;
+    public byte[]? Tag;
 
-    public HeapGetTagCommand(byte[] tag)
+    public HeapGetTagCommand(byte[]? tag)
     {
         Tag = tag;
     }
@@ -127,9 +127,9 @@ public class HeapGetTagCommand : ICommand
 
 public class HeapSetTagCommand : ICommand
 {
-    public byte[] Buffer;
+    public byte[]? Buffer;
 
-    public HeapSetTagCommand(byte[] buffer)
+    public HeapSetTagCommand(byte[]? buffer)
     {
         Buffer = buffer;
     }

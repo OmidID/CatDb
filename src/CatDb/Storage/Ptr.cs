@@ -38,7 +38,7 @@ public struct Ptr : IEquatable<Ptr>, IComparable<Ptr>
 
     #endregion
 
-    public override bool Equals(object obj)
+    public override bool Equals(object? obj)
     {
         return obj is Ptr && Equals((Ptr)obj);
     }

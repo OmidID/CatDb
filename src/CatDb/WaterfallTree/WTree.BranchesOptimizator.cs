@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using CatDb.Data;
@@ -69,13 +70,13 @@ public partial class WTree
                 return range.LastIndex;
 
             if (range.FirstIndex == range.LastIndex)
-                return range.LastIndex - 1;
+                return Math.Max(0, range.LastIndex - 1);
 
             var idx = _branches.BinarySearch(new FullKey(locator, key), range.FirstIndex, range.LastIndex - range.FirstIndex, LightComparer.Instance);
             if (idx < 0)
                 idx = ~idx - 1;
 
-            return idx;
+            return Math.Max(0, idx);
         }
 
         private class LightComparer : IComparer<KeyValuePair<FullKey, Branch>>

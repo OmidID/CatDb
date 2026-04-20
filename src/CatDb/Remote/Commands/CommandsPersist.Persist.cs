@@ -163,7 +163,7 @@ public partial class CommandPersist
         var key = hasValue ? KeyPersist.Read(reader) : null;
         var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-        return new FindNextCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
+        return new FindNextCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key!, rec!) : null);
     }
 
     private void WriteFindAfterCommand(BinaryWriter writer, ICommand command)
@@ -188,7 +188,7 @@ public partial class CommandPersist
         var key = hasValue ? KeyPersist.Read(reader) : null;
         var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-        return new FindAfterCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
+        return new FindAfterCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key!, rec!) : null);
     }
 
     private void WriteFindPrevCommand(BinaryWriter writer, ICommand command)
@@ -213,7 +213,7 @@ public partial class CommandPersist
         var key = hasValue ? KeyPersist.Read(reader) : null;
         var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-        return new FindPrevCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
+        return new FindPrevCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key!, rec!) : null);
     }
 
     private void WriteFindBeforeCommand(BinaryWriter writer, ICommand command)
@@ -238,7 +238,7 @@ public partial class CommandPersist
         var key = hasValue ? KeyPersist.Read(reader) : null;
         var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-        return new FindBeforeCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
+        return new FindBeforeCommand(firstKey, hasValue ? new KeyValuePair<IData, IData>(key!, rec!) : null);
     }
 
     private void WriteFirstRowCommand(BinaryWriter writer, ICommand command)
@@ -259,7 +259,7 @@ public partial class CommandPersist
         var key = hasValue ? KeyPersist.Read(reader) : null;
         var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-        return new FirstRowCommand(hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
+        return new FirstRowCommand(hasValue ? new KeyValuePair<IData, IData>(key!, rec!) : null);
     }
 
     private void WriteLastRowCommand(BinaryWriter writer, ICommand command)
@@ -280,7 +280,7 @@ public partial class CommandPersist
         var key = hasValue ? KeyPersist.Read(reader) : null;
         var rec = hasValue ? RecordPersist.Read(reader) : null;
 
-        return new LastRowCommand(hasValue ? new KeyValuePair<IData, IData>(key, rec) : null);
+        return new LastRowCommand(hasValue ? new KeyValuePair<IData, IData>(key!, rec!) : null);
     }
 
     private void WriteCountCommand(BinaryWriter writer, ICommand command)
@@ -307,7 +307,7 @@ public partial class CommandPersist
 
     private XTableDescriptorGetCommand ReadXIndexDescriptorGetCommand(BinaryReader reader)
     {
-        IDescriptor description = null;
+        IDescriptor? description = null;
 
         if (reader.ReadBoolean()) // Description != null
             description = Descriptor.Deserialize(reader);
@@ -318,7 +318,7 @@ public partial class CommandPersist
     private void WriteXIndexDescriptorSetCommand(BinaryWriter writer, ICommand command)
     {
         var cmd = (XTableDescriptorSetCommand)command;
-        var descriptor = (Descriptor)cmd.Descriptor;
+        var descriptor = (Descriptor?)cmd.Descriptor;
 
         writer.Write(descriptor != null);
 
@@ -328,7 +328,7 @@ public partial class CommandPersist
 
     private XTableDescriptorSetCommand ReadXIndexDescriptorSetCommand(BinaryReader reader)
     {
-        IDescriptor descriptor = null;
+        IDescriptor? descriptor = null;
 
         if (reader.ReadBoolean()) // Descriptor != null
             descriptor = Descriptor.Deserialize(reader);
@@ -509,7 +509,7 @@ public partial class CommandPersist
     {
         var cmd = (StorageEngineFindByNameCommand)command;
 
-        writer.Write(cmd.Name);
+        writer.Write(cmd.Name ?? "");
         writer.Write(cmd.Descriptor != null);
 
         if (cmd.Descriptor != null)
@@ -537,7 +537,7 @@ public partial class CommandPersist
 
     private StorageEngineDescriptionCommand ReadStorageEngineDescriptionCommand(BinaryReader reader)
     {
-        IDescriptor description = null;
+        IDescriptor? description = null;
 
         if (reader.ReadBoolean()) // Description != null
             description = DeserializeDescriptor(reader);
@@ -637,7 +637,7 @@ public partial class CommandPersist
         var count = reader.ReadInt32();
         var index = reader.ReadInt32();
 
-        byte[] buffer = null; ;
+        byte[]? buffer = null; ;
         if (reader.ReadBoolean())
         {
             buffer = new byte[reader.ReadInt32()];
@@ -667,7 +667,7 @@ public partial class CommandPersist
     {
         var handle = reader.ReadInt64();
 
-        byte[] buffer = null;
+        byte[]? buffer = null;
         if (reader.ReadBoolean())
         {
             var count = reader.ReadInt32();
@@ -711,7 +711,7 @@ public partial class CommandPersist
 
     public HeapSetTagCommand ReadHeapSetTagCommand(BinaryReader reader)
     {
-        byte[] buffer = null;
+        byte[]? buffer = null;
         if (reader.ReadBoolean())
         {
             var count = reader.ReadInt32();
@@ -739,7 +739,7 @@ public partial class CommandPersist
 
     public HeapGetTagCommand ReadHeapGetTagCommand(BinaryReader reader)
     {
-        byte[] tag = null;
+        byte[]? tag = null;
         if (reader.ReadBoolean())
         {
             var count = reader.ReadInt32();
@@ -824,7 +824,7 @@ public partial class CommandPersist
     private void SerializeDescriptor(BinaryWriter writer, IDescriptor description)
     {
         CountCompression.Serialize(writer, (ulong)description.Id);
-        writer.Write(description.Name);
+        writer.Write(description.Name ?? string.Empty);
 
         CountCompression.Serialize(writer, (ulong)description.StructureType);
 

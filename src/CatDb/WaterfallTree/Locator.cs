@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Diagnostics;
 using CatDb.Data;
 using CatDb.Database;
@@ -11,32 +12,32 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
     {
         private const byte VERSION = 40;
 
-        private byte[] _serializationData;
+        private byte[]? _serializationData;
 
         private readonly int _hashCode;
 
         private bool _isDeleted;
 
-        private string _name;
+        private string? _name;
 
-        private Type _keyType;
-        private Type _recordType;
+        private Type? _keyType;
+        private Type? _recordType;
 
-        private Dictionary<string, int> _keyMembers;
-        private Dictionary<string, int> _recordMembers;
+        private Dictionary<string, int>? _keyMembers;
+        private Dictionary<string, int>? _recordMembers;
 
-        private IComparer<IData> _keyComparer;
-        private IEqualityComparer<IData> _keyEqualityComparer;
-        private IPersist<IData> _keyPersist;
-        private IPersist<IData> _recordPersist;
-        private IIndexerPersist<IData> _keyIndexerPersist;
-        private IIndexerPersist<IData> _recordIndexerPersist;
+        private IComparer<IData>? _keyComparer;
+        private IEqualityComparer<IData>? _keyEqualityComparer;
+        private IPersist<IData>? _keyPersist;
+        private IPersist<IData>? _recordPersist;
+        private IIndexerPersist<IData>? _keyIndexerPersist;
+        private IIndexerPersist<IData>? _recordIndexerPersist;
 
         private DateTime _createTime;
         private DateTime _modifiedTime;
         private DateTime _accessTime;
 
-        private byte[] _tag;
+        private byte[]? _tag;
 
         private readonly object _syncRoot = new();
 
@@ -53,7 +54,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         public IOperationCollectionFactory OperationCollectionFactory;
         public IOrderedSetFactory OrderedSetFactory;
 
-        public Locator(long id, string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType)
+        public Locator(long id, string? name, int structureType, DataType keyDataType, DataType recordDataType, Type? keyType, Type? recordType)
         {
             if (keyDataType == null)
                 throw new ArgumentException("keyDataType");
@@ -137,7 +138,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
 
                 writer.Write(IsDeleted);
 
-                writer.Write(Name);
+                writer.Write(Name!);
                 writer.Write(checked((byte)StructureType));
 
                 //data types
@@ -146,12 +147,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
 
                 //types
                 if (!DataTypeUtils.IsAnonymousType(KeyType))
-                    writer.Write(KeyType.FullName);
+                    writer.Write(KeyType!.FullName!);
                 else
                     writer.Write("");
 
                 if (!DataTypeUtils.IsAnonymousType(RecordType))
-                    writer.Write(RecordType.FullName);
+                    writer.Write(RecordType!.FullName!);
                 else
                     writer.Write("");
 
@@ -244,8 +245,8 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
 
         public bool IsReady { get; private set; }
 
-        private TypeEngine _keyEngine;
-        private TypeEngine _recEngine;
+        private TypeEngine? _keyEngine;
+        private TypeEngine? _recEngine;
 
         private void DoPrepare()
         {
@@ -291,21 +292,21 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             IsReady = true;
         }
 
-        public IApply Apply { get; private set; }
-        public IPersist<IOrderedSet<IData, IData>> OrderedSetPersist { get; private set; }
-        public IPersist<IOperationCollection> OperationsPersist { get; private set; }
+        public IApply? Apply { get; private set; }
+        public IPersist<IOrderedSet<IData, IData>>? OrderedSetPersist { get; private set; }
+        public IPersist<IOperationCollection>? OperationsPersist { get; private set; }
 
-        public int CompareTo(Locator other)
+        public int CompareTo(Locator? other)
         {
-            return Id.CompareTo(other.Id);
+            return other is null ? 1 : Id.CompareTo(other.Id);
         }
 
-        public bool Equals(Locator other)
+        public bool Equals(Locator? other)
         {
-            return Id == other.Id;
+            return other is not null && Id == other.Id;
         }
 
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
             if (obj is not Locator other2)
                 return false;
@@ -320,7 +321,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
 
         public override string ToString()
         {
-            return Name;
+            return Name ?? "";
         }
 
         public static bool operator ==(Locator x, Locator y)
@@ -372,7 +373,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
 
         public long Id { get; private set; }
 
-        public string Name
+        public string? Name
         {
             get => _name;
             set
@@ -390,7 +391,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         public DataType KeyDataType { get; private set; }
         public DataType RecordDataType { get; private set; }
 
-        public Type KeyType
+        public Type? KeyType
         {
             get => _keyType;
             set
@@ -416,7 +417,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             }
         }
 
-        public Type RecordType
+        public Type? RecordType
         {
             get => _recordType;
             set
@@ -440,7 +441,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             }
         }
 
-        public IComparer<IData> KeyComparer
+        public IComparer<IData>? KeyComparer
         {
             get
             { 
@@ -457,7 +458,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             }
         }
 
-        public IEqualityComparer<IData> KeyEqualityComparer
+        public IEqualityComparer<IData>? KeyEqualityComparer
         {
             get
             { 
@@ -474,7 +475,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             }
         }
 
-        public IPersist<IData> KeyPersist
+        public IPersist<IData>? KeyPersist
         {
             get
             {
@@ -495,7 +496,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             }
         }
 
-        public IPersist<IData> RecordPersist
+        public IPersist<IData>? RecordPersist
         {
             get
             { 
@@ -516,7 +517,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             }
         }
 
-        public IIndexerPersist<IData> KeyIndexerPersist
+        public IIndexerPersist<IData>? KeyIndexerPersist
         {
             get
             { 
@@ -535,7 +536,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             }
         }
 
-        public IIndexerPersist<IData> RecordIndexerPersist
+        public IIndexerPersist<IData>? RecordIndexerPersist
         {
             get
             {
@@ -614,7 +615,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             }
         }
 
-        public byte[] Tag
+        public byte[]? Tag
         {
             get
             { 

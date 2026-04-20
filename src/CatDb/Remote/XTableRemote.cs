@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections;
 using CatDb.Data;
 using CatDb.Database;
@@ -79,7 +80,7 @@ public class XTableRemote : ITable<IData, IData>
             if (!TryGet(key, out var record))
                 throw new KeyNotFoundException(key.ToString());
 
-            return record;
+            return record!;
         }
         set => Replace(key, value);
     }
@@ -114,7 +115,7 @@ public class XTableRemote : ITable<IData, IData>
         return TryGet(key, out _);
     }
 
-    public bool TryGet(IData key, out IData record)
+    public bool TryGet(IData key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IData? record)
     {
         var command = new TryGetCommand(key);
         Execute(command);
@@ -124,7 +125,7 @@ public class XTableRemote : ITable<IData, IData>
         return record != null;
     }
 
-    public IData Find(IData key)
+    public IData? Find(IData key)
     {
         TryGet(key, out var record);
 
@@ -184,8 +185,8 @@ public class XTableRemote : ITable<IData, IData>
         from = hasFrom ? from : default(IData);
         to = hasTo ? to : default(IData);
 
-        List<KeyValuePair<IData, IData>> records = null;
-        IData nextKey = null;
+        List<KeyValuePair<IData, IData>>? records = null;
+        IData? nextKey = null;
 
         var command = new ForwardCommand(_pageCapacity, from, to, null);
         Execute(command);
@@ -195,8 +196,8 @@ public class XTableRemote : ITable<IData, IData>
 
         while (records != null)
         {
-            Task task = null;
-            List<KeyValuePair<IData, IData>> commandRecords = null;
+            Task? task = null;
+            List<KeyValuePair<IData, IData>>? commandRecords = null;
 
             var returnCount = nextKey != null ? records.Count - 1 : records.Count;
 
@@ -238,8 +239,8 @@ public class XTableRemote : ITable<IData, IData>
         from = hasFrom ? from : default(IData);
         to = hasTo ? to : default(IData);
 
-        List<KeyValuePair<IData, IData>> records = null;
-        IData nextKey = null;
+        List<KeyValuePair<IData, IData>>? records = null;
+        IData? nextKey = null;
 
         var command = new BackwardCommand(_pageCapacity, to, from, null);
         Execute(command);
@@ -249,8 +250,8 @@ public class XTableRemote : ITable<IData, IData>
 
         while (records != null)
         {
-            Task task = null;
-            List<KeyValuePair<IData, IData>> commandRecords = null;
+            Task? task = null;
+            List<KeyValuePair<IData, IData>>? commandRecords = null;
 
             var returnCount = nextKey != null ? records.Count - 1 : records.Count;
 
@@ -279,25 +280,25 @@ public class XTableRemote : ITable<IData, IData>
         }
     }
 
-    public KeyValuePair<IData, IData> FirstRow
+    public KeyValuePair<IData, IData>? FirstRow
     {
         get
         {
             var command = new FirstRowCommand();
             Execute(command);
 
-            return command.Row.Value;
+            return command.Row;
         }
     }
 
-    public KeyValuePair<IData, IData> LastRow
+    public KeyValuePair<IData, IData>? LastRow
     {
         get
         {
             var command = new LastRowCommand();
             Execute(command);
 
-            return command.Row.Value;
+            return command.Row;
         }
     }
 

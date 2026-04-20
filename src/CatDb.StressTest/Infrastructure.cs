@@ -71,7 +71,7 @@ public sealed class StressContext : IDisposable
 
     public void Stop() => _cts.Cancel();
 
-    public void RecordError(string svc, string msg, Exception ex = null)
+    public void RecordError(string svc, string msg, Exception? ex = null)
     {
         Interlocked.Increment(ref TotalErrors);
         var shortMsg = msg.Length > 100 ? msg[..100] : msg;
@@ -131,7 +131,7 @@ public abstract class BackgroundService
     private long              _windowOps = 0;
     private readonly Stopwatch _window   = Stopwatch.StartNew();
 
-    private StressContext _ctx;
+    private StressContext? _ctx;
 
     protected BackgroundService(string name) => Name = name;
 

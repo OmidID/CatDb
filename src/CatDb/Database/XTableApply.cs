@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using CatDb.Data;
 using CatDb.Database.Operations;
 using CatDb.General.Collections;
@@ -7,9 +8,6 @@ namespace CatDb.Database;
 
 public sealed class XTableApply(Locator locator) : IApply
 {
-    public event ReadOperationDelegate ReadCallback;
-    public delegate void ReadOperationDelegate(long handle, bool exist, Locator path, IData key, IData record);
-
     public Locator Locator { get; } = locator;
 
     public bool Internal(IOperationCollection operations) => false;

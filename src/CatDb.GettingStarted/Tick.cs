@@ -7,13 +7,13 @@ namespace DatabaseBenchmark
 {
     public class Tick
     {
-        public string Symbol { get; set; }
+        public string? Symbol { get; set; }
         public DateTime Timestamp { get; set; }
         public double Bid { get; set; }
         public double Ask { get; set; }
         public int BidSize { get; set; }
         public int AskSize { get; set; }
-        public string Provider { get; set; }
+        public string? Provider { get; set; }
 
         public Tick()
         {

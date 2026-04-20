@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿namespace CatDb.General.Comparers;
 public class BigEndianByteArrayComparer : IComparer<byte[]>
 {
@@ -120,8 +121,11 @@ public class BigEndianByteArrayComparer : IComparer<byte[]>
         return 0;
     }
 
-    public int Compare(byte[] x, byte[] y)
+    public int Compare(byte[]? x, byte[]? y)
     {
+        if (x is null && y is null) return 0;
+        if (x is null) return -1;
+        if (y is null) return 1;
         var cmp = Compare(x, y, Math.Min(x.Length, y.Length));
         if (cmp != 0)
             return cmp;

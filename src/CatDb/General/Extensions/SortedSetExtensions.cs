@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -281,15 +282,15 @@ public class SortedSetHelperAa<T>
         var exitPoint = Expression.Label(typeof(KeyValuePair<bool, T>));
 
 #if NETFX_CORE
-        findNode = type.GetMethod("FindNode");
+        findNode = type.GetMethod("FindNode")!;
 #else
-        var findNode = type.GetMethod("FindNode", BindingFlags.NonPublic | BindingFlags.Instance);
+        var findNode = type.GetMethod("FindNode", BindingFlags.NonPublic | BindingFlags.Instance)!;
 #endif
         var call = Expression.Call(set, findNode, key);
         var node = Expression.Variable(nodeType, "node");
         var assign = Expression.Assign(node, call);
 
-        var contructInfo = typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) });
+        var contructInfo = typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) })!;
         var newkvTrue = Expression.New(contructInfo, Expression.Constant(true, typeof(bool)), Expression.PropertyOrField(node, "Item"));
         var newkvFalse = Expression.New(contructInfo, Expression.Constant(false, typeof(bool)), Expression.Default(typeof(T)));
 
@@ -323,9 +324,9 @@ public class SortedSetHelperAa<T>
         var count = Expression.Variable(typeof(int), "count");
 
 #if NETFX_CORE
-        method = type.GetMethod("ConstructRootFromSortedArray");
+        method = type.GetMethod("ConstructRootFromSortedArray")!;
 #else
-        var method = type.GetMethod("ConstructRootFromSortedArray", BindingFlags.NonPublic | BindingFlags.Static);
+        var method = type.GetMethod("ConstructRootFromSortedArray", BindingFlags.NonPublic | BindingFlags.Static)!;
 #endif
         var toIndex = Expression.Subtract(Expression.Add(index, count), Expression.Constant(1, typeof(int)));
         var call = Expression.Call(method, array, index, toIndex, Expression.Constant(null, nodeType));
@@ -362,7 +363,7 @@ public class SortedSetHelperAa<T>
         {
             Expression.IfThen(Expression.Equal(rootField, Expression.Constant(null)),
                 Expression.Block(
-                    Expression.Assign(rootField, Expression.New(nodeType.GetConstructor(new[] { typeof(T), typeof(bool) }), item, Expression.Constant(false, typeof(bool)))),
+                    Expression.Assign(rootField, Expression.New(nodeType.GetConstructor(new[] { typeof(T), typeof(bool) })!, item, Expression.Constant(false, typeof(bool)))),
                     Expression.Assign(Expression.Field(set, "count"), Expression.Constant(1)),
                     Expression.AddAssign(Expression.Field(set, "version"), Expression.Constant(1)),
                     Expression.Return(exitPoint, Expression.Constant(false))))
@@ -387,24 +388,24 @@ public class SortedSetHelperAa<T>
         var sortedSetType = typeof(SortedSet<T>);
 
 #if NETFX_CORE
-        is4NodeMethod = sortedSetType.GetMethod("Is4Node");
-        split4NodeMethod = sortedSetType.GetMethod("Split4Node");
-        isRedMethod = sortedSetType.GetMethod("IsRed");
-        insertionBalanceMethod = sortedSetType.GetMethod("InsertionBalance");
+        is4NodeMethod = sortedSetType.GetMethod("Is4Node")!;
+        split4NodeMethod = sortedSetType.GetMethod("Split4Node")!;
+        isRedMethod = sortedSetType.GetMethod("IsRed")!;
+        insertionBalanceMethod = sortedSetType.GetMethod("InsertionBalance")!;
 #else
-        var is4NodeMethod = sortedSetType.GetMethod("Is4Node", BindingFlags.NonPublic | BindingFlags.Static);
-        var split4NodeMethod = sortedSetType.GetMethod("Split4Node", BindingFlags.NonPublic | BindingFlags.Static);
-        var isRedMethod = sortedSetType.GetMethod("IsRed", BindingFlags.NonPublic | BindingFlags.Static);
-        var insertionBalanceMethod = sortedSetType.GetMethod("InsertionBalance", BindingFlags.NonPublic | BindingFlags.Instance);
+        var is4NodeMethod = sortedSetType.GetMethod("Is4Node", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var split4NodeMethod = sortedSetType.GetMethod("Split4Node", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var isRedMethod = sortedSetType.GetMethod("IsRed", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var insertionBalanceMethod = sortedSetType.GetMethod("InsertionBalance", BindingFlags.NonPublic | BindingFlags.Instance)!;
 #endif
 
         var loopBody = Expression.Block(
-                Expression.Assign(cmp, Expression.Call(comparer, typeof(IComparer<T>).GetMethod("Compare", new[] { typeof(T), typeof(T) }), item, Expression.Field(root, "item"))),
+                Expression.Assign(cmp, Expression.Call(comparer, typeof(IComparer<T>).GetMethod("Compare", new[] { typeof(T), typeof(T) })!, item, Expression.Field(root, "item"))),
                 Expression.IfThen(Expression.Equal(cmp, Expression.Constant(0)),
                     Expression.Block(
                         Expression.Assign(Expression.Field(rootField, "IsRed"), Expression.Constant(false)),
                         Expression.IfThenElse(Expression.NotEqual(onExist, Expression.Constant(null)),
-                                    Expression.Assign(Expression.Field(root, "Item"), Expression.Call(onExist, onExist.Type.GetMethod("Invoke"), Expression.Field(root, "Item"), item)),
+                                    Expression.Assign(Expression.Field(root, "Item"), Expression.Call(onExist, onExist.Type.GetMethod("Invoke")!, Expression.Field(root, "Item"), item)),
                                     Expression.Assign(Expression.Field(root, "Item"), item)
                                     ),
                         Expression.Return(exitPoint, Expression.Constant(true))
@@ -437,7 +438,7 @@ public class SortedSetHelperAa<T>
 
         var current = Expression.Variable(nodeType, "current");
 
-        list.Add(Expression.Assign(current, Expression.New(nodeType.GetConstructor(new[] { typeof(T) }), item)));
+        list.Add(Expression.Assign(current, Expression.New(nodeType.GetConstructor(new[] { typeof(T) })!, item)));
 
         list.Add(Expression.IfThenElse(Expression.GreaterThan(cmp, Expression.Constant(0)),
                         Expression.Assign(Expression.Field(node, "Right"), current),
@@ -533,16 +534,16 @@ public class SortedSetHelperAa<T>
 
         var hasFromAndHasTo = Expression.AndAlso(lowerBoundActive, upperBoundActive);
 
-        var comparer = Expression.Property(set, type.GetProperty("Comparer"));
-        var method = type.GetProperty("Comparer").PropertyType.GetMethod("Compare", new[] { typeof(T), typeof(T) });
+        var comparer = Expression.Property(set, type.GetProperty("Comparer")!);
+        var method = type.GetProperty("Comparer")!.PropertyType.GetMethod("Compare", new[] { typeof(T), typeof(T) })!;
         var call = Expression.Call(comparer, method, lowerValue, upperValue);
 
         var message = Expression.Constant("lowerBound is greater than upperBound", typeof(string));
-        var exception = Expression.New(typeof(ArgumentException).GetConstructor(new[] { typeof(string) }), message);
+        var exception = Expression.New(typeof(ArgumentException).GetConstructor(new[] { typeof(string) })!, message);
         var @if = Expression.IfThen(Expression.AndAlso(hasFromAndHasTo, Expression.GreaterThan(call, Expression.Constant(0))),
             Expression.Throw(exception));
 
-        var treeSubSetConstructor = treeSubSetType.GetConstructor(new[] { typeof(SortedSet<T>), typeof(T), typeof(T), typeof(bool), typeof(bool) });
+        var treeSubSetConstructor = treeSubSetType.GetConstructor(new[] { typeof(SortedSet<T>), typeof(T), typeof(T), typeof(bool), typeof(bool) })!;
         var result = Expression.New(treeSubSetConstructor, set, lowerValue, upperValue, lowerBoundActive, upperBoundActive);
 
         var body = Expression.Block(typeof(SortedSet<T>), @if, result);
@@ -586,11 +587,11 @@ public class SortedSetHelperAa<T>
 
         list.Add(Expression.Loop(Expression.IfThenElse(Expression.NotEqual(node, Expression.Constant(null)),
              Expression.Block(Expression.Assign(cmp,
-                 Expression.Call(Expression.PropertyOrField(set, "comparer"), typeof(IComparer<T>).GetMethod("Compare"), item,
+                 Expression.Call(Expression.PropertyOrField(set, "comparer"), typeof(IComparer<T>).GetMethod("Compare")!, item,
                  nodeItem)),
              Expression.IfThen(Expression.Equal(cmp, Expression.Constant(0, typeof(int))),
                  Expression.Return(returnLabel,
-                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) }), Expression.Constant(true, typeof(bool)), nodeItem))),
+                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) })!, Expression.Constant(true, typeof(bool)), nodeItem))),
              Expression.IfThenElse(Expression.LessThan(cmp, Expression.Constant(0, typeof(int))),
                   Expression.Block(Expression.Assign(next, node),
                      Expression.Assign(node, nodeLeft)),
@@ -600,10 +601,10 @@ public class SortedSetHelperAa<T>
 
         list.Add(Expression.IfThen(Expression.NotEqual(next, Expression.Constant(null)),
             Expression.Return(returnLabel,
-                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) }), Expression.Constant(true, typeof(bool)), nextItem))));
+                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) })!, Expression.Constant(true, typeof(bool)), nextItem))));
 
         list.Add(Expression.Label(returnLabel,
-            Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) }),
+            Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) })!,
             Expression.Constant(false, typeof(bool)), Expression.Constant(default(T), typeof(T)))));
 
         //public KeyValuePair<bool, T> FindNext(SortedSet<T> set, T item)
@@ -663,11 +664,11 @@ public class SortedSetHelperAa<T>
 
         list.Add(Expression.Loop(Expression.IfThenElse(Expression.NotEqual(node, Expression.Constant(null)),
              Expression.Block(Expression.Assign(cmp,
-                 Expression.Call(Expression.PropertyOrField(set, "comparer"), typeof(IComparer<T>).GetMethod("Compare"), item,
+                 Expression.Call(Expression.PropertyOrField(set, "comparer"), typeof(IComparer<T>).GetMethod("Compare")!, item,
                  nodeItem)),
              Expression.IfThen(Expression.Equal(cmp, Expression.Constant(0, typeof(int))),
                  Expression.Return(returnLabel,
-                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) }), Expression.Constant(true, typeof(bool)), nodeItem))),
+                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) })!, Expression.Constant(true, typeof(bool)), nodeItem))),
              Expression.IfThenElse(Expression.GreaterThan(cmp, Expression.Constant(0, typeof(int))),
                   Expression.Block(Expression.Assign(prev, node),
                      Expression.Assign(node, nodeRight)),
@@ -677,10 +678,10 @@ public class SortedSetHelperAa<T>
 
         list.Add(Expression.IfThen(Expression.NotEqual(prev, Expression.Constant(null)),
             Expression.Return(returnLabel,
-                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) }), Expression.Constant(true, typeof(bool)), prevItem))));
+                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) })!, Expression.Constant(true, typeof(bool)), prevItem))));
 
         list.Add(Expression.Label(returnLabel,
-            Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) }),
+            Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) })!,
             Expression.Constant(false, typeof(bool)), Expression.Constant(default(T), typeof(T)))));
 
         //public KeyValuePair<bool, T> FindPrev(SortedSet<T> set, T item)
@@ -741,7 +742,7 @@ public class SortedSetHelperAa<T>
 
         list.Add(Expression.Loop(Expression.IfThenElse(Expression.NotEqual(node, Expression.Constant(null)),
              Expression.Block(Expression.Assign(cmp,
-                 Expression.Call(Expression.PropertyOrField(set, "comparer"), typeof(IComparer<T>).GetMethod("Compare"), item,
+                 Expression.Call(Expression.PropertyOrField(set, "comparer"), typeof(IComparer<T>).GetMethod("Compare")!, item,
                  nodeItem)),
              Expression.IfThen(Expression.Equal(cmp, Expression.Constant(0, typeof(int))),
                 Expression.Block(Expression.IfThen(Expression.NotEqual(nodeRight, Expression.Constant(null, nodeType)),
@@ -759,10 +760,10 @@ public class SortedSetHelperAa<T>
 
         list.Add(Expression.IfThen(Expression.NotEqual(after, Expression.Constant(null)),
             Expression.Return(returnLabel,
-                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) }), Expression.Constant(true, typeof(bool)), afterItem))));
+                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) })!, Expression.Constant(true, typeof(bool)), afterItem))));
 
         list.Add(Expression.Label(returnLabel,
-            Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) }),
+            Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) })!,
             Expression.Constant(false, typeof(bool)), Expression.Constant(default(T), typeof(T)))));
 
         //public KeyValuePair<bool,T> FindAfter(SortedSet<T> set, T item)
@@ -836,7 +837,7 @@ public class SortedSetHelperAa<T>
 
         list.Add(Expression.Loop(Expression.IfThenElse(Expression.NotEqual(node, Expression.Constant(null)),
              Expression.Block(Expression.Assign(cmp,
-                 Expression.Call(Expression.PropertyOrField(set, "comparer"), typeof(IComparer<T>).GetMethod("Compare"), item,
+                 Expression.Call(Expression.PropertyOrField(set, "comparer"), typeof(IComparer<T>).GetMethod("Compare")!, item,
                  nodeItem)),
              Expression.IfThen(Expression.Equal(cmp, Expression.Constant(0, typeof(int))),
                 Expression.Block(Expression.IfThen(Expression.NotEqual(nodeLeft, Expression.Constant(null, nodeType)),
@@ -854,10 +855,10 @@ public class SortedSetHelperAa<T>
 
         list.Add(Expression.IfThen(Expression.NotEqual(before, Expression.Constant(null)),
             Expression.Return(returnLabel,
-                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) }), Expression.Constant(true, typeof(bool)), beforeItem))));
+                 Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) })!, Expression.Constant(true, typeof(bool)), beforeItem))));
 
         list.Add(Expression.Label(returnLabel,
-            Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) }),
+            Expression.New(typeof(KeyValuePair<bool, T>).GetConstructor(new[] { typeof(bool), typeof(T) })!,
             Expression.Constant(false, typeof(bool)), Expression.Constant(default(T), typeof(T)))));
 
         //public KeyValuePair<bool,T> FindBefore(SortedSet<T> set, T item)

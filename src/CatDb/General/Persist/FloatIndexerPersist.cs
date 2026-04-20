@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using CatDb.General.Compression;
 using CatDb.General.Mathematics;
 
@@ -27,7 +28,7 @@ public class SingleIndexerPersist : IIndexerPersist<Single>
     {
         writer.Write(VERSION);
 
-        DeltaCompression.Helper helper = null;
+        DeltaCompression.Helper? helper = null;
         long[] array = null;
         int digits;
 
@@ -110,7 +111,7 @@ public class DoubleIndexerPersist : IIndexerPersist<Double>
     {
         writer.Write(VERSION);
         
-        DeltaCompression.Helper helper = null;
+        DeltaCompression.Helper? helper = null;
         long[] array = null;
         int digits;
 
@@ -191,7 +192,7 @@ public class DecimalIndexerPersist : IIndexerPersist<Decimal>
     {
         writer.Write(VERSION);
 
-        DeltaCompression.Helper helper = null;
+        DeltaCompression.Helper? helper = null;
         long[] array = null;
         int digits;
 

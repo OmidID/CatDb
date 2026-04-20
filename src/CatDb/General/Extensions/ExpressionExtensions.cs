@@ -89,12 +89,12 @@ public static class ExpressionExtensions
         if (ienumerable == null)
             throw new ArgumentException("enumerable.Type does not implement IEnumerable<> interface");
 
-        var getEnumerator = enumerable.Type.GetMethod("GetEnumerator");
+        var getEnumerator = enumerable.Type.GetMethod("GetEnumerator")!;
 
         var enumerator = Expression.Variable(getEnumerator.ReturnType, "enumerator");
         var enumeratorAssign = Expression.Assign(enumerator, Expression.Call(enumerable, getEnumerator));
 
-        var moveNext = Expression.Call(enumerator, typeof(IEnumerator).GetMethod("MoveNext"));
+        var moveNext = Expression.Call(enumerator, typeof(IEnumerator).GetMethod("MoveNext")!);
 
         var @while = Expression.Loop(Expression.IfThenElse(Expression.IsTrue(moveNext),
             action(Expression.Property(enumerator, "Current")),

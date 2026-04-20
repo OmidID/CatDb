@@ -1,4 +1,5 @@
-﻿using CatDb.WaterfallTree;
+﻿using System.Diagnostics.CodeAnalysis;
+using CatDb.WaterfallTree;
 
 namespace CatDb.Database;
 
@@ -15,8 +16,8 @@ public interface ITable<TKey, TRecord> : ITable, IEnumerable<KeyValuePair<TKey, 
     void Clear();
 
     bool Exists(TKey key);
-    bool TryGet(TKey key, out TRecord record);
-    TRecord Find(TKey key);
+    bool TryGet(TKey key, [NotNullWhen(true)] out TRecord? record);
+    TRecord? Find(TKey key);
     TRecord TryGetOrDefault(TKey key, TRecord defaultRecord);
 
     KeyValuePair<TKey, TRecord>? FindNext(TKey key);
@@ -29,8 +30,8 @@ public interface ITable<TKey, TRecord> : ITable, IEnumerable<KeyValuePair<TKey, 
     IEnumerable<KeyValuePair<TKey, TRecord>> Backward();
     IEnumerable<KeyValuePair<TKey, TRecord>> Backward(TKey to, bool hasTo, TKey from, bool hasFrom);
 
-    KeyValuePair<TKey, TRecord> FirstRow { get; }
-    KeyValuePair<TKey, TRecord> LastRow  { get; }
+    KeyValuePair<TKey, TRecord>? FirstRow { get; }
+    KeyValuePair<TKey, TRecord>? LastRow  { get; }
 
     IDescriptor Descriptor { get; }
 

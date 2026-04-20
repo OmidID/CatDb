@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -12,9 +13,9 @@ public class EqualityComparer<T> : IEqualityComparer<T>
 
     private readonly Type _type;
     private readonly CompareOption[] _compareOptions;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
 
-    public EqualityComparer(CompareOption[] compareOptions, Func<Type, MemberInfo, int> membersOrder = null)
+    public EqualityComparer(CompareOption[] compareOptions, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         CompareOption.CheckCompareOptions(typeof(T), compareOptions, membersOrder);
         _type = typeof(T);
@@ -25,7 +26,7 @@ public class EqualityComparer<T> : IEqualityComparer<T>
         _getHashCode = CreateGetHashCode().Compile();
     }
 
-    public EqualityComparer(Func<Type, MemberInfo, int> membersOrder = null)
+    public EqualityComparer(Func<Type, MemberInfo, int>? membersOrder = null)
         : this(CompareOption.GetDefaultCompareOptions(typeof(T), membersOrder), membersOrder)
     {
     }
@@ -54,9 +55,9 @@ public class EqualityComparer<T> : IEqualityComparer<T>
         return lambda;
     }
 
-    public bool Equals(T x, T y)
+    public bool Equals(T? x, T? y)
     {
-        return _equals(x, y);
+        return _equals(x!, y!);
     }
 
     public int GetHashCode(T obj)
@@ -67,7 +68,7 @@ public class EqualityComparer<T> : IEqualityComparer<T>
 
 public static class EqualityComparerHelper
 {
-    public static Expression CreateEqualsBody(Expression x, Expression y, CompareOption[] compareOptions, Func<Type, MemberInfo, int> membersOrder)
+    public static Expression CreateEqualsBody(Expression x, Expression y, CompareOption[] compareOptions, Func<Type, MemberInfo, int>? membersOrder)
     {
         var type = x.Type;
         var exitPoint = Expression.Label(typeof(bool));
@@ -85,7 +86,7 @@ public static class EqualityComparerHelper
         return Expression.Block(typeof(bool), list);
     }
 
-    public static Expression CreateGetHashCodeBody(Expression obj, Func<Type, MemberInfo, int> membersOrder)
+    public static Expression CreateGetHashCodeBody(Expression obj, Func<Type, MemberInfo, int>? membersOrder)
     {
         var type = obj.Type;
 
@@ -122,7 +123,7 @@ public static class EqualityComparerHelper
         {
             if (compareOption.IgnoreCase)
             {
-                var call = Expression.Call(type.GetMethod("Compare", new[] { typeof(string), typeof(string), typeof(bool) }), x, y, Expression.Constant(true));
+                var call = Expression.Call(type.GetMethod("Compare", new[] { typeof(string), typeof(string), typeof(bool) })!, x, y, Expression.Constant(true));
 
                 if (isLast)
                     return Expression.Label(exitPoint, Expression.Equal(call, Expression.Constant(0, typeof(int))));
@@ -132,7 +133,7 @@ public static class EqualityComparerHelper
             }
             else
             {
-                var call = Expression.Call(type.GetMethod("Equals", new[] { typeof(string), typeof(string) }), x, y);
+                var call = Expression.Call(type.GetMethod("Equals", new[] { typeof(string), typeof(string) })!, x, y);
 
                 if (isLast)
                     return Expression.Label(exitPoint, call);
@@ -143,7 +144,7 @@ public static class EqualityComparerHelper
 
         if (type == typeof(Guid))
         {
-            var call = Expression.Call(x, typeof(Guid).GetMethod("Equals", new[] { typeof(Guid) }), y);
+            var call = Expression.Call(x, typeof(Guid).GetMethod("Equals", new[] { typeof(Guid) })!, y);
 
             if (isLast)
                 return Expression.Label(exitPoint, call);
@@ -157,7 +158,7 @@ public static class EqualityComparerHelper
             Debug.Assert(compareOption.ByteOrder != ByteOrder.Unspecified);
 
             var equalityComparerType = (compareOption.ByteOrder == ByteOrder.BigEndian) ? typeof(BigEndianByteArrayEqualityComparer) : typeof(LittleEndianByteArrayEqualityComparer);
-            var call = Expression.Call(Expression.Field(null, equalityComparerType, "Instance"), equalityComparerType.GetMethod("Equals", new[] { typeof(byte[]), typeof(byte[]) }), x, y);
+            var call = Expression.Call(Expression.Field(null, equalityComparerType, "Instance"), equalityComparerType.GetMethod("Equals", new[] { typeof(byte[]), typeof(byte[]) })!, x, y);
 
             if (isLast)
                 return Expression.Label(exitPoint, call);
@@ -196,13 +197,13 @@ public static class EqualityComparerHelper
                 return Expression.Label(Expression.Label(typeof(int)), Expression.ExclusiveOr(Expression.Convert(value, typeof(int)), Expression.Convert(Expression.RightShift(value, Expression.Constant(32)), typeof(int))));
 
             if (type == typeof(byte[]))
-                return Expression.Call(typeof(ByteArrayExtensions).GetMethod("GetHashCodeEx", new[] { typeof(byte[]) }), value);
+                return Expression.Call(typeof(ByteArrayExtensions).GetMethod("GetHashCodeEx", new[] { typeof(byte[]) })!, value);
 
-            return Expression.Call(value, type.GetMethod("GetHashCode", new Type[0]));
+            return Expression.Call(value, type.GetMethod("GetHashCode", new Type[0])!);
         }
 
         if (type == typeof(Guid))
-            return Expression.Call(value, typeof(Guid).GetMethod("GetHashCode"));
+            return Expression.Call(value, typeof(Guid).GetMethod("GetHashCode")!);
 
         throw new NotSupportedException(type.ToString());
     }

@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -36,7 +37,7 @@ public class SlotsBuilder
         if(baseInterface != null)
             typeBuilder.AddInterfaceImplementation(baseInterface);
 
-        var customAttribute = new CustomAttributeBuilder(typeof(SerializableAttribute).GetConstructor(Type.EmptyTypes), new object[] { });
+        var customAttribute = new CustomAttributeBuilder(typeof(SerializableAttribute).GetConstructor(Type.EmptyTypes)!, new object[] { });
         typeBuilder.SetCustomAttribute(customAttribute);
 
         var typeParams = typeBuilder.DefineGenericParameters(genericParameters);
@@ -100,7 +101,7 @@ public class SlotsBuilder
             _types = types;
         }
 
-        public bool Equals(TypeArray other)
+        public bool Equals(TypeArray? other)
         {
             if (ReferenceEquals(this, other))
                 return true;

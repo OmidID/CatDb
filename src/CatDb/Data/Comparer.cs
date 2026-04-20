@@ -11,9 +11,9 @@ public class Comparer<T> : IComparer<T>
 
     private readonly Type _type;
     private readonly CompareOption[] _compareOptions;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
 
-    public Comparer(CompareOption[] compareOptions, Func<Type, MemberInfo, int> membersOrder = null)
+    public Comparer(CompareOption[] compareOptions, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         _type = typeof(T);
         _compareOptions = compareOptions;
@@ -24,7 +24,7 @@ public class Comparer<T> : IComparer<T>
         _compare = CreateCompareMethod().Compile();
     }
 
-    public Comparer(Func<Type, MemberInfo, int> memberOrder = null)
+    public Comparer(Func<Type, MemberInfo, int>? memberOrder = null)
         : this(CompareOption.GetDefaultCompareOptions(typeof(T), memberOrder), memberOrder)
     {
     }
@@ -37,15 +37,15 @@ public class Comparer<T> : IComparer<T>
         return Expression.Lambda<Func<T, T, int>>(ComparerHelper.CreateComparerBody(null, null, x, y, _compareOptions, _membersOrder), x, y);
     }
 
-    public int Compare(T x, T y)
+    public int Compare(T? x, T? y)
     {
-        return _compare(x, y);
+        return _compare(x!, y!);
     }
 }
 
 public static class ComparerHelper
 {
-    public static Expression CreateComparerBody(List<Expression> expressions, List<ParameterExpression> parameters, Expression x, Expression y, CompareOption[] compareOptions, Func<Type, MemberInfo, int> membersOrder)
+    public static Expression CreateComparerBody(List<Expression>? expressions, List<ParameterExpression>? parameters, Expression x, Expression y, CompareOption[] compareOptions, Func<Type, MemberInfo, int>? membersOrder)
     {
         var exitPoint = Expression.Label(typeof(int));
         var list = new List<Expression>();
@@ -120,7 +120,7 @@ public static class ComparerHelper
                 //if (cmp != 0)
                 //    return cmp;
 
-                yield return Expression.Assign(cmp, Expression.Call(field1, typeof(Guid).GetMethod("CompareTo", new[] { typeof(Guid) }), field2));
+                yield return Expression.Assign(cmp, Expression.Call(field1, typeof(Guid).GetMethod("CompareTo", new[] { typeof(Guid) })!, field2));
                 yield return Expression.IfThen(Expression.NotEqual(cmp, Expression.Constant(0)),
                                Expression.Return(exitPoint, cmp));
             }
@@ -128,7 +128,7 @@ public static class ComparerHelper
             {
                 //return field1.CompareTo(field2);
 
-                yield return Expression.Label(exitPoint, Expression.Call(field1, typeof(Guid).GetMethod("CompareTo", new[] { typeof(Guid) }), field2));
+                yield return Expression.Label(exitPoint, Expression.Call(field1, typeof(Guid).GetMethod("CompareTo", new[] { typeof(Guid) })!, field2));
             }
         }
         else if (type == typeof(byte[]))
@@ -138,7 +138,7 @@ public static class ComparerHelper
             var order = compareOption.ByteOrder;
             var comparerType = (order == ByteOrder.BigEndian) ? typeof(BigEndianByteArrayComparer) : typeof(LittleEndianByteArrayComparer);
             var instance = Expression.Field(null, comparerType, "Instance");
-            var compare = comparerType.GetMethod("Compare", new[] { typeof(byte[]), typeof(byte[]) });
+            var compare = comparerType.GetMethod("Compare", new[] { typeof(byte[]), typeof(byte[]) })!;
             var call = !invertCompare ? Expression.Call(instance, compare, field1, field2) : Expression.Call(instance, compare, field2, field1);
 
             if (!isLastCompare)
@@ -214,7 +214,7 @@ public static class ComparerHelper
         {
             var comparerGenericType = typeof(System.Collections.Generic.Comparer<>).MakeGenericType(typeof(decimal));
             var @default = Expression.Property(null, comparerGenericType, "Default");
-            var compare = comparerGenericType.GetProperty("Default").PropertyType.GetMethod("Compare", new[] { typeof(decimal), typeof(decimal) });
+            var compare = comparerGenericType.GetProperty("Default")!.PropertyType.GetMethod("Compare", new[] { typeof(decimal), typeof(decimal) })!;
             var call = !invertCompare ? Expression.Call(@default, compare, field1, field2) : Expression.Call(@default, compare, field2, field1);
 
             if (!isLastCompare)
@@ -237,7 +237,7 @@ public static class ComparerHelper
         else if (type == typeof(String))
         {
             var comparerGenericType = typeof(string);
-            var compare = comparerGenericType.GetMethod("Compare", new[] { typeof(string), typeof(string), typeof(bool) });
+            var compare = comparerGenericType.GetMethod("Compare", new[] { typeof(string), typeof(string), typeof(bool) })!;
             var optionIgnoreCase = compareOption.IgnoreCase;
 
             var ignoreCase = optionIgnoreCase ? Expression.Constant(optionIgnoreCase) : Expression.Constant(false);

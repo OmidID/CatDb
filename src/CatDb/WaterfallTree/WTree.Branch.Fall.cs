@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Diagnostics;
 using CatDb.Data;
 
@@ -6,11 +7,11 @@ public partial class WTree
 {
     private partial class Branch
     {
-        private volatile Task _fallTask;
+        private volatile Task? _fallTask;
 
-        private void DoFall(object state)
+        private void DoFall(object? state)
         {
-            var tuple = (Tuple<Branch, BranchCache, int, Token, Params>)state;
+            var tuple = (Tuple<Branch, BranchCache?, int, Token?, Params>)state!;
             var branch = tuple.Item1;
             var cache = tuple.Item2;
             var level = tuple.Item3;
@@ -114,7 +115,7 @@ public partial class WTree
                 }
 
                 var haveSink = false;
-                BranchCache cache = null;
+                BranchCache? cache = null;
                 if (param.Sink)
                 {
                     if (Cache.OperationCount > 0)
@@ -138,7 +139,7 @@ public partial class WTree
                 }
 
                 Tree._workingFallCount.Increment();
-                _fallTask = Task.Factory.StartNew(DoFall, new Tuple<Branch, BranchCache, int, Token, Params>(this, cache, level - 1, token, param), taskCreationOptions);
+                _fallTask = Task.Factory.StartNew(DoFall, new Tuple<Branch, BranchCache?, int, Token?, Params>(this, cache, level - 1, token, param), taskCreationOptions);
 
                 return haveSink;
             }
@@ -250,9 +251,9 @@ public partial class WTree
 
         #region param scope
 
-        public readonly Locator Path;
-        public readonly IData FromKey;
-        public readonly IData ToKey;
+        public readonly Locator? Path;
+        public readonly IData? FromKey;
+        public readonly IData? ToKey;
         public readonly bool IsPoint;
         public readonly bool IsOverall;
         public readonly bool IsTotal;

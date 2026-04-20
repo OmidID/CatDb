@@ -565,7 +565,8 @@ public sealed class MonkeyService : BackgroundService
                         if (_ctx.Ticks.Count() == 0) break;
                         var first = _ctx.Ticks.FirstRow;
                         var last  = _ctx.Ticks.LastRow;
-                        Hit($"tick.First={first.Key} Last={last.Key}");
+                        if (first is null || last is null) break;
+                        Hit($"tick.First={first.Value.Key} Last={last.Value.Key}");
                         break;
                     }
                     case 9:
@@ -588,7 +589,8 @@ public sealed class MonkeyService : BackgroundService
                     {
                         if (_ctx.Sessions.Count() == 0) break;
                         var first = _ctx.Sessions.FirstRow;
-                        var k     = first.Key ?? "–";
+                        if (first is null) break;
+                        var k     = first.Value.Key ?? "–";
                         Hit($"session.First={k[..Math.Min(12, k.Length)]}");
                         break;
                     }

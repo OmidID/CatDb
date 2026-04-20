@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using CatDb.Database;
 
 namespace CatDb.Extensions;
@@ -67,7 +68,7 @@ public static class TableAsyncExtensions
             TaskScheduler.Default);
     }
 
-    public static Task<TRecord> FindAsync<TKey, TRecord>(this ITable<TKey, TRecord> table, TKey key, CancellationToken cancellationToken = default)
+    public static Task<TRecord?> FindAsync<TKey, TRecord>(this ITable<TKey, TRecord> table, TKey key, CancellationToken cancellationToken = default)
     {
         return Task.Factory.StartNew(
             () => table.Find(key),

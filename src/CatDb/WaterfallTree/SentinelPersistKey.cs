@@ -9,5 +9,5 @@ public class SentinelPersistKey : IPersist<IData>
 
     public void Write(BinaryWriter writer, IData item) { }
 
-    public IData Read(BinaryReader reader) => null;
+    public IData Read(BinaryReader reader) => null!;
 }

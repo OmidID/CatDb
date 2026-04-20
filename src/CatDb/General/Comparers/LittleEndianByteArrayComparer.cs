@@ -9,9 +9,9 @@ public class LittleEndianByteArrayComparer : IComparer<byte[]>
         {
             ByteArray = x
         };
-        var array1 = common.UInt64Array;
+        var array1 = common.UInt64Array!;
         common.ByteArray = y;
-        var array2 = common.UInt64Array;
+        var array2 = common.UInt64Array!;
 
         var len = length >> 3;
         var remainder = length & 7;
@@ -46,8 +46,9 @@ public class LittleEndianByteArrayComparer : IComparer<byte[]>
         return 0;
     }
 
-    public int Compare(byte[] x, byte[] y)
+    public int Compare(byte[]? x, byte[]? y)
     {
+        if (x is null || y is null) return x is null && y is null ? 0 : x is null ? -1 : 1;
         if (x.Length == y.Length)
             return Compare(x, y, x.Length);
 

@@ -591,7 +591,7 @@ public partial class SortedSet<T> : ISet<T>, ICollection<T>, ICollection, IReadO
             {
                 InOrderTreeWalk(node =>
                 {
-                    objects[index++] = node.Item;
+                    objects[index++] = node.Item!;
                     return true;
                 });
             }

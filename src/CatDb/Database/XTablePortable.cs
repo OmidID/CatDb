@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections;
 using CatDb.Data;
 using CatDb.Database.Operations;
@@ -70,7 +71,7 @@ public class XTablePortable : ITable<IData, IData>
     public void Clear()                                 => Execute(new ClearOperation());
     public bool Exists(IData key)                       => TryGet(key, out _);
 
-    public bool TryGet(IData key, out IData record)
+    public bool TryGet(IData key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IData? record)
     {
         lock (SyncRoot)
         {
@@ -263,8 +264,8 @@ public class XTablePortable : ITable<IData, IData>
         }
     }
 
-    public KeyValuePair<IData, IData> FirstRow => Forward().FirstOrDefault();
-    public KeyValuePair<IData, IData> LastRow  => Backward().FirstOrDefault();
+    public KeyValuePair<IData, IData>? FirstRow => Forward().Cast<KeyValuePair<IData, IData>?>().FirstOrDefault();
+    public KeyValuePair<IData, IData>? LastRow  => Backward().Cast<KeyValuePair<IData, IData>?>().FirstOrDefault();
     public long Count()                        => this.LongCount();
     public IDescriptor Descriptor              => Locator;
 

@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -14,9 +15,9 @@ public class ValueToString<T> : IToString<T>
     private readonly int _stringBuilderCapacity;
     private readonly IFormatProvider[] _providers;
     private readonly char[] _delimiters;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
 
-    public ValueToString(int stringBuilderCapacity, IFormatProvider[] providers, char[] delimiters, Func<Type, MemberInfo, int> membersOrder = null)
+    public ValueToString(int stringBuilderCapacity, IFormatProvider[] providers, char[] delimiters, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         if (!DataType.IsPrimitiveType(typeof(T)) && !typeof(T).HasDefaultConstructor())
             throw new NotSupportedException("No default constructor.");
@@ -40,12 +41,12 @@ public class ValueToString<T> : IToString<T>
         _from = CreateFromMethod().Compile();
     }
 
-    public ValueToString(int stringBuilderCapacity, char[] delimiters, Func<Type, MemberInfo, int> membersOrder = null)
+    public ValueToString(int stringBuilderCapacity, char[] delimiters, Func<Type, MemberInfo, int>? membersOrder = null)
         : this(stringBuilderCapacity, ValueToStringHelper.GetDefaultProviders(typeof(T), membersOrder), delimiters, membersOrder)
     {
     }
 
-    public ValueToString(Func<Type, MemberInfo, int> membersOrder = null)
+    public ValueToString(Func<Type, MemberInfo, int>? membersOrder = null)
         : this(16, new[] { ';' }, membersOrder)
     {
     }
@@ -88,7 +89,7 @@ public class ValueToString<T> : IToString<T>
 
 public static class ValueToStringHelper
 {
-    public static Expression CreateToStringBody(Expression item, int stringBuilderCapacity, IFormatProvider[] providers, char delimiter, Func<Type, MemberInfo, int> membersOrder)
+    public static Expression CreateToStringBody(Expression item, int stringBuilderCapacity, IFormatProvider[] providers, char delimiter, Func<Type, MemberInfo, int>? membersOrder)
     {
         var stringBuilder = Expression.Variable(typeof(StringBuilder));
 
@@ -100,17 +101,17 @@ public static class ValueToStringHelper
 
             if (member.Type == typeof(byte[]))
             {
-                var toHexMethod = typeof(ByteArrayExtensions).GetMethod("ToHex", new[] { typeof(byte[]) });
+                var toHexMethod = typeof(ByteArrayExtensions).GetMethod("ToHex", new[] { typeof(byte[]) })!;
                 callToString = Expression.Call(toHexMethod, member);
             }
             else if (member.Type == typeof(TimeSpan))
             {
-                var toStringProvider = member.Type.GetMethod("ToString", new[] { typeof(String), typeof(IFormatProvider) });
+                var toStringProvider = member.Type.GetMethod("ToString", new[] { typeof(String), typeof(IFormatProvider) })!;
                 callToString = Expression.Call(member, toStringProvider, Expression.Constant(null, typeof(String)), Expression.Constant(providers[0], typeof(IFormatProvider)));
             }
             else
             {
-                var toStringProvider = member.Type.GetMethod("ToString", new[] { typeof(IFormatProvider) });
+                var toStringProvider = member.Type.GetMethod("ToString", new[] { typeof(IFormatProvider) })!;
                 callToString = Expression.Call(member, toStringProvider, Expression.Constant(providers[0], typeof(IFormatProvider)));
             }
 
@@ -119,7 +120,7 @@ public static class ValueToStringHelper
 
         var list = new List<Expression>
         {
-            Expression.Assign(stringBuilder, Expression.New(stringBuilder.Type.GetConstructor(new[] { typeof(int) }), Expression.Constant(stringBuilderCapacity)))
+            Expression.Assign(stringBuilder, Expression.New(stringBuilder.Type.GetConstructor(new[] { typeof(int) })!, Expression.Constant(stringBuilderCapacity)))
         };
 
         var i = 0;
@@ -128,11 +129,11 @@ public static class ValueToStringHelper
             list.Add(GetAppendCommand(Expression.PropertyOrField(item, member.Name), stringBuilder, providers[i]));
 
             if (i < DataTypeUtils.GetPublicMembers(item.Type, membersOrder).Count() - 1)
-                list.Add(Expression.Call(stringBuilder, typeof(StringBuilder).GetMethod("Append", new[] { typeof(char) }), Expression.Constant(delimiter)));
+                list.Add(Expression.Call(stringBuilder, typeof(StringBuilder).GetMethod("Append", new[] { typeof(char) })!, Expression.Constant(delimiter)));
             i++;
         }
 
-        list.Add(Expression.Label(Expression.Label(typeof(string)), Expression.Call(stringBuilder, typeof(object).GetMethod("ToString"))));
+        list.Add(Expression.Label(Expression.Label(typeof(string)), Expression.Call(stringBuilder, typeof(object).GetMethod("ToString")!)));
 
         return Expression.Block(new[] { stringBuilder }, list);
     }
@@ -143,27 +144,27 @@ public static class ValueToStringHelper
 
         if (member.Type == typeof(byte[]))
         {
-            var toHexMethod = typeof(ByteArrayExtensions).GetMethod("ToHex", new[] { typeof(byte[]) });
+            var toHexMethod = typeof(ByteArrayExtensions).GetMethod("ToHex", new[] { typeof(byte[]) })!;
             callToString = Expression.Call(toHexMethod, member);
         }
         else if (member.Type == typeof(TimeSpan))
         {
-            var toStringProvider = member.Type.GetMethod("ToString", new[] { typeof(String), typeof(IFormatProvider) });
+            var toStringProvider = member.Type.GetMethod("ToString", new[] { typeof(String), typeof(IFormatProvider) })!;
             callToString = Expression.Call(member, toStringProvider, Expression.Constant(null, typeof(String)), Expression.Constant(provider, typeof(IFormatProvider)));
         }
         else
         {
-            var toStringProvider = member.Type.GetMethod("ToString", new[] { typeof(IFormatProvider) });
+            var toStringProvider = member.Type.GetMethod("ToString", new[] { typeof(IFormatProvider) })!;
             callToString = Expression.Call(member, toStringProvider, Expression.Constant(provider, typeof(IFormatProvider)));
         }
 
-        var apendMethod = typeof(StringBuilder).GetMethod("Append", new[] { typeof(String) });
+        var apendMethod = typeof(StringBuilder).GetMethod("Append", new[] { typeof(String) })!;
         var callAppend = Expression.Call(stringBuilder, apendMethod, member.Type == typeof(string) ? member : callToString);
 
         return callAppend;
     }
 
-    public static Expression CreateParseBody(Expression item, ParameterExpression stringParam, IFormatProvider[] providers, char[] delimiters, Func<Type, MemberInfo, int> membersOrder)
+    public static Expression CreateParseBody(Expression item, ParameterExpression stringParam, IFormatProvider[] providers, char[] delimiters, Func<Type, MemberInfo, int>? membersOrder)
     {
         var array = Expression.Variable(typeof(string[]), "array");
 
@@ -179,22 +180,22 @@ public static class ValueToStringHelper
             }
             else if (member.Type == typeof(byte[]))
             {
-                var hexParse = typeof(StringExtensions).GetMethod("ParseHex", new[] { typeof(string) });
+                var hexParse = typeof(StringExtensions).GetMethod("ParseHex", new[] { typeof(string) })!;
                 value = Expression.Call(hexParse, stringParam);
             }
             else if (member.Type == typeof(char))
             {
-                var parseMethod = member.Type.GetMethod("Parse", new[] { typeof(string) });
+                var parseMethod = member.Type.GetMethod("Parse", new[] { typeof(string) })!;
                 value = Expression.Call(parseMethod, stringParam);
             }
             else if (member.Type == typeof(bool))
             {
-                var parseMethod = member.Type.GetMethod("Parse");
+                var parseMethod = member.Type.GetMethod("Parse")!;
                 value = Expression.Call(parseMethod, stringParam);
             }
             else
             {
-                var parseMethod = member.Type.GetMethod("Parse", new[] { typeof(string), typeof(IFormatProvider) });
+                var parseMethod = member.Type.GetMethod("Parse", new[] { typeof(string), typeof(IFormatProvider) })!;
                 value = Expression.Call(parseMethod, stringParam, Expression.Constant(providers[0], typeof(IFormatProvider)));
             }
 
@@ -203,7 +204,7 @@ public static class ValueToStringHelper
 
         var list = new List<Expression>
         {
-            Expression.Assign(array, Expression.Call(stringParam, typeof(string).GetMethod("Split", new[] { typeof(char[]) }), Expression.Constant(delimiters)))
+            Expression.Assign(array, Expression.Call(stringParam, typeof(string).GetMethod("Split", new[] { typeof(char[]) })!, Expression.Constant(delimiters)))
         };
 
         var i = 0;
@@ -224,29 +225,29 @@ public static class ValueToStringHelper
         }
         else if (member.Type == typeof(byte[]))
         {
-            var hexParse = typeof(StringExtensions).GetMethod("ParseHex", new[] { typeof(string) });
+            var hexParse = typeof(StringExtensions).GetMethod("ParseHex", new[] { typeof(string) })!;
             value = Expression.Call(hexParse, sValue);
         }
         else if (member.Type == typeof(char))
         {
-            var parseMethod = member.Type.GetMethod("Parse", new[] { typeof(string) });
+            var parseMethod = member.Type.GetMethod("Parse", new[] { typeof(string) })!;
             value = Expression.Call(parseMethod, sValue);
         }
         else if (member.Type == typeof(bool))
         {
-            var parseMethod = member.Type.GetMethod("Parse");
+            var parseMethod = member.Type.GetMethod("Parse")!;
             value = Expression.Call(parseMethod, sValue);
         }
         else
         {
-            var parseMethod = member.Type.GetMethod("Parse", new[] { typeof(string), typeof(IFormatProvider) });
+            var parseMethod = member.Type.GetMethod("Parse", new[] { typeof(string), typeof(IFormatProvider) })!;
             value = Expression.Call(parseMethod, sValue, Expression.Constant(provider, typeof(IFormatProvider)));
         }
 
         return Expression.Assign(member, value);
     }
 
-    public static IFormatProvider[] GetDefaultProviders(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public static IFormatProvider[] GetDefaultProviders(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         if (DataType.IsPrimitiveType(type))
             return new[] { GetDefaultProvider(type) };

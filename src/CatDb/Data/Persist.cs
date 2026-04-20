@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -13,10 +14,10 @@ public class Persist<T> : IPersist<T>
     private readonly Func<BinaryReader, T> _read;
 
     private readonly Type _type;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
     private readonly AllowNull _allowNull;
 
-    public Persist(Func<Type, MemberInfo, int> membersOrder = null, AllowNull allowNull = AllowNull.None)
+    public Persist(Func<Type, MemberInfo, int>? membersOrder = null, AllowNull allowNull = AllowNull.None)
     {
         _type = typeof(T);
         _membersOrder = membersOrder;
@@ -58,10 +59,10 @@ public class Persist : IPersist<object>
     private readonly Func<BinaryReader, object> _read;
 
     private readonly Type _type;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
     private readonly AllowNull _allowNull;
 
-    public Persist(Type type, Func<Type, MemberInfo, int> membersOrder = null, AllowNull allowNull = AllowNull.None)
+    public Persist(Type type, Func<Type, MemberInfo, int>? membersOrder = null, AllowNull allowNull = AllowNull.None)
     {
         _type = type;
         _membersOrder = membersOrder;
@@ -176,7 +177,7 @@ public enum AllowNull : byte
 
 public static class PersistHelper
 {
-    public static Expression CreateWriteBody(Expression item, Expression writer, Func<Type, MemberInfo, int> membersOrder, AllowNull allowNull)
+    public static Expression CreateWriteBody(Expression item, Expression writer, Func<Type, MemberInfo, int>? membersOrder, AllowNull allowNull)
     {
         var list = new List<Expression>();
 
@@ -185,7 +186,7 @@ public static class PersistHelper
         else
         {
             if (allowNull == AllowNull.All && !item.Type.IsStruct())
-                list.Add(Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(true)));
+                list.Add(Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!, Expression.Constant(true)));
 
             foreach (var member in DataTypeUtils.GetPublicMembers(item.Type, membersOrder))
                 list.Add(BuildWrite(Expression.PropertyOrField(item, member.Name), writer, membersOrder, allowNull, false));
@@ -193,19 +194,19 @@ public static class PersistHelper
             if (allowNull == AllowNull.All && !item.Type.IsStruct())
                 return Expression.IfThenElse(Expression.NotEqual(item, Expression.Constant(null, item.Type)),
                         Expression.Block(list),
-                        Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(false)));
+                        Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!, Expression.Constant(false)));
         }
 
         return Expression.Block(list);
     }
 
-    private static Expression BuildWrite(Expression item, Expression writer, Func<Type, MemberInfo, int> membersOrder, AllowNull allowNull, bool isTop)
+    private static Expression BuildWrite(Expression item, Expression writer, Func<Type, MemberInfo, int>? membersOrder, AllowNull allowNull, bool isTop)
     {
         var type = item.Type;
         var canBeNull = allowNull == AllowNull.All || (allowNull == AllowNull.OnlyMembers && !isTop);
 
         if (type == typeof(Guid))
-            return GetWriteCommand(writer, Expression.Call(item, type.GetMethod("ToByteArray")), false);
+            return GetWriteCommand(writer, Expression.Call(item, type.GetMethod("ToByteArray")!), false);
 
         if (type.IsEnum)
             return GetWriteCommand(writer, Expression.Convert(item, item.Type.GetEnumUnderlyingType()), canBeNull);
@@ -224,19 +225,19 @@ public static class PersistHelper
         if (type.IsArray || type.IsList())
         {
             if (!canBeNull)
-                return Expression.Block(Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.Convert(type.IsArray ? Expression.ArrayLength(item) : Expression.Property(item, "Count"), typeof(ulong))),
+                return Expression.Block(Expression.Call(typeof(CountCompression).GetMethod("Serialize")!, writer, Expression.Convert(type.IsArray ? Expression.ArrayLength(item) : Expression.Property(item, "Count"), typeof(ulong))),
                     item.For(i =>
                        WriteAssignedOrCurrentVariable(type.IsArray ? Expression.ArrayAccess(item, i) : item.This(i), writer, membersOrder, allowNull), 
                        Expression.Label()));
 
             return Expression.IfThenElse(Expression.NotEqual(item, Expression.Constant(null)),
                 Expression.Block(
-                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(true)),
-                    Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.Convert(type.IsArray ? Expression.ArrayLength(item) : Expression.Property(item, "Count"), typeof(ulong))),
+                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!, Expression.Constant(true)),
+                    Expression.Call(typeof(CountCompression).GetMethod("Serialize")!, writer, Expression.Convert(type.IsArray ? Expression.ArrayLength(item) : Expression.Property(item, "Count"), typeof(ulong))),
                     item.For(i =>
                     WriteAssignedOrCurrentVariable(type.IsArray ? Expression.ArrayAccess(item, i) : item.This(i), writer, membersOrder, allowNull),
                     Expression.Label())),
-                Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(false))
+                Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!, Expression.Constant(false))
                 );
         }
 
@@ -247,7 +248,7 @@ public static class PersistHelper
 
             if (!canBeNull)
                 return Expression.Block(
-                        Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.Convert(Expression.Property(item, "Count"), typeof(ulong))),
+                        Expression.Call(typeof(CountCompression).GetMethod("Serialize")!, writer, Expression.Convert(Expression.Property(item, "Count"), typeof(ulong))),
                         item.ForEach(current =>
                         {
                             var kv = Expression.Variable(current.Type);
@@ -262,8 +263,8 @@ public static class PersistHelper
 
             return Expression.IfThenElse(Expression.NotEqual(item, Expression.Constant(null)),
                 Expression.Block(
-                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(true)),
-                    Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.Convert(Expression.Property(item, "Count"), typeof(ulong))),
+                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!, Expression.Constant(true)),
+                    Expression.Call(typeof(CountCompression).GetMethod("Serialize")!, writer, Expression.Convert(Expression.Property(item, "Count"), typeof(ulong))),
                     item.ForEach(current =>
                     {
                         var kv = Expression.Variable(current.Type);
@@ -274,7 +275,7 @@ public static class PersistHelper
                             WriteAssignedOrCurrentVariable(Expression.PropertyOrField(kv, "Value"), writer, membersOrder, allowNull)
                         );
                     }, Expression.Label())),
-                  Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(false))
+                  Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!, Expression.Constant(false))
                 );
         }
 
@@ -283,7 +284,7 @@ public static class PersistHelper
             if (!canBeNull)
                 return BuildWrite(Expression.PropertyOrField(item, "Value"), writer, membersOrder, allowNull, false);
 
-            return Expression.Block(Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.PropertyOrField(item, "HasValue")),
+            return Expression.Block(Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!, Expression.PropertyOrField(item, "HasValue")),
                     Expression.IfThen(Expression.PropertyOrField(item, "HasValue"), BuildWrite(Expression.PropertyOrField(item, "Value"), writer, membersOrder, allowNull, false)));
         }
 
@@ -293,7 +294,7 @@ public static class PersistHelper
             var list = new List<Expression>();
 
             if (canBeNull && !type.IsStruct())
-                list.Add(Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(true)));
+                list.Add(Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!, Expression.Constant(true)));
 
             foreach (var member in DataTypeUtils.GetPublicMembers(type, membersOrder))
             {
@@ -313,14 +314,14 @@ public static class PersistHelper
 
             return Expression.IfThenElse(Expression.NotEqual(item, Expression.Constant(null)),
                     Expression.Block(variables, list),
-                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(false))
+                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!, Expression.Constant(false))
                 );
         }
 
         throw new NotSupportedException(item.Type.ToString());
     }
 
-    private static Expression WriteAssignedOrCurrentVariable(Expression variable, Expression writer, Func<Type, MemberInfo, int> membersOrder, AllowNull allowNull)
+    private static Expression WriteAssignedOrCurrentVariable(Expression variable, Expression writer, Func<Type, MemberInfo, int>? membersOrder, AllowNull allowNull)
     {
         var type = variable.Type;
 
@@ -355,7 +356,7 @@ public static class PersistHelper
             type == typeof(Double) ||
             type == typeof(Decimal))
         {
-            var writeAny = typeof(BinaryWriter).GetMethod("Write", new[] { type });
+            var writeAny = typeof(BinaryWriter).GetMethod("Write", new[] { type })!;
             return Expression.Call(writer, writeAny, item);
 
             //writer.Write(item);
@@ -363,7 +364,7 @@ public static class PersistHelper
 
         if (type == typeof(DateTime) || type == typeof(TimeSpan))
         {
-            var writeLong = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(long) });
+            var writeLong = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(long) })!;
             return Expression.Call(writer, writeLong, Expression.PropertyOrField(item, "Ticks"));
 
             //writer.Write(item.Ticks);
@@ -371,8 +372,8 @@ public static class PersistHelper
 
         if (type == typeof(String))
         {
-            var writeBool = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) });
-            var writeString = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(string) });
+            var writeBool = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!;
+            var writeString = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(string) })!;
 
             if (!canBeNull)
                 return Expression.Call(writer, writeString, item);
@@ -393,21 +394,21 @@ public static class PersistHelper
 
         if (type == typeof(byte[]))
         {
-            var writeByteArray = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(byte[]) });
+            var writeByteArray = typeof(BinaryWriter).GetMethod("Write", new[] { typeof(byte[]) })!;
 
             if (!canBeNull)
                 return Expression.Block(
-                    Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.ConvertChecked(Expression.Property(item, "Length"), typeof(ulong))),
+                    Expression.Call(typeof(CountCompression).GetMethod("Serialize")!, writer, Expression.ConvertChecked(Expression.Property(item, "Length"), typeof(ulong))),
                     Expression.Call(writer, writeByteArray, item)
                 );
 
             return Expression.IfThenElse(Expression.NotEqual(item, Expression.Constant(null)),
                 Expression.Block(
-                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(true)),
-                    Expression.Call(typeof(CountCompression).GetMethod("Serialize"), writer, Expression.ConvertChecked(Expression.Property(item, "Length"), typeof(ulong))),
+                    Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!, Expression.Constant(true)),
+                    Expression.Call(typeof(CountCompression).GetMethod("Serialize")!, writer, Expression.ConvertChecked(Expression.Property(item, "Length"), typeof(ulong))),
                     Expression.Call(writer, writeByteArray, item)
                 ),
-                Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) }), Expression.Constant(false))
+                Expression.Call(writer, typeof(BinaryWriter).GetMethod("Write", new[] { typeof(bool) })!, Expression.Constant(false))
             );
 
             //if (buffer != null)
@@ -423,7 +424,7 @@ public static class PersistHelper
         throw new NotSupportedException(type.ToString());
     }
 
-    public static Expression CreateReadBody(Expression reader, Type itemType, Func<Type, MemberInfo, int> membersOrder, AllowNull allowNull)
+    public static Expression CreateReadBody(Expression reader, Type itemType, Func<Type, MemberInfo, int>? membersOrder, AllowNull allowNull)
     {
         var item = Expression.Variable(itemType);
 
@@ -439,19 +440,19 @@ public static class PersistHelper
         list.Add(Expression.Label(Expression.Label(itemType), item));
 
         if (allowNull == AllowNull.All && !itemType.IsStruct())
-            return Expression.Condition(Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBoolean")),
+            return Expression.Condition(Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBoolean")!),
                 Expression.Block(itemType, new[] { item }, list), Expression.Label(Expression.Label(itemType),
                     Expression.Constant(null, item.Type)));
 
         return Expression.Block(itemType, new[] { item }, list);
     }
 
-    private static Expression BuildRead(Expression reader, Type itemType, Func<Type, MemberInfo, int> membersOrder, AllowNull allowNull, bool isTop)
+    private static Expression BuildRead(Expression reader, Type itemType, Func<Type, MemberInfo, int>? membersOrder, AllowNull allowNull, bool isTop)
     {
         var canBeNull = allowNull == AllowNull.All || (allowNull == AllowNull.OnlyMembers && !isTop);
 
         if (itemType == typeof(Guid))
-            return Expression.New(itemType.GetConstructor(new[] { typeof(byte[]) }), GetReadCommand(reader, typeof(byte[]), false));
+            return Expression.New(itemType.GetConstructor(new[] { typeof(byte[]) })!, GetReadCommand(reader, typeof(byte[]), false));
 
         if (itemType.IsEnum)
             return Expression.Convert(GetReadCommand(reader, itemType.GetEnumUnderlyingType(), canBeNull), itemType);
@@ -462,7 +463,7 @@ public static class PersistHelper
         if (itemType.IsKeyValuePair())
         {
             return Expression.New(
-                    itemType.GetConstructor(new[] { itemType.GetGenericArguments()[0], itemType.GetGenericArguments()[1] }),
+                    itemType.GetConstructor(new[] { itemType.GetGenericArguments()[0], itemType.GetGenericArguments()[1] })!,
                     BuildRead(reader, itemType.GetGenericArguments()[0], membersOrder, allowNull, false), BuildRead(reader, itemType.GetGenericArguments()[1], membersOrder, allowNull, false)
                 );
         }
@@ -473,17 +474,17 @@ public static class PersistHelper
             var lenght = Expression.Variable(typeof(int));
 
             var block = Expression.Block(
-                Expression.Assign(lenght, Expression.Convert(Expression.Call(typeof(CountCompression).GetMethod("Deserialize"), reader), typeof(int))),
+                Expression.Assign(lenght, Expression.Convert(Expression.Call(typeof(CountCompression).GetMethod("Deserialize")!, reader), typeof(int))),
                 itemType.IsDictionary() && itemType.GetGenericArguments()[0] == typeof(byte[]) ?
-                    Expression.Assign(field, Expression.New(field.Type.GetConstructor(new[] { typeof(int), typeof(IEqualityComparer<byte[]>) }), lenght, Expression.Field(null, typeof(BigEndianByteArrayEqualityComparer), "Instance"))) :
-                    Expression.Assign(field, Expression.New(field.Type.GetConstructor(new[] { typeof(int) }), lenght)),
+                    Expression.Assign(field, Expression.New(field.Type.GetConstructor(new[] { typeof(int), typeof(IEqualityComparer<byte[]>) })!, lenght, Expression.Field(null, typeof(BigEndianByteArrayEqualityComparer), "Instance"))) :
+                    Expression.Assign(field, Expression.New(field.Type.GetConstructor(new[] { typeof(int) })!, lenght)),
                 field.For(i =>
                     {
                         if (itemType.IsArray)
                             return Expression.Assign(Expression.ArrayAccess(field, i), BuildRead(reader, itemType.GetElementType(), membersOrder, allowNull, false));
                         if (itemType.IsList())
-                            return Expression.Call(field, field.Type.GetMethod("Add"), BuildRead(reader, itemType.GetGenericArguments()[0], membersOrder, allowNull, false));
-                        return Expression.Call(field, field.Type.GetMethod("Add"),
+                            return Expression.Call(field, field.Type.GetMethod("Add")!, BuildRead(reader, itemType.GetGenericArguments()[0], membersOrder, allowNull, false));
+                        return Expression.Call(field, field.Type.GetMethod("Add")!,
                             BuildRead(reader, itemType.GetGenericArguments()[0], membersOrder, allowNull, false),
                             BuildRead(reader, itemType.GetGenericArguments()[1], membersOrder, allowNull, false)
                         );
@@ -493,7 +494,7 @@ public static class PersistHelper
 
             if (canBeNull)
                 return Expression.Block(field.Type, new[] { field, lenght },
-                    Expression.IfThenElse(Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBoolean")),
+                    Expression.IfThenElse(Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBoolean")!),
                         block,
                         Expression.Assign(field, Expression.Constant(null, field.Type))),
                     Expression.Label(Expression.Label(field.Type), field));
@@ -506,10 +507,10 @@ public static class PersistHelper
         if (itemType.IsNullable())
         {
             if (!canBeNull)
-                return Expression.New(itemType.GetConstructor(new[] { itemType.GetGenericArguments()[0] }), BuildRead(reader, itemType.GetGenericArguments()[0], membersOrder, allowNull, false));
+                return Expression.New(itemType.GetConstructor(new[] { itemType.GetGenericArguments()[0] })!, BuildRead(reader, itemType.GetGenericArguments()[0], membersOrder, allowNull, false));
 
-            return Expression.Condition(Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBoolean")),
-                    Expression.New(itemType.GetConstructor(new[] { itemType.GetGenericArguments()[0] }), BuildRead(reader, itemType.GetGenericArguments()[0], membersOrder, allowNull, false)),
+            return Expression.Condition(Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBoolean")!),
+                    Expression.New(itemType.GetConstructor(new[] { itemType.GetGenericArguments()[0] })!, BuildRead(reader, itemType.GetGenericArguments()[0], membersOrder, allowNull, false)),
                     Expression.Constant(null, itemType));
         }
 
@@ -529,7 +530,7 @@ public static class PersistHelper
             }
 
             return Expression.Block(itemType, new[] { item },
-                Expression.IfThenElse(Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBoolean")),
+                Expression.IfThenElse(Expression.Call(reader, typeof(BinaryReader).GetMethod("ReadBoolean")!),
                     Expression.Block(list),
                     Expression.Assign(item, Expression.Constant(null, itemType))),
                 Expression.Label(Expression.Label(item.Type), item));
@@ -546,7 +547,7 @@ public static class PersistHelper
                 itemType == typeof(Int16) || itemType == typeof(UInt16) || itemType == typeof(Int32) || itemType == typeof(UInt32) || itemType == typeof(Int64) || itemType == typeof(UInt64) ||
                 itemType == typeof(Single) || itemType == typeof(Double) || itemType == typeof(Decimal))
         {
-            var readAny = typeof(BinaryReader).GetMethod("Read" + itemType.Name);
+            var readAny = typeof(BinaryReader).GetMethod("Read" + itemType.Name)!;
 
             //return reader.ReadInt32();
 
@@ -555,24 +556,24 @@ public static class PersistHelper
 
         if (itemType == typeof(DateTime))
         {
-            var readLong = typeof(BinaryReader).GetMethod("Read" + typeof(long).Name);
-            return Expression.New(typeof(DateTime).GetConstructor(new[] { typeof(long) }), Expression.Call(reader, readLong));
+            var readLong = typeof(BinaryReader).GetMethod("Read" + typeof(long).Name)!;
+            return Expression.New(typeof(DateTime).GetConstructor(new[] { typeof(long) })!, Expression.Call(reader, readLong));
 
             //return new DateTime(reader.ReadInt64());
         }
 
         if (itemType == typeof(TimeSpan))
         {
-            var readLong = typeof(BinaryReader).GetMethod("Read" + typeof(long).Name);
-            return Expression.New(typeof(TimeSpan).GetConstructor(new[] { typeof(long) }), Expression.Call(reader, readLong));
+            var readLong = typeof(BinaryReader).GetMethod("Read" + typeof(long).Name)!;
+            return Expression.New(typeof(TimeSpan).GetConstructor(new[] { typeof(long) })!, Expression.Call(reader, readLong));
 
             //return new DateTime(reader.ReadInt64());
         }
 
         if (itemType == typeof(string))
         {
-            var readBool = typeof(BinaryReader).GetMethod("Read" + typeof(bool).Name);
-            var readString = typeof(BinaryReader).GetMethod("Read" + typeof(string).Name);
+            var readBool = typeof(BinaryReader).GetMethod("Read" + typeof(bool).Name)!;
+            var readString = typeof(BinaryReader).GetMethod("Read" + typeof(string).Name)!;
 
             if (!canBeNull)
                 return Expression.Call(reader, readString); //return reader.ReadString();
@@ -584,10 +585,10 @@ public static class PersistHelper
 
         if (itemType == typeof(byte[]))
         {
-            var readBool = typeof(BinaryReader).GetMethod("Read" + typeof(bool).Name);
-            var readBytes = typeof(BinaryReader).GetMethod("ReadBytes");
+            var readBool = typeof(BinaryReader).GetMethod("Read" + typeof(bool).Name)!;
+            var readBytes = typeof(BinaryReader).GetMethod("ReadBytes")!;
 
-            var call = Expression.Call(typeof(CountCompression).GetMethod("Deserialize"), reader);
+            var call = Expression.Call(typeof(CountCompression).GetMethod("Deserialize")!, reader);
 
             if (!canBeNull)
                 return Expression.Call(reader, readBytes, Expression.Convert(call, typeof(int))); //return reader.ReadBytes((int)CountCompression.Deserialize(reader));

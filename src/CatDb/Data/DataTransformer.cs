@@ -9,10 +9,10 @@ public class DataTransformer<T> : ITransformer<T, IData>
 
     private readonly Type _type1;
     private readonly Type _type2;
-    private readonly Func<Type, MemberInfo, int> _membersOrder1;
-    private readonly Func<Type, MemberInfo, int> _membersOrder2;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder1;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder2;
 
-    public DataTransformer(Type type2, Func<Type, MemberInfo, int> membersOrder1 = null, Func<Type, MemberInfo, int> membersOrder2 = null)
+    public DataTransformer(Type type2, Func<Type, MemberInfo, int>? membersOrder1 = null, Func<Type, MemberInfo, int>? membersOrder2 = null)
     {
         if (!TransformerHelper.CheckCompatible(typeof(T), type2, new HashSet<Type>(), membersOrder1, membersOrder2))
             throw new ArgumentException($"Type {typeof(T)} is not compatible with {type2}");
@@ -33,7 +33,7 @@ public class DataTransformer<T> : ITransformer<T, IData>
 
         var list = new List<Expression>();
         if (TransformerHelper.IsEqualsTypes(_type1, _type2))
-            list.Add(Expression.Label(Expression.Label(typeof(IData)), Expression.New(data.Type.GetConstructor(new[] { _type1 }), value)));
+            list.Add(Expression.Label(Expression.Label(typeof(IData)), Expression.New(data.Type.GetConstructor(new[] { _type1 })!, value)));
         else
         {
             list.Add(Expression.Assign(data, Expression.New(data.Type)));

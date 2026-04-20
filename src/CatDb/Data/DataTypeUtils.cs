@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections.Concurrent;
 using System.Reflection;
 using CatDb.General.Extensions;
@@ -11,7 +12,7 @@ public static class DataTypeUtils
     //Type -> true/false
     private static readonly ConcurrentDictionary<Type, bool> CacheIsAnonymousTypes = new();
 
-    public static IEnumerable<MemberInfo> GetPublicMembers(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public static IEnumerable<MemberInfo> GetPublicMembers(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         var members = type.GetPublicReadWritePropertiesAndFields();
         if (membersOrder == null)
@@ -20,7 +21,7 @@ public static class DataTypeUtils
         return members.Where(x => membersOrder(type, x) >= 0).OrderBy(x => membersOrder(type, x));
     }
 
-    public static bool IsAllPrimitive(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public static bool IsAllPrimitive(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         if (DataType.IsPrimitiveType(type))
             return true;
@@ -37,7 +38,7 @@ public static class DataTypeUtils
         return true;
     }
 
-    private static bool InternalIsAnonymousType(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    private static bool InternalIsAnonymousType(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         if (DataType.IsPrimitiveType(type))
             return true;
@@ -75,7 +76,7 @@ public static class DataTypeUtils
         return true;
     }
 
-    public static bool IsAnonymousType(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public static bool IsAnonymousType(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         if (membersOrder != null)
             return InternalIsAnonymousType(type, membersOrder);
@@ -83,14 +84,14 @@ public static class DataTypeUtils
         return CacheIsAnonymousTypes.GetOrAdd(type, x => InternalIsAnonymousType(x));
     }
 
-    public static Type Anonymous(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public static Type Anonymous(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         var dataType = BuildDataType(type, membersOrder);
 
         return BuildType(dataType);
     }
 
-    private static DataType BuildDataType(Type type, Func<Type, MemberInfo, int> membersOrder, HashSet<Type> cycleCheck)
+    private static DataType BuildDataType(Type type, Func<Type, MemberInfo, int>? membersOrder, HashSet<Type> cycleCheck)
     {
         if (DataType.IsPrimitiveType(type))
             return DataType.FromPrimitiveType(type);
@@ -144,7 +145,7 @@ public static class DataTypeUtils
         return DataType.Slots(slots.ToArray());
     }
 
-    public static DataType BuildDataType(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public static DataType BuildDataType(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         if (DataType.IsPrimitiveType(type) || type.IsEnum || type == typeof(Guid) || type.IsKeyValuePair() || type.IsArray || type.IsList() || type.IsDictionary() || type.IsNullable())
             return BuildDataType(type, membersOrder, new HashSet<Type>());

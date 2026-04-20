@@ -11,10 +11,10 @@ public class Transformer<T1, T2> : ITransformer<T1, T2>
 
     private readonly Type _type1;
     private readonly Type _type2;
-    private readonly Func<Type, MemberInfo, int> _membersOrder1;
-    private readonly Func<Type, MemberInfo, int> _membersOrder2;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder1;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder2;
 
-    public Transformer(Func<Type, MemberInfo, int> membersOrder1 = null, Func<Type, MemberInfo, int> membersOrder2 = null)
+    public Transformer(Func<Type, MemberInfo, int>? membersOrder1 = null, Func<Type, MemberInfo, int>? membersOrder2 = null)
     {
         if (!TransformerHelper.CheckCompatible(typeof(T1), typeof(T2), new HashSet<Type>(), membersOrder1, membersOrder2))
             throw new ArgumentException($"{typeof(T1)} not compatible with {typeof(T2).ToString()}");
@@ -76,7 +76,7 @@ public class Transformer<T1, T2> : ITransformer<T1, T2>
 
 public static class TransformerHelper
 {
-    public static Expression BuildBody(Expression value1, Expression value2, Func<Type, MemberInfo, int> membersOrder1, Func<Type, MemberInfo, int> membersOrder2)
+    public static Expression BuildBody(Expression value1, Expression value2, Func<Type, MemberInfo, int>? membersOrder1, Func<Type, MemberInfo, int>? membersOrder2)
     {
         var type1 = value1.Type;
         var type2 = value2.Type;
@@ -84,8 +84,8 @@ public static class TransformerHelper
         if (type1 == typeof(Guid) || type2 == typeof(Guid))
             return Expression.Assign(value1,
                     type1 == typeof(Guid) ?
-                    value2.Type == typeof(Guid) ? value2 : Expression.New(type1.GetConstructor(new[] { typeof(byte[]) }), value2) :
-                        Expression.Call(value2, type2.GetMethod("ToByteArray"))
+                    value2.Type == typeof(Guid) ? value2 : Expression.New(type1.GetConstructor(new[] { typeof(byte[]) })!, value2) :
+                        Expression.Call(value2, type2.GetMethod("ToByteArray")!)
                 );
 
         if (type1.IsEnum || type2.IsEnum)
@@ -103,7 +103,7 @@ public static class TransformerHelper
             var value = Expression.Variable(type1.GetGenericArguments()[1]);
 
             return Expression.Assign(value1,
-                Expression.New((typeof(KeyValuePair<,>).MakeGenericType(key.Type, value.Type)).GetConstructor(new[] { key.Type, value.Type }),
+                Expression.New((typeof(KeyValuePair<,>).MakeGenericType(key.Type, value.Type)).GetConstructor(new[] { key.Type, value.Type })!,
                     Expression.Block(key.Type,
                         new[] { key },
                         BuildBody(key, Expression.PropertyOrField(value2, type2.IsKeyValuePair() ? "Key" : DataTypeUtils.GetPublicMembers(value2.Type, membersOrder2).First().Name), membersOrder1, membersOrder2),
@@ -117,14 +117,14 @@ public static class TransformerHelper
 
         if (type1.IsList() || type1.IsArray)
         {
-            var element = Expression.Variable(type1.IsArray ? type1.GetElementType() : type1.GetGenericArguments()[0]);
+            var element = Expression.Variable(type1.IsArray ? type1.GetElementType()! : type1.GetGenericArguments()[0]);
 
             var block = Expression.Block(new[] { element },
-                Expression.Assign(value1, Expression.New(value1.Type.GetConstructor(new[] { typeof(int) }), Expression.PropertyOrField(value2, type2.IsList() ? "Count" : "Length"))),
+                Expression.Assign(value1, Expression.New(value1.Type.GetConstructor(new[] { typeof(int) })!, Expression.PropertyOrField(value2, type2.IsList() ? "Count" : "Length"))),
                 value2.For(i =>
                 {
                     return type2.IsList() ?
-                        Expression.Call(value1, type1.GetMethod("Add"), BuildBody(element, value2.This(i), membersOrder1, membersOrder2)) :
+                        Expression.Call(value1, type1.GetMethod("Add")!, BuildBody(element, value2.This(i), membersOrder1, membersOrder2)) :
                         Expression.Assign(Expression.ArrayAccess(value1, i), BuildBody(element, Expression.ArrayAccess(value2, i), membersOrder1, membersOrder2));
                 },
                 Expression.Label())
@@ -145,10 +145,10 @@ public static class TransformerHelper
 
             var block = Expression.Block(new[] { key, value },
                 Expression.Assign(value1, type2.GetGenericArguments()[0] == typeof(byte[]) ?
-                    Expression.New(type1.GetConstructor(new[] { typeof(int), typeof(IEqualityComparer<byte[]>) }), Expression.PropertyOrField(value2, "Count"), Expression.Field(null, typeof(BigEndianByteArrayEqualityComparer), "Instance")) :
-                    Expression.New(type1.GetConstructor(new[] { typeof(int) }), Expression.PropertyOrField(value2, "Count"))),
+                    Expression.New(type1.GetConstructor(new[] { typeof(int), typeof(IEqualityComparer<byte[]>) })!, Expression.PropertyOrField(value2, "Count"), Expression.Field(null, typeof(BigEndianByteArrayEqualityComparer), "Instance")) :
+                    Expression.New(type1.GetConstructor(new[] { typeof(int) })!, Expression.PropertyOrField(value2, "Count"))),
                 value2.ForEach(current =>
-                Expression.Call(value1, type1.GetMethod("Add"),
+                Expression.Call(value1, type1.GetMethod("Add")!,
                     BuildBody(key, Expression.Property(current, "Key"), membersOrder1, membersOrder2),
                     BuildBody(value, Expression.Property(current, "Value"), membersOrder1, membersOrder2)),
                 Expression.Label()
@@ -171,7 +171,7 @@ public static class TransformerHelper
             var block = Expression.Block(new[] { data1Var, data2Var },
                     Expression.Assign(data2Var, value2),
                     Expression.Assign(data1Var, Expression.New(
-                        type1.GetConstructor(new[] { type1.GetGenericArguments()[0] }),
+                        type1.GetConstructor(new[] { type1.GetGenericArguments()[0] })!,
                             constructParam.GetType() == type1.GetGenericArguments()[0] ?
                             constructParam :
                             Expression.Convert(constructParam, type1.GetGenericArguments()[0]))),
@@ -228,7 +228,7 @@ public static class TransformerHelper
         throw new NotSupportedException(type1.ToString());
     }
 
-    public static bool CheckCompatible(Type type1, Type type2, HashSet<Type> cycleCheck, Func<Type, MemberInfo, int> membersOrder1 = null, Func<Type, MemberInfo, int> membersOrder2 = null)
+    public static bool CheckCompatible(Type type1, Type type2, HashSet<Type> cycleCheck, Func<Type, MemberInfo, int>? membersOrder1 = null, Func<Type, MemberInfo, int>? membersOrder2 = null)
     {
         if (type1 == typeof(Guid) || type1 == typeof(byte[]))
             return type2 == typeof(Guid) || type2 == typeof(byte[]);
@@ -240,7 +240,7 @@ public static class TransformerHelper
             return (type1 == type2) || (IsNumberType(type1) && IsNumberType(type2));
 
         if (type1.IsArray)
-            return CheckCompatible(type1.GetElementType(), type2.GetElementType(), cycleCheck, membersOrder1, membersOrder2);
+            return CheckCompatible(type1.GetElementType()!, type2.GetElementType()!, cycleCheck, membersOrder1, membersOrder2);
 
         if (type1.IsList())
             return CheckCompatible(type1.GetGenericArguments()[0], type2.GetGenericArguments()[0], cycleCheck, membersOrder1, membersOrder2);
@@ -315,7 +315,7 @@ public static class TransformerHelper
     public static bool IsEqualsTypes(Type type1, Type type2)
     {
         if (type1.IsArray && type2.IsArray)
-            return IsEqualsTypes(type1.GetElementType(), type2.GetElementType());
+            return IsEqualsTypes(type1.GetElementType()!, type2.GetElementType()!);
 
         if (type1.IsList() && type2.IsList())
             return IsEqualsTypes(type1.GetGenericArguments()[0], type2.GetGenericArguments()[0]);

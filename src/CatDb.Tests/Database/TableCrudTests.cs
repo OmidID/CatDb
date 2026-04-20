@@ -173,7 +173,7 @@ public class TableCrudTests : IDisposable
         table[1] = "one";
         table[5] = "five";
         _engine.Commit();
-        table.FirstRow.Key.Should().Be(1);
+        table.FirstRow!.Value.Key.Should().Be(1);
     }
 
     [Fact]
@@ -184,7 +184,7 @@ public class TableCrudTests : IDisposable
         table[1] = "one";
         table[5] = "five";
         _engine.Commit();
-        table.LastRow.Key.Should().Be(10);
+        table.LastRow!.Value.Key.Should().Be(10);
     }
 
     // ── Multiple tables isolation ─────────────────────────────────────────────

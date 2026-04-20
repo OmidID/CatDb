@@ -1,7 +1,7 @@
 ﻿namespace CatDb.Data;
 public class Data<T> : IData
 {
-    public T Value;
+    public T Value = default!;
 
     public Data()
     {
@@ -14,6 +14,6 @@ public class Data<T> : IData
 
     public override string ToString()
     {
-        return Value.ToString();
+        return Value?.ToString() ?? string.Empty;
     }
 }

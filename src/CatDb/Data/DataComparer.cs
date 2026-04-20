@@ -9,9 +9,9 @@ public class DataComparer : IComparer<IData>
     private readonly Type _type;
     private readonly Type _dataType;
     private readonly CompareOption[] _compareOptions;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
 
-    public DataComparer(Type type, CompareOption[] compareOptions, Func<Type, MemberInfo, int> membersOrder = null)
+    public DataComparer(Type type, CompareOption[] compareOptions, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         _type = type;
         _dataType = typeof(Data<>).MakeGenericType(type);
@@ -23,7 +23,7 @@ public class DataComparer : IComparer<IData>
         _compare = CreateCompareMethod().Compile();
     }
 
-    public DataComparer(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public DataComparer(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
         : this(type, CompareOption.GetDefaultCompareOptions(type, membersOrder), membersOrder)
     {
     }
@@ -47,8 +47,8 @@ public class DataComparer : IComparer<IData>
         return Expression.Lambda<Func<IData, IData, int>>(ComparerHelper.CreateComparerBody(list, parameters, value1, value2, _compareOptions, _membersOrder), x, y);
     }
 
-    public int Compare(IData x, IData y)
+    public int Compare(IData? x, IData? y)
     {
-        return _compare(x, y);
+        return _compare(x!, y!);
     }
 }

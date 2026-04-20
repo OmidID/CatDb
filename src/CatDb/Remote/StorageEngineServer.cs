@@ -1,3 +1,4 @@
+#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using CatDb.Data;
 using CatDb.Database;
 using CatDb.General.Communication;
@@ -12,7 +13,6 @@ public class StorageEngineServer
 
     private readonly Func<XTablePortable, ICommand, ICommand>[] _commandsIIndexExecute;
     private readonly Func<ICommand, ICommand>[] _commandsStorageEngineExecute;
-    private Func<ICommand, ICommand>[] _commandsHeapExecute;
 
     private readonly IStorageEngine _storageEngine;
     private readonly TcpServer _tcpServer;

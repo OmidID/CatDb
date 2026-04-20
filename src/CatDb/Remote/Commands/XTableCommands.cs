@@ -135,9 +135,9 @@ public abstract class OutValueCommand : ICommand
     private readonly int _code;
 
     public IData Key;
-    public IData Record;
+    public IData? Record;
 
-    public OutValueCommand(int code, IData key, IData record)
+    public OutValueCommand(int code, IData key, IData? record)
     {
         _code = code;
 
@@ -152,7 +152,7 @@ public abstract class OutValueCommand : ICommand
 
 public class TryGetCommand : OutValueCommand
 {
-    public TryGetCommand(IData key, IData record)
+    public TryGetCommand(IData key, IData? record)
         : base(CommandCode.TRY_GET, key, record)
     {
     }
@@ -243,13 +243,13 @@ public abstract class IteratorCommand : ICommand
 {
     private readonly int _code;
 
-    public IData FromKey;
-    public IData ToKey;
+    public IData? FromKey;
+    public IData? ToKey;
 
     public int PageCount;
-    public List<KeyValuePair<IData, IData>> List;
+    public List<KeyValuePair<IData, IData>>? List;
 
-    public IteratorCommand(int code, int pageCount, IData from, IData to, List<KeyValuePair<IData, IData>> list)
+    public IteratorCommand(int code, int pageCount, IData? from, IData? to, List<KeyValuePair<IData, IData>>? list)
     {
         _code = code;
 
@@ -267,7 +267,7 @@ public abstract class IteratorCommand : ICommand
 
 public class ForwardCommand : IteratorCommand
 {
-    public ForwardCommand(int pageCount, IData from, IData to, List<KeyValuePair<IData, IData>> list)
+    public ForwardCommand(int pageCount, IData? from, IData? to, List<KeyValuePair<IData, IData>>? list)
         : base(CommandCode.FORWARD, pageCount, from, to, list)
     {
     }
@@ -275,7 +275,7 @@ public class ForwardCommand : IteratorCommand
 
 public class BackwardCommand : IteratorCommand
 {
-    public BackwardCommand(int pageCount, IData from, IData to, List<KeyValuePair<IData, IData>> list)
+    public BackwardCommand(int pageCount, IData? from, IData? to, List<KeyValuePair<IData, IData>>? list)
         : base(CommandCode.BACKWARD, pageCount, from, to, list)
     {
     }
@@ -287,9 +287,9 @@ public class BackwardCommand : IteratorCommand
 
 public class XTableDescriptorGetCommand : ICommand
 {
-    public IDescriptor Descriptor;
+    public IDescriptor? Descriptor;
 
-    public XTableDescriptorGetCommand(IDescriptor descriptor)
+    public XTableDescriptorGetCommand(IDescriptor? descriptor)
     {
         Descriptor = descriptor;
     }
@@ -301,9 +301,9 @@ public class XTableDescriptorGetCommand : ICommand
 
 public class XTableDescriptorSetCommand : ICommand
 {
-    public IDescriptor Descriptor;
+    public IDescriptor? Descriptor;
 
-    public XTableDescriptorSetCommand(IDescriptor descriptor)
+    public XTableDescriptorSetCommand(IDescriptor? descriptor)
     {
         Descriptor = descriptor;
     }

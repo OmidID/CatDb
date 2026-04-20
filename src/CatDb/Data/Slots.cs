@@ -6,7 +6,7 @@ public interface ISlots
 [Serializable]
 public class Slots<TSlot0> : ISlots
 {
-    public TSlot0 Slot0;
+    public TSlot0 Slot0 = default!;
 
     public Slots()
     {
@@ -21,8 +21,8 @@ public class Slots<TSlot0> : ISlots
 [Serializable]
 public class Slots<TSlot0, TSlot1> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
 
     public Slots()
     {
@@ -38,9 +38,9 @@ public class Slots<TSlot0, TSlot1> : ISlots
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
 
     public Slots()
     {
@@ -57,10 +57,10 @@ public class Slots<TSlot0, TSlot1, TSlot2> : ISlots
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
 
     public Slots()
     {
@@ -78,11 +78,11 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3> : ISlots
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
 
     public Slots()
     {
@@ -101,12 +101,12 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4> : ISlots
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
-    public TSlot5 Slot5;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
+    public TSlot5 Slot5 = default!;
 
     public Slots()
     {
@@ -126,13 +126,13 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5> : ISlots
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
-    public TSlot5 Slot5;
-    public TSlot6 Slot6;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
+    public TSlot5 Slot5 = default!;
+    public TSlot6 Slot6 = default!;
 
     public Slots()
     {
@@ -153,14 +153,14 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6> : ISl
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot7> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
-    public TSlot5 Slot5;
-    public TSlot6 Slot6;
-    public TSlot7 Slot7;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
+    public TSlot5 Slot5 = default!;
+    public TSlot6 Slot6 = default!;
+    public TSlot7 Slot7 = default!;
 
     public Slots()
     {
@@ -182,15 +182,15 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot7, TSlot8> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
-    public TSlot5 Slot5;
-    public TSlot6 Slot6;
-    public TSlot7 Slot7;
-    public TSlot8 Slot8;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
+    public TSlot5 Slot5 = default!;
+    public TSlot6 Slot6 = default!;
+    public TSlot7 Slot7 = default!;
+    public TSlot8 Slot8 = default!;
 
     public Slots()
     {
@@ -213,16 +213,16 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot7, TSlot8, TSlot9> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
-    public TSlot5 Slot5;
-    public TSlot6 Slot6;
-    public TSlot7 Slot7;
-    public TSlot8 Slot8;
-    public TSlot9 Slot9;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
+    public TSlot5 Slot5 = default!;
+    public TSlot6 Slot6 = default!;
+    public TSlot7 Slot7 = default!;
+    public TSlot8 Slot8 = default!;
+    public TSlot9 Slot9 = default!;
 
     public Slots()
     {
@@ -246,17 +246,17 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot7, TSlot8, TSlot9, TSlot10> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
-    public TSlot5 Slot5;
-    public TSlot6 Slot6;
-    public TSlot7 Slot7;
-    public TSlot8 Slot8;
-    public TSlot9 Slot9;
-    public TSlot10 Slot10;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
+    public TSlot5 Slot5 = default!;
+    public TSlot6 Slot6 = default!;
+    public TSlot7 Slot7 = default!;
+    public TSlot8 Slot8 = default!;
+    public TSlot9 Slot9 = default!;
+    public TSlot10 Slot10 = default!;
 
     public Slots()
     {
@@ -281,18 +281,18 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot7, TSlot8, TSlot9, TSlot10, TSlot11> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
-    public TSlot5 Slot5;
-    public TSlot6 Slot6;
-    public TSlot7 Slot7;
-    public TSlot8 Slot8;
-    public TSlot9 Slot9;
-    public TSlot10 Slot10;
-    public TSlot11 Slot11;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
+    public TSlot5 Slot5 = default!;
+    public TSlot6 Slot6 = default!;
+    public TSlot7 Slot7 = default!;
+    public TSlot8 Slot8 = default!;
+    public TSlot9 Slot9 = default!;
+    public TSlot10 Slot10 = default!;
+    public TSlot11 Slot11 = default!;
 
     public Slots()
     {
@@ -318,19 +318,19 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot7, TSlot8, TSlot9, TSlot10, TSlot11, TSlot12> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
-    public TSlot5 Slot5;
-    public TSlot6 Slot6;
-    public TSlot7 Slot7;
-    public TSlot8 Slot8;
-    public TSlot9 Slot9;
-    public TSlot10 Slot10;
-    public TSlot11 Slot11;
-    public TSlot12 Slot12;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
+    public TSlot5 Slot5 = default!;
+    public TSlot6 Slot6 = default!;
+    public TSlot7 Slot7 = default!;
+    public TSlot8 Slot8 = default!;
+    public TSlot9 Slot9 = default!;
+    public TSlot10 Slot10 = default!;
+    public TSlot11 Slot11 = default!;
+    public TSlot12 Slot12 = default!;
 
     public Slots()
     {
@@ -357,20 +357,20 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot7, TSlot8, TSlot9, TSlot10, TSlot11, TSlot12, TSlot13> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
-    public TSlot5 Slot5;
-    public TSlot6 Slot6;
-    public TSlot7 Slot7;
-    public TSlot8 Slot8;
-    public TSlot9 Slot9;
-    public TSlot10 Slot10;
-    public TSlot11 Slot11;
-    public TSlot12 Slot12;
-    public TSlot13 Slot13;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
+    public TSlot5 Slot5 = default!;
+    public TSlot6 Slot6 = default!;
+    public TSlot7 Slot7 = default!;
+    public TSlot8 Slot8 = default!;
+    public TSlot9 Slot9 = default!;
+    public TSlot10 Slot10 = default!;
+    public TSlot11 Slot11 = default!;
+    public TSlot12 Slot12 = default!;
+    public TSlot13 Slot13 = default!;
 
     public Slots()
     {
@@ -398,21 +398,21 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot7, TSlot8, TSlot9, TSlot10, TSlot11, TSlot12, TSlot13, TSlot14> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
-    public TSlot5 Slot5;
-    public TSlot6 Slot6;
-    public TSlot7 Slot7;
-    public TSlot8 Slot8;
-    public TSlot9 Slot9;
-    public TSlot10 Slot10;
-    public TSlot11 Slot11;
-    public TSlot12 Slot12;
-    public TSlot13 Slot13;
-    public TSlot14 Slot14;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
+    public TSlot5 Slot5 = default!;
+    public TSlot6 Slot6 = default!;
+    public TSlot7 Slot7 = default!;
+    public TSlot8 Slot8 = default!;
+    public TSlot9 Slot9 = default!;
+    public TSlot10 Slot10 = default!;
+    public TSlot11 Slot11 = default!;
+    public TSlot12 Slot12 = default!;
+    public TSlot13 Slot13 = default!;
+    public TSlot14 Slot14 = default!;
 
     public Slots()
     {
@@ -441,22 +441,22 @@ public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot
 [Serializable]
 public class Slots<TSlot0, TSlot1, TSlot2, TSlot3, TSlot4, TSlot5, TSlot6, TSlot7, TSlot8, TSlot9, TSlot10, TSlot11, TSlot12, TSlot13, TSlot14, TSlot15> : ISlots
 {
-    public TSlot0 Slot0;
-    public TSlot1 Slot1;
-    public TSlot2 Slot2;
-    public TSlot3 Slot3;
-    public TSlot4 Slot4;
-    public TSlot5 Slot5;
-    public TSlot6 Slot6;
-    public TSlot7 Slot7;
-    public TSlot8 Slot8;
-    public TSlot9 Slot9;
-    public TSlot10 Slot10;
-    public TSlot11 Slot11;
-    public TSlot12 Slot12;
-    public TSlot13 Slot13;
-    public TSlot14 Slot14;
-    public TSlot15 Slot15;
+    public TSlot0 Slot0 = default!;
+    public TSlot1 Slot1 = default!;
+    public TSlot2 Slot2 = default!;
+    public TSlot3 Slot3 = default!;
+    public TSlot4 Slot4 = default!;
+    public TSlot5 Slot5 = default!;
+    public TSlot6 Slot6 = default!;
+    public TSlot7 Slot7 = default!;
+    public TSlot8 Slot8 = default!;
+    public TSlot9 Slot9 = default!;
+    public TSlot10 Slot10 = default!;
+    public TSlot11 Slot11 = default!;
+    public TSlot12 Slot12 = default!;
+    public TSlot13 Slot13 = default!;
+    public TSlot14 Slot14 = default!;
+    public TSlot15 Slot15 = default!;
 
     public Slots()
     {

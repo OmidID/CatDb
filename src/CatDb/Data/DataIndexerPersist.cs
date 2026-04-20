@@ -11,9 +11,9 @@ public class DataIndexerPersist : IIndexerPersist<IData>
 
     private readonly Type _type;
     private readonly IIndexerPersist[] _persists;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
 
-    public DataIndexerPersist(Type type, IIndexerPersist[] persists, Func<Type, MemberInfo, int> membersOrder = null)
+    public DataIndexerPersist(Type type, IIndexerPersist[] persists, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         _type = type;
         _persists = persists;
@@ -23,7 +23,7 @@ public class DataIndexerPersist : IIndexerPersist<IData>
         _load = CreateLoadMethod().Compile();
     }
 
-    public DataIndexerPersist(Type T, Func<Type, MemberInfo, int> membersOrder = null)
+    public DataIndexerPersist(Type T, Func<Type, MemberInfo, int>? membersOrder = null)
         : this(T, IndexerPersistHelper.GetDefaultPersists(T, membersOrder), membersOrder)
     {
     }
@@ -35,7 +35,7 @@ public class DataIndexerPersist : IIndexerPersist<IData>
         var count = Expression.Parameter(typeof(int), "count");
 
         var idx = Expression.Variable(typeof(int), "idx");
-        var callValues = Expression.Convert(Expression.Call(values, values.Type.GetMethod("Invoke"), idx), typeof(Data<>).MakeGenericType(_type)).Value();
+        var callValues = Expression.Convert(Expression.Call(values, values.Type.GetMethod("Invoke")!, idx), typeof(Data<>).MakeGenericType(_type)).Value();
 
         var body = IndexerPersistHelper.CreateStoreBody(_type, _persists, writer, callValues, idx, count, _membersOrder);
         var lambda = Expression.Lambda<Action<BinaryWriter, Func<int, IData>, int>>(body, writer, values, count);
@@ -54,12 +54,12 @@ public class DataIndexerPersist : IIndexerPersist<IData>
         var body = DataType.IsPrimitiveType(_type) ?
                 IndexerPersistHelper.SingleSlotCreateLoadBody(_type, true, values, reader, count, _persists) :
                 Expression.Block(new[] { array },
-                    Expression.Assign(array, Expression.New(array.Type.GetConstructor(new[] { typeof(int) }), count)),
+                    Expression.Assign(array, Expression.New(array.Type.GetConstructor(new[] { typeof(int) })!, count)),
                     array.For(i =>
                     {
                         return Expression.Block(Expression.Assign(Expression.ArrayAccess(array, i), Expression.New(typeof(Data<>).MakeGenericType(_type))),
                               Expression.Assign(Expression.ArrayAccess(array, i).Value(), Expression.New(_type)),
-                                Expression.Call(values, values.Type.GetMethod("Invoke"), i, Expression.ArrayAccess(array, i)));
+                                Expression.Call(values, values.Type.GetMethod("Invoke")!, i, Expression.ArrayAccess(array, i)));
                     }, Expression.Label(), count),
                     IndexerPersistHelper.CreateLoadBody(_type, true, reader, array, count, _membersOrder, _persists)
                 );
@@ -94,9 +94,9 @@ public class DataIndexerPersist : IIndexerPersist<IData>
     //    public Type Type { get; private set; }
     //    public IIndexerPersist[] Persists { get; private set; }
 
-    //    public readonly Func<Type, MemberInfo, int> MembersOrder;
+    //    public readonly Func<Type, MemberInfo, int>? MembersOrder;
 
-    //    public TickIndexerPersist(Type type, IIndexerPersist[] persist, Func<Type, MemberInfo, int> membersOrder = null)
+    //    public TickIndexerPersist(Type type, IIndexerPersist[] persist, Func<Type, MemberInfo, int>? membersOrder = null)
     //    {
     //        Persists = persist;
     //        Type = type;

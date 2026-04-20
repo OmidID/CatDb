@@ -8,7 +8,7 @@ public class Descriptor : IDescriptor
 {
     private DescriptorStructure InternalDescriptor { get; set; }
 
-    public Descriptor(long id, string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType, DateTime createTime, DateTime modifiedTime, DateTime accessTime, byte[] tag)
+    public Descriptor(long id, string name, int structureType, DataType keyDataType, DataType recordDataType, Type? keyType, Type? recordType, DateTime createTime, DateTime modifiedTime, DateTime accessTime, byte[]? tag)
     {
         InternalDescriptor = new DescriptorStructure(id, name, structureType, keyDataType, recordDataType, keyType, recordType, createTime, modifiedTime, accessTime, tag);
     }
@@ -60,49 +60,49 @@ public class Descriptor : IDescriptor
         set => InternalDescriptor.RecordDataType = value;
     }
 
-    public Type KeyType
+    public Type? KeyType
     {
         get => InternalDescriptor.KeyType;
         set => InternalDescriptor.KeyType = value;
     }
 
-    public Type RecordType
+    public Type? RecordType
     {
         get => InternalDescriptor.RecordType;
         set => InternalDescriptor.RecordType = value;
     }
 
-    public IComparer<IData> KeyComparer
+    public IComparer<IData>? KeyComparer
     {
         get => InternalDescriptor.KeyComparer;
         set => InternalDescriptor.KeyComparer = value;
     }
 
-    public IEqualityComparer<IData> KeyEqualityComparer
+    public IEqualityComparer<IData>? KeyEqualityComparer
     {
         get => InternalDescriptor.KeyEqualityComparer;
         set => InternalDescriptor.KeyEqualityComparer = value;
     }
 
-    public IPersist<IData> KeyPersist
+    public IPersist<IData>? KeyPersist
     {
         get => InternalDescriptor.KeyPersist;
         set => InternalDescriptor.KeyPersist = value;
     }
 
-    public IPersist<IData> RecordPersist
+    public IPersist<IData>? RecordPersist
     {
         get => InternalDescriptor.RecordPersist;
         set => InternalDescriptor.RecordPersist = value;
     }
 
-    public IIndexerPersist<IData> KeyIndexerPersist
+    public IIndexerPersist<IData>? KeyIndexerPersist
     {
         get => InternalDescriptor.KeyIndexerPersist;
         set => InternalDescriptor.KeyIndexerPersist = value;
     }
 
-    public IIndexerPersist<IData> RecordIndexerPersist
+    public IIndexerPersist<IData>? RecordIndexerPersist
     {
         get => InternalDescriptor.RecordIndexerPersist;
         set => InternalDescriptor.RecordIndexerPersist = value;
@@ -126,7 +126,7 @@ public class Descriptor : IDescriptor
         private set => InternalDescriptor.AccessTime = value;
     }
 
-    public byte[] Tag
+    public byte[]? Tag
     {
         get => InternalDescriptor.Tag;
         set => InternalDescriptor.Tag = value;
@@ -149,7 +149,7 @@ public class Descriptor : IDescriptor
 
 public class DescriptorStructure : IDescriptor
 {
-    public DescriptorStructure(long id, string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType, DateTime createTime, DateTime modifiedTime, DateTime accessTime, byte[] tag)
+    public DescriptorStructure(long id, string name, int structureType, DataType keyDataType, DataType recordDataType, Type? keyType, Type? recordType, DateTime createTime, DateTime modifiedTime, DateTime accessTime, byte[]? tag)
     {
         Id = id;
         Name = name;
@@ -177,23 +177,23 @@ public class DescriptorStructure : IDescriptor
     public DataType KeyDataType { get; set; }
     public DataType RecordDataType { get; set; }
 
-    public Type KeyType { get; set; }
-    public Type RecordType { get; set; }
+    public Type? KeyType { get; set; }
+    public Type? RecordType { get; set; }
 
-    public IComparer<IData> KeyComparer { get; set; }
-    public IEqualityComparer<IData> KeyEqualityComparer { get; set; }
+    public IComparer<IData>? KeyComparer { get; set; }
+    public IEqualityComparer<IData>? KeyEqualityComparer { get; set; }
 
-    public IPersist<IData> KeyPersist { get; set; }
-    public IPersist<IData> RecordPersist { get; set; }
+    public IPersist<IData>? KeyPersist { get; set; }
+    public IPersist<IData>? RecordPersist { get; set; }
 
-    public IIndexerPersist<IData> KeyIndexerPersist { get; set; }
-    public IIndexerPersist<IData> RecordIndexerPersist { get; set; }
+    public IIndexerPersist<IData>? KeyIndexerPersist { get; set; }
+    public IIndexerPersist<IData>? RecordIndexerPersist { get; set; }
 
     public DateTime CreateTime { get; set; }
     public DateTime ModifiedTime { get; set; }
     public DateTime AccessTime { get; set; }
 
-    public byte[] Tag { get; set; }
+    public byte[]? Tag { get; set; }
 
     //public byte[] Tag
     //{

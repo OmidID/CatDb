@@ -9,7 +9,9 @@ public partial class WTree
         public Branch Branch;
         public volatile bool IsExpiredFromCache;
 #if DEBUG
+#pragma warning disable CS0649
         public volatile int TaskId;
+#pragma warning restore CS0649
 #endif
         private static long _globalTouchId;
         private long _touchId;

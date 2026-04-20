@@ -9,9 +9,9 @@ public class ValueToObjects<T> : IToObjects<T>
     private readonly Func<T, object[]> _to;
 
     private readonly Type _type;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
 
-    public ValueToObjects(Func<Type, MemberInfo, int> membersOrder = null)
+    public ValueToObjects(Func<Type, MemberInfo, int>? membersOrder = null)
     {
         if (!DataType.IsPrimitiveType(typeof(T)) && !typeof(T).HasDefaultConstructor())
             throw new NotSupportedException("No default constructor.");
@@ -64,7 +64,7 @@ public class ValueToObjects<T> : IToObjects<T>
 
 public static class ValueToObjectsHelper
 {
-    public static Expression ToObjects(Expression item, Func<Type, MemberInfo, int> membersOrder)
+    public static Expression ToObjects(Expression item, Func<Type, MemberInfo, int>? membersOrder)
     {
         var types = DataType.IsPrimitiveType(item.Type) ? new[] { item.Type } : DataTypeUtils.GetPublicMembers(item.Type, membersOrder).Select(x => x.GetPropertyOrFieldType()).ToArray();
 
@@ -80,7 +80,7 @@ public static class ValueToObjectsHelper
         return Expression.NewArrayInit(typeof(object), values);
     }
 
-    public static Expression FromObjects(Expression item, ParameterExpression objectArray, Func<Type, MemberInfo, int> membersOrder)
+    public static Expression FromObjects(Expression item, ParameterExpression objectArray, Func<Type, MemberInfo, int>? membersOrder)
     {
         var types = DataType.IsPrimitiveType(item.Type) ? new[] { item.Type } : DataTypeUtils.GetPublicMembers(item.Type, membersOrder).Select(x => x.GetPropertyOrFieldType()).ToArray();
 

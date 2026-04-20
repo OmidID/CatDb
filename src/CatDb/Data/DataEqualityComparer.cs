@@ -8,10 +8,10 @@ public class DataEqualityComparer : IEqualityComparer<IData>
     private readonly Func<IData, int> _getHashCode;
 
     private readonly Type _type;
-    private readonly Func<Type, MemberInfo, int> _membersOrder;
+    private readonly Func<Type, MemberInfo, int>? _membersOrder;
     private readonly CompareOption[] _compareOptions;
 
-    public DataEqualityComparer(Type type, CompareOption[] compareOptions, Func<Type, MemberInfo, int> membersOrder = null)
+    public DataEqualityComparer(Type type, CompareOption[] compareOptions, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         _type = type;
         CompareOption.CheckCompareOptions(type, compareOptions, membersOrder);
@@ -22,7 +22,7 @@ public class DataEqualityComparer : IEqualityComparer<IData>
         _getHashCode = CreateGetHashCodeMethod().Compile();
     }
 
-    public DataEqualityComparer(Type type, Func<Type, MemberInfo, int> membersOrder = null)
+    public DataEqualityComparer(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
         : this(type, CompareOption.GetDefaultCompareOptions(type, membersOrder), membersOrder)
     {
     }
@@ -62,9 +62,9 @@ public class DataEqualityComparer : IEqualityComparer<IData>
         return lambda;
     }
 
-    public bool Equals(IData x, IData y)
+    public bool Equals(IData? x, IData? y)
     {
-        return _equals(x, y);
+        return _equals(x!, y!);
     }
 
     public int GetHashCode(IData obj)

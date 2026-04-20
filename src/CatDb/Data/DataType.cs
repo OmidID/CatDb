@@ -60,8 +60,8 @@ public sealed class DataType : IEquatable<DataType>, IEnumerable<DataType>
     public static readonly DataType ByteArray = new(Code.ByteArray, null);
 
     private int? _cachedHashCode;
-    private string _cachedToString;
-    private byte[] _cachedSerialize;
+    private string? _cachedToString;
+    private byte[]? _cachedSerialize;
 
     private readonly Code _code;
     private readonly DataType[] _types;
@@ -110,10 +110,10 @@ public sealed class DataType : IEquatable<DataType>, IEnumerable<DataType>
         };
     }
 
-    private DataType(Code code, params DataType[] types)
+    private DataType(Code code, DataType[]? types = null)
     {
         _code = code;
-        _types = types;
+        _types = types ?? [];
     }
 
     private int InternalGetHashCode()
@@ -207,13 +207,13 @@ public sealed class DataType : IEquatable<DataType>, IEnumerable<DataType>
         }
     }
 
-    public bool Equals(DataType other)
+    public bool Equals(DataType? other)
     {
+        if (other is null)
+            return false;
+
         if (ReferenceEquals(this, other))
             return true;
-
-        if (ReferenceEquals(null, other))
-            return false;
 
         if (_code != other._code)
             return false;
@@ -236,12 +236,12 @@ public sealed class DataType : IEquatable<DataType>, IEnumerable<DataType>
         return true;
     }
 
-    public override bool Equals(object obj)
+    public override bool Equals(object? obj)
     {
-        if (!(obj is DataType))
+        if (obj is not DataType dt)
             return false;
 
-        return Equals((DataType)obj);
+        return Equals(dt);
     }
 
     public override int GetHashCode()
@@ -257,7 +257,7 @@ public sealed class DataType : IEquatable<DataType>, IEnumerable<DataType>
         if (_cachedToString == null)
             _cachedToString = InternalToString();
 
-        return _cachedToString;
+        return _cachedToString!;
     }
 
     public IEnumerator<DataType> GetEnumerator()
@@ -280,14 +280,14 @@ public sealed class DataType : IEquatable<DataType>, IEnumerable<DataType>
             _cachedSerialize = ms.ToArray();
         }
 
-        writer.Write(_cachedSerialize);
+        writer.Write(_cachedSerialize!);
     }
 
     public static DataType Deserialize(BinaryReader reader)
     {
         var code = (Code)reader.ReadByte();
         if (code < Code.Slots)
-            return new DataType(code, null);
+            return new DataType(code);
 
         var types = new DataType[reader.ReadByte()];
         for (var i = 0; i < types.Length; i++)
@@ -309,17 +309,17 @@ public sealed class DataType : IEquatable<DataType>, IEnumerable<DataType>
 
     public static DataType Array(DataType T)
     {
-        return new DataType(Code.Array, T);
+        return new DataType(Code.Array, new[] { T });
     }
 
     public static DataType List(DataType T)
     {
-        return new DataType(Code.List, T);
+        return new DataType(Code.List, new[] { T });
     }
 
     public static DataType Dictionary(DataType key, DataType value)
     {
-        return new DataType(Code.Dictionary, key, value);
+        return new DataType(Code.Dictionary, new[] { key, value });
     }
 
     public static DataType FromPrimitiveType(Type type)
