@@ -1,10 +1,6 @@
-﻿using System.CodeDom;
-using System.CodeDom.Compiler;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
-using Microsoft.CSharp;
-using Environment = CatDb.General.Environment;
 
 namespace CatDb.Data
 {
@@ -23,8 +19,6 @@ namespace CatDb.Data
             if (types.Length == 0)
                 throw new ArgumentException("types.Length == 0");
 
-            if (Environment.RunningOnMono)
-                return BuildTypeCodeDom(baseInterface, className, fieldsPrefix, types);
             return BuildTypeEmit(baseInterface, className, fieldsPrefix, types);
         }
 
@@ -32,7 +26,6 @@ namespace CatDb.Data
         {
             var assemblyName = new AssemblyName(className);
             var assemblyBuilder = AssemblyBuilder.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.RunAndCollect);
-            //AssemblyBuilder assemblyBuilder = AppDomain.CurrentDomain.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.RunAndCollect);
             var moduleBuilder = assemblyBuilder.DefineDynamicModule(assemblyName.Name);
 
             var genericParameters = new string[types.Length];
@@ -68,95 +61,6 @@ namespace CatDb.Data
             ilGenerator.Emit(OpCodes.Ret);
 
             return typeBuilder.CreateType().MakeGenericType(types);
-        }
-
-        private static Type BuildTypeCodeDom(Type baseInterface, string className, string fieldsPrefix, params Type[] types)
-        {
-            var compileUnit = new CodeCompileUnit();
-            var globalNamespace = new CodeNamespace();
-
-            globalNamespace.Imports.Add(new CodeNamespaceImport("System"));
-            globalNamespace.Imports.Add(new CodeNamespaceImport("System.Collections.Generic"));
-            globalNamespace.Imports.Add(new CodeNamespaceImport("System.Linq"));
-            globalNamespace.Imports.Add(new CodeNamespaceImport("System.Text"));
-
-            var classNamespace = new CodeNamespace("CatDb.Data");
-
-            var generatedClass = new CodeTypeDeclaration(className)
-            {
-                IsClass = true,
-                Attributes = MemberAttributes.Public
-            };
-
-            for (var i = 0; i < types.Length; i++)
-                generatedClass.TypeParameters.Add(new CodeTypeParameter("T" + fieldsPrefix + i));
-
-            if(baseInterface != null)
-                generatedClass.BaseTypes.Add(baseInterface);
-
-            var serializableAttribute = new CodeTypeReference(typeof(SerializableAttribute));
-            generatedClass.CustomAttributes.Add(new CodeAttributeDeclaration(serializableAttribute));
-
-            classNamespace.Types.Add(generatedClass);
-
-            compileUnit.Namespaces.Add(globalNamespace);
-            compileUnit.Namespaces.Add(classNamespace);
-
-            var fields = new CodeMemberField[types.Length];
-
-            for (var i = 0; i < fields.Length; i++)
-            {
-                fields[i] = new CodeMemberField("T" + fieldsPrefix + i, fieldsPrefix + i)
-                {
-                    Attributes = MemberAttributes.Public
-                };
-                generatedClass.Members.Add(fields[i]);
-            }
-
-            var defaultConstructor = new CodeConstructor
-            {
-                Attributes = MemberAttributes.Public
-            };
-
-            generatedClass.Members.Add(defaultConstructor);
-
-            var constructor = new CodeConstructor
-            {
-                Attributes = MemberAttributes.Public
-            };
-
-            for (var i = 0; i < types.Length; i++)
-            {
-                var type = new CodeTypeReference("T" + fieldsPrefix + i);
-                constructor.Parameters.Add(new CodeParameterDeclarationExpression(type, fieldsPrefix.ToLower() + i));
-            }
-
-            for (var i = 0; i < types.Length; i++)
-            {
-                var left = new CodeFieldReferenceExpression(new CodeThisReferenceExpression(), fieldsPrefix + i);
-                constructor.Statements.Add(new CodeAssignStatement(left, new CodeArgumentReferenceExpression(fieldsPrefix.ToLower() + i)));
-            }
-
-            generatedClass.Members.Add(constructor);
-
-            var myAssemblyName = Assembly.GetExecutingAssembly().Location;
-            string[] assemblies = { "System.dll", "mscorlib.dll", myAssemblyName };
-
-            var parameters = new CompilerParameters(assemblies);
-
-            CodeDomProvider runTimeProvider = new CSharpCodeProvider();
-            parameters = new CompilerParameters(assemblies)
-            {
-                GenerateExecutable = false,
-                GenerateInMemory = true,
-                IncludeDebugInformation = true,
-                CompilerOptions = "/optimize"
-            };
-
-            var compilerResults = runTimeProvider.CompileAssemblyFromDom(parameters, compileUnit);
-            var generatedType = compilerResults.CompiledAssembly.GetTypes()[0];
-
-            return generatedType.MakeGenericType(types);
         }
 
         public static Type BuildType(params Type[] types)

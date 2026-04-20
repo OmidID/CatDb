@@ -27,6 +27,7 @@ namespace CatDb.WaterfallTree
         private bool _isRootCacheLoaded;
 
         private volatile bool _disposed;
+        public bool IsDisposed => _disposed;
         private volatile bool _shutdown;
         private int _depth = 1;
 

@@ -64,10 +64,10 @@ namespace CatDb.Data
 
             var data = Expression.Variable(typeof(Data<>).MakeGenericType(_type), "d");
 
-            list.Add(Expression.Assign(data, Expression.New(data.Type.GetConstructor(new Type[] { }))));
+            list.Add(Expression.Assign(data, Expression.New(data.Type)));
 
             if (!DataType.IsPrimitiveType(_type))
-                list.Add(Expression.Assign(data.Value(), Expression.New(_type.GetConstructor(new Type[] { }))));
+                list.Add(Expression.Assign(data.Value(), Expression.New(_type)));
 
             list.Add(ValueToStringHelper.CreateParseBody(data.Value(), stringParam, _providers, _delimiters, _membersOrder));
             list.Add(Expression.Label(Expression.Label(typeof(Data<>).MakeGenericType(_type)), data));

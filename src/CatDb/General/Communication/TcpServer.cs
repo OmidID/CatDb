@@ -49,10 +49,7 @@ namespace CatDb.General.Communication
 
             var thread = _worker;
             if (thread != null)
-            {
-                if (!thread.Join(5000))
-                    thread.Abort();
-            }
+                thread.Join(5000);
         }
 
         public bool IsWorking => _worker != null;

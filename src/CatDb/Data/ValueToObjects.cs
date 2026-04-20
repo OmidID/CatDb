@@ -42,7 +42,7 @@ namespace CatDb.Data
             var list = new List<Expression>();
 
             if (!DataType.IsPrimitiveType(_type))
-                list.Add(Expression.Assign(item, Expression.New(item.Type.GetConstructor(new Type[] { }))));
+                list.Add(Expression.Assign(item, Expression.New(item.Type)));
 
             list.Add(ValueToObjectsHelper.FromObjects(item, objectArray, _membersOrder));
             list.Add(Expression.Label(Expression.Label(typeof(T)), item));

@@ -123,7 +123,7 @@ namespace CatDb.Database
         public bool Leaf(IOperationCollection operations, IOrderedSet<IData, IData> data)
         {
             //sequential optimization
-            if (operations.AreAllMonotoneAndPoint && data.IsInternallyOrdered && (data.Count == 0 || operations.Locator.KeyComparer.Compare(data.Last.Key, operations[0].FromKey) < 0))
+            if (operations.AreAllMonotoneAndPoint && operations.CommonAction != OperationCode.UNDEFINED && data.IsInternallyOrdered && (data.Count == 0 || operations.Locator.KeyComparer.Compare(data.Last.Key, operations[0].FromKey) < 0))
                 return SequentialApply(operations, data);
 
             //common action optimization

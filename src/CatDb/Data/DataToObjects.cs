@@ -43,10 +43,10 @@ namespace CatDb.Data
             var objectArray = Expression.Parameter(typeof(object[]), "item");
             var data = Expression.Variable(typeof(Data<>).MakeGenericType(_type));
 
-            var list = new List<Expression> { Expression.Assign(data, Expression.New(data.Type.GetConstructor(new Type[] { }))) };
+            var list = new List<Expression> { Expression.Assign(data, Expression.New(data.Type)) };
 
             if (!DataType.IsPrimitiveType(_type))
-                list.Add(Expression.Assign(data.Value(), Expression.New(data.Value().Type.GetConstructor(new Type[] { }))));
+                list.Add(Expression.Assign(data.Value(), Expression.New(data.Value().Type)));
 
             list.Add(ValueToObjectsHelper.FromObjects(data.Value(), objectArray, _membersOrder));
             list.Add(Expression.Label(Expression.Label(typeof(IData)), data));

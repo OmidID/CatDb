@@ -1,5 +1,4 @@
 ﻿using System.Linq.Expressions;
-using System.Reflection;
 
 namespace CatDb.General.Extensions
 {
@@ -69,30 +68,34 @@ namespace CatDb.General.Extensions
             var hi = Expression.Parameter(typeof(int), "hi");
             var flags = Expression.Parameter(typeof(int), "flags");
 
-#if NETFX_CORE
-            decimalConstructor = typeof(decimal).GetConstructor(new Type[] { typeof(int), typeof(int), typeof(int), typeof(int) });
-#else
-            var decimalConstructor = typeof(decimal).GetConstructor(BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(int), typeof(int), typeof(int), typeof(int) }, null);
-#endif
+            // Use the public decimal(int[]) constructor: new decimal(new[] { lo, mid, hi, flags })
+            var decimalConstructor = typeof(decimal).GetConstructor(new[] { typeof(int[]) })!;
+            var bitsArray = Expression.NewArrayInit(typeof(int), lo, mid, hi, flags);
+            var constructor = Expression.New(decimalConstructor, bitsArray);
 
-            var constructor = Expression.New(decimalConstructor, lo, mid, hi, flags);
-
-            //return new Decimal(lo, mid, hi, flags);
-
-            return Expression.Lambda<Func<int, int, int, int, decimal>>(Expression.Label(Expression.Label(typeof(decimal)), constructor), lo, mid, hi, flags);
+            return Expression.Lambda<Func<int, int, int, int, decimal>>(constructor, lo, mid, hi, flags);
         }
 
         private Expression<DecimalGetDigitsDelegate> CreateGetDigitsMethod()
         {
             var value = Expression.Parameter(typeof(Decimal).MakeByRefType(), "value");
 
+            // Dereference ref Decimal into a local variable before calling GetBits (ref params can't be passed
+            // directly to value-type parameters via Expression.Call in .NET 10)
+            var local = Expression.Variable(typeof(decimal), "d");
+            var getBitsMethod = typeof(Decimal).GetMethod(nameof(Decimal.GetBits), new[] { typeof(Decimal) })!;
+            var bits = Expression.Call(getBitsMethod, local);
+            var flags = Expression.ArrayIndex(bits, Expression.Constant(3));
             var digits = Expression.RightShift(
-                Expression.And(Expression.Field(value, "_flags"), Expression.Constant(~Int32.MinValue, typeof(int))),
+                Expression.And(flags, Expression.Constant(0x00FF0000, typeof(int))),
                 Expression.Constant(16, typeof(int)));
 
-            //return (value.flags & ~Int32.MinValue) >> 16
+            // return (Decimal.GetBits(d)[3] & 0x00FF0000) >> 16
+            var body = Expression.Block(new[] { local },
+                Expression.Assign(local, value),
+                digits);
 
-            return Expression.Lambda<DecimalGetDigitsDelegate>(digits, value);
+            return Expression.Lambda<DecimalGetDigitsDelegate>(body, value);
         }
     }
 

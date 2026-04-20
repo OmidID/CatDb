@@ -24,7 +24,7 @@ namespace CatDb.General.IO
                 _stream.Write(_header, 0, _header.Length);
             }
             else
-                _stream.Read(_header, 0, _header.Length);
+                _stream.ReadExactly(_header, 0, _header.Length);
         }
 
         private long Pos
@@ -66,10 +66,7 @@ namespace CatDb.General.IO
             _stream.Seek(Pos, SeekOrigin.Begin);
 
             var buffer = new byte[Size];
-            var readed = _stream.Read(buffer, 0, buffer.Length);
-
-            if (readed != buffer.Length)
-                throw new IOException(); //should never happen
+            _stream.ReadExactly(buffer, 0, buffer.Length);
 
             return buffer;
         }

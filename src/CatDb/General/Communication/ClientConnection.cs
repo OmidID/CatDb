@@ -66,17 +66,11 @@ namespace CatDb.General.Communication
 
             var thread = _recieveWorker;
             if (thread != null)
-            {
-                if (thread.Join(2000))
-                    thread.Abort();
-            }
+                thread.Join(2000);
 
             thread = _sendWorker;
             if (thread != null)
-            {
-                if (thread.Join(2000))
-                    thread.Abort();
-            }
+                thread.Join(2000);
 
             PendingPackets = null;
             SetException(new Exception("Client stopped"));

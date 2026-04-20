@@ -61,7 +61,7 @@ namespace CatDb.Data
                     Expression.Assign(array, Expression.New(array.Type.GetConstructor(new[] { typeof(int) }), count)),
                     array.For(i =>
                         {
-                            return Expression.Block(Expression.Assign(Expression.ArrayAccess(array, i), Expression.New(typeof(T).GetConstructor(new Type[] { }))),
+                            return Expression.Block(Expression.Assign(Expression.ArrayAccess(array, i), Expression.New(typeof(T))),
                                     Expression.Call(values, values.Type.GetMethod("Invoke"), i, Expression.ArrayAccess(array, i)));
                         }, Expression.Label(), count),
                     IndexerPersistHelper.CreateLoadBody(_type, false, reader, array, count, _membersOrder, _persists)

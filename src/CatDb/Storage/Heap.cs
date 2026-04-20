@@ -125,7 +125,7 @@ namespace CatDb.Storage
                 using (var stream = new MemoryStream(buffer))
                 {
                     using (var decompress = new DeflateStream(stream, CompressionMode.Decompress))
-                        decompress.Read(raw, 0, raw.Length);
+                        decompress.ReadExactly(raw, 0, raw.Length);
                 }
 
                 buffer = raw;

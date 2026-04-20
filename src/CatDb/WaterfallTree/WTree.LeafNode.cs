@@ -33,15 +33,18 @@ namespace CatDb.WaterfallTree
 
                 if (_container.TryGetValue(locator, out var data))
                 {
-                    RecordCount -= data.Count;
+                    lock (data)
+                    {
+                        RecordCount -= data.Count;
 
-                    if (locator.Apply.Leaf(operations, data))
-                        IsModified = true;
+                        if (locator.Apply.Leaf(operations, data))
+                            IsModified = true;
 
-                    RecordCount += data.Count;
+                        RecordCount += data.Count;
 
-                    if (data.Count == 0)
-                        _container.Remove(locator);
+                        if (data.Count == 0)
+                            _container.Remove(locator);
+                    }
                 }
                 else
                 {
@@ -72,7 +75,9 @@ namespace CatDb.WaterfallTree
                 if (_container.Count == 1)
                 {
                     var kv = _container.First();
-                    var data = kv.Value.Split(halfRecordCount);
+                    IOrderedSet<IData, IData> data;
+                    lock (kv.Value)
+                        data = kv.Value.Split(halfRecordCount);
 
                     Debug.Assert(data.Count > 0);
                     rightContainer.Add(kv.Key, data);
@@ -100,7 +105,9 @@ namespace CatDb.WaterfallTree
 
                         if (leftRecordCount > halfRecordCount)
                         {
-                            var data = kv.Value.Split(leftRecordCount - halfRecordCount);
+                            IOrderedSet<IData, IData> data;
+                            lock (kv.Value)
+                                data = kv.Value.Split(leftRecordCount - halfRecordCount);
                             if (data.Count > 0)
                             {
                                 specialCase = new KeyValuePair<Locator, IOrderedSet<IData, IData>>(kv.Key, data);
@@ -150,8 +157,13 @@ namespace CatDb.WaterfallTree
                         _container[kv.Key] = data = kv.Value;
                     else
                     {
-                        RecordCount -= data.Count;
-                        data.Merge(kv.Value);
+                        lock (data)
+                        {
+                            RecordCount -= data.Count;
+                            data.Merge(kv.Value);
+                            RecordCount += data.Count;
+                        }
+                        continue;
                     }
 
                     RecordCount += data.Count;

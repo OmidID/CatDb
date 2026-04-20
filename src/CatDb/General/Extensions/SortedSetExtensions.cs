@@ -55,7 +55,7 @@ namespace CatDb.General.Extensions
                 if (root.Is4Node)
                 {
                     root.Split4Node();
-                    if (node.IsRed)
+                    if (node != null && node.IsRed)
                         set.InsertionBalance(root, ref node, grandParent, greatGrandParent);
                 }
 
@@ -65,7 +65,7 @@ namespace CatDb.General.Extensions
                 root = (cmp < 0) ? root.Left : root.Right;
             }
 
-            var current = new SortedSet<T>.Node(item, NodeColor.Black);
+            var current = new SortedSet<T>.Node(item, NodeColor.Red);
             if (cmp > 0)
                 node.Right = current;
             else
@@ -83,7 +83,7 @@ namespace CatDb.General.Extensions
             if ((lowerBoundActive && upperBoundActive) && set.Comparer.Compare(lowerValue, upperValue) > 0)
                 throw new ArgumentException("lowerBound is greater than upperBound");
 
-            return new SortedSet<T>.TreeSubSet(set, lowerValue, upperValue, lowerBoundActive, lowerBoundActive);
+            return new SortedSet<T>.TreeSubSet(set, lowerValue, upperValue, lowerBoundActive, upperBoundActive);
         }
         
         public KeyValuePair<bool, T> FindNext(SortedSet<T> set, T item)

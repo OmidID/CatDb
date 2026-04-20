@@ -66,7 +66,7 @@ namespace CatDb.Data
             var item = Expression.Variable(_type);
 
             if (!DataType.IsPrimitiveType(_type))
-                list.Add(Expression.Assign(item, Expression.New(_type.GetConstructor(new Type[] { }))));
+                list.Add(Expression.Assign(item, Expression.New(_type)));
 
             list.Add(ValueToStringHelper.CreateParseBody(item, stringParam, _providers, _delimiters, _membersOrder));
             list.Add(Expression.Label(Expression.Label(_type), item));

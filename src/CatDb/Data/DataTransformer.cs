@@ -37,7 +37,7 @@ namespace CatDb.Data
                 list.Add(Expression.Label(Expression.Label(typeof(IData)), Expression.New(data.Type.GetConstructor(new[] { _type1 }), value)));
             else
             {
-                list.Add(Expression.Assign(data, Expression.New(data.Type.GetConstructor(new Type[] { }))));
+                list.Add(Expression.Assign(data, Expression.New(data.Type)));
                 list.Add(TransformerHelper.BuildBody(data.Value(), value, _membersOrder1, _membersOrder2));
                 list.Add(Expression.Label(Expression.Label(data.Type), data));
             }

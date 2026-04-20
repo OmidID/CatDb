@@ -46,10 +46,7 @@ namespace CatDb.Remote.Heap
 
             var thread = _worker;
             if (thread != null)
-            {
-                if (!thread.Join(5000))
-                    thread.Abort();
-            }
+                thread.Join(5000);
             _heap.Close();
         }
 

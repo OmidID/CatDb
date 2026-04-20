@@ -53,19 +53,13 @@ namespace CatDb.General.Communication
 
             var thread = _sender;
             if (thread is { ThreadState: ThreadState.Running })
-            {
-                if (!thread.Join(5000))
-                    thread.Abort();
-            }
+                thread.Join(5000);
 
             _sender = null;
 
             thread = _receiver;
             if (thread is { ThreadState: ThreadState.Running })
-            {
-                if (!thread.Join(5000))
-                    thread.Abort();
-            }
+                thread.Join(5000);
 
             _receiver = null;
 

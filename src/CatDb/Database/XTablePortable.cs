@@ -69,7 +69,7 @@ namespace CatDb.Database
         {
             lock (SyncRoot)
             {
-                if (_operations.Count == 0)
+                if (_operations.Count == 0 || Tree.IsDisposed)
                     return;
 
                 Tree.Execute(_operations);
@@ -351,9 +351,9 @@ namespace CatDb.Database
             }
         }
 
-        public KeyValuePair<IData, IData> FirstRow => Forward().First();
+        public KeyValuePair<IData, IData> FirstRow => Forward().FirstOrDefault();
 
-        public KeyValuePair<IData, IData> LastRow => Backward().First();
+        public KeyValuePair<IData, IData> LastRow => Backward().FirstOrDefault();
 
         public long Count()
         {
