@@ -1,4 +1,6 @@
 using CatDb.StressTest;
+using CatDb.Database;
+using Database = CatDb.Database;
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────
 
@@ -6,12 +8,30 @@ Console.OutputEncoding = System.Text.Encoding.UTF8;
 Console.Clear();
 Console.CursorVisible = false;
 
-const string DbFile = "catdb_stress.db";
-if (File.Exists(DbFile)) File.Delete(DbFile);
+// ── Switch between local file and remote server ───────────────────────────
+const bool   USE_SERVER  = false;         // true = connect to CatDb.Server
+const string SERVER_HOST = "localhost";
+const int    SERVER_PORT = 7182;
+const string DB_FILE     = "catdb_stress.db";
+// ─────────────────────────────────────────────────────────────────────────
+
+#pragma warning disable CS0162 // const-bool branch — flip USE_SERVER to enable
+IStorageEngine OpenEngine()
+{
+    if (USE_SERVER)
+    {
+        Console.WriteLine($"Connecting to server {SERVER_HOST}:{SERVER_PORT}...");
+        return Database.CatDb.FromNetwork(SERVER_HOST, SERVER_PORT);
+    }
+
+    if (File.Exists(DB_FILE)) File.Delete(DB_FILE);
+    return Database.CatDb.FromFile(DB_FILE);
+}
+#pragma warning restore CS0162
 
 Console.WriteLine("  Initializing CatDb Stress Test...");
 
-using var ctx = new StressContext(DbFile);
+using var ctx = new StressContext(OpenEngine());
 
 // ─── Create all background services ───────────────────────────────────────
 //

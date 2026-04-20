@@ -23,6 +23,15 @@ public static class CatDb
     public static IStorageEngine FromNetwork(string host, int port = 7182) =>
         new StorageEngineClient(host, port);
 
+    /// <summary>Fully async version of <see cref="FromNetwork"/>.</summary>
+    public static async Task<IStorageEngine> FromNetworkAsync(
+        string host, int port = 7182, CancellationToken ct = default)
+    {
+        var client = StorageEngineClient.CreateUnconnected(host, port);
+        await client.ConnectAsync(ct).ConfigureAwait(false);
+        return client;
+    }
+
     public static StorageEngineServer CreateServer(IStorageEngine engine, int port = 7182)
     {
         var server       = new TcpServer(port);

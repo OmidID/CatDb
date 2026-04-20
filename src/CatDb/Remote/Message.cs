@@ -24,8 +24,6 @@ public class Message
     public IDescriptor Description { get; private set; }
     public CommandCollection Commands { get; private set; }
 
-    private static KeyValuePair<long, IDescriptor> _previousRecord = new(-1, null);
-
     public Message(IDescriptor description, CommandCollection commands)
     {
         Description = description;
@@ -55,16 +53,13 @@ public class Message
         {
             try
             {
-                description = _previousRecord.Key == id ? _previousRecord.Value : find(id);
+                description = find(id);
                 persist = new CommandPersist(new DataPersist(description.KeyType, null, AllowNull.OnlyMembers), new DataPersist(description.RecordType, null, AllowNull.OnlyMembers));
             }
             catch (Exception)
             {
                 throw new Exception("Cannot find description with the specified ID");
             }
-
-            if (_previousRecord.Key != id)
-                _previousRecord = new KeyValuePair<long, IDescriptor>(id, description);
         }
         
         var commandsPersist = new CommandCollectionPersist(persist);

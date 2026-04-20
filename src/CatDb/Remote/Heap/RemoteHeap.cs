@@ -2,6 +2,7 @@
 using CatDb.WaterfallTree;
 
 namespace CatDb.Remote.Heap;
+
 public class RemoteHeap : IHeap
 {
     public ClientConnection Client { get; private set; }
@@ -9,7 +10,16 @@ public class RemoteHeap : IHeap
     public RemoteHeap(string host, int port)
     {
         Client = new ClientConnection(host, port);
-        Client.Start();
+        // Safe sync connect: Task.Run strips SynchronizationContext
+        Task.Run(() => Client.StartAsync(CancellationToken.None)).GetAwaiter().GetResult();
+    }
+
+    // Helper: fire a request and return the response stream (sync bridge)
+    private MemoryStream Execute(MemoryStream request)
+    {
+        var packet = new Packet(request);
+        return Task.Run(() => Client.SendAsync(packet, CancellationToken.None))
+                   .GetAwaiter().GetResult();
     }
 
     #region IHeap members
@@ -17,80 +27,53 @@ public class RemoteHeap : IHeap
     public long ObtainNewHandle()
     {
         var ms = new MemoryStream();
-        var writer = new BinaryWriter(ms);
-        ObtainHandleCommand.WriteRequest(writer);
-
-        var packet = new Packet(ms);
-        Client.Send(packet);
-        packet.Wait();
-
-        return ObtainHandleCommand.ReadResponse(new BinaryReader(packet.Response)).Handle;
+        ObtainHandleCommand.WriteRequest(new BinaryWriter(ms));
+        var response = Execute(ms);
+        return ObtainHandleCommand.ReadResponse(new BinaryReader(response)).Handle;
     }
 
     public void Release(long handle)
     {
         var ms = new MemoryStream();
-        var writer = new BinaryWriter(ms);
-        ReleaseHandleCommand.WriteRequest(writer, handle);
-
-        var packet = new Packet(ms);
-        Client.Send(packet);
+        ReleaseHandleCommand.WriteRequest(new BinaryWriter(ms), handle);
+        Execute(ms);
     }
 
     public bool Exists(long handle)
     {
         var ms = new MemoryStream();
-        var writer = new BinaryWriter(ms);
-        HandleExistCommand.WriteRequest(writer, handle);
-
-        var packet = new Packet(ms);
-        Client.Send(packet);
-        packet.Wait();
-
-        return HandleExistCommand.ReadResponse(new BinaryReader(packet.Response)).Exist;
+        HandleExistCommand.WriteRequest(new BinaryWriter(ms), handle);
+        var response = Execute(ms);
+        return HandleExistCommand.ReadResponse(new BinaryReader(response)).Exist;
     }
 
     public void Write(long handle, byte[] buffer, int index, int count)
     {
         var ms = new MemoryStream();
-        var writer = new BinaryWriter(ms);
-        WriteCommand.WriteRequest(writer, handle, index, count, buffer);
-
-        var packet = new Packet(ms);
-        Client.Send(packet);
+        WriteCommand.WriteRequest(new BinaryWriter(ms), handle, index, count, buffer);
+        Execute(ms);
     }
 
     public byte[] Read(long handle)
     {
         var ms = new MemoryStream();
-        var writer = new BinaryWriter(ms);
-        ReadCommand.WriteRequest(writer, handle);
-
-        var packet = new Packet(ms);
-        Client.Send(packet);
-        packet.Wait();
-
-        return ReadCommand.ReadResponse(new BinaryReader(packet.Response)).Buffer;
+        ReadCommand.WriteRequest(new BinaryWriter(ms), handle);
+        var response = Execute(ms);
+        return ReadCommand.ReadResponse(new BinaryReader(response)).Buffer;
     }
 
     public void Commit()
     {
         var ms = new MemoryStream();
-        var writer = new BinaryWriter(ms);
-        CommitCommand.WriteRequest(writer);
-
-        var packet = new Packet(ms);
-        Client.Send(packet);
+        CommitCommand.WriteRequest(new BinaryWriter(ms));
+        Execute(ms);
     }
 
     public void Close()
     {
         var ms = new MemoryStream();
-        var writer = new BinaryWriter(ms);
-        CloseCommand.WriteRequest(writer);
-
-        var packet = new Packet(ms);
-        Client.Send(packet);
+        CloseCommand.WriteRequest(new BinaryWriter(ms));
+        Execute(ms);
     }
 
     public byte[] Tag
@@ -98,23 +81,15 @@ public class RemoteHeap : IHeap
         get
         {
             var ms = new MemoryStream();
-            var writer = new BinaryWriter(ms);
-            GetTagCommand.WriteRequest(writer);
-
-            var packet = new Packet(ms);
-            Client.Send(packet);
-            packet.Wait();
-
-            return GetTagCommand.ReadResponse(new BinaryReader(packet.Response)).Tag;
+            GetTagCommand.WriteRequest(new BinaryWriter(ms));
+            var response = Execute(ms);
+            return GetTagCommand.ReadResponse(new BinaryReader(response)).Tag;
         }
         set
         {
             var ms = new MemoryStream();
-            var writer = new BinaryWriter(ms);
-            SetTagCommand.WriteRequest(writer, value);
-
-            var packet = new Packet(ms);
-            Client.Send(packet);
+            SetTagCommand.WriteRequest(new BinaryWriter(ms), value);
+            Execute(ms);
         }
     }
 
@@ -123,14 +98,9 @@ public class RemoteHeap : IHeap
         get
         {
             var ms = new MemoryStream();
-            var writer = new BinaryWriter(ms);
-            DataBaseSizeCommand.WriteRequest(writer);
-
-            var packet = new Packet(ms);
-            Client.Send(packet);
-            packet.Wait();
-
-            return DataBaseSizeCommand.ReadResponse(new BinaryReader(packet.Response)).DataBaseSize;
+            DataBaseSizeCommand.WriteRequest(new BinaryWriter(ms));
+            var response = Execute(ms);
+            return DataBaseSizeCommand.ReadResponse(new BinaryReader(response)).DataBaseSize;
         }
     }
 
@@ -139,14 +109,9 @@ public class RemoteHeap : IHeap
         get
         {
             var ms = new MemoryStream();
-            var writer = new BinaryWriter(ms);
-            SizeCommand.WriteRequest(writer);
-
-            var packet = new Packet(ms);
-            Client.Send(packet);
-            packet.Wait();
-
-            return SizeCommand.ReadResponse(new BinaryReader(packet.Response)).DataBaseSize;
+            SizeCommand.WriteRequest(new BinaryWriter(ms));
+            var response = Execute(ms);
+            return SizeCommand.ReadResponse(new BinaryReader(response)).DataBaseSize;
         }
     }
 

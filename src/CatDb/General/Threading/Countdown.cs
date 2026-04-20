@@ -15,13 +15,11 @@ public class Countdown
 
     public void Wait()
     {
-        var wait = new SpinWait();
-
-        wait.SpinOnce();
-
-        while (Count > 0)
-            Thread.Sleep(1);
+        SpinWait.SpinUntil(() => Count == 0);
     }
+
+    public Task WaitAsync(CancellationToken ct = default) =>
+        Task.Run(() => SpinWait.SpinUntil(() => Count == 0), ct);
 
     public long Count => Interlocked.Read(ref _count);
 }

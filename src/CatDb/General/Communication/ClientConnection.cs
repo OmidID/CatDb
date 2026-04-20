@@ -1,163 +1,133 @@
-#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Net.Sockets;
+using System.Threading.Channels;
 
 namespace CatDb.General.Communication;
-public class ClientConnection
+
+/// <summary>
+/// High-performance async TCP client.
+/// All socket I/O runs in two dedicated async loops (send / receive).
+/// Callers enqueue a <see cref="Packet"/> via <see cref="SendAsync"/> and
+/// await its <see cref="Packet.WaitAsync"/> — no thread ever blocks on I/O.
+/// </summary>
+public sealed class ClientConnection : IAsyncDisposable
 {
-    private long _id;
+    private long _idCounter;
 
-    public TcpClient TcpClient { get; private set; }
+    private TcpClient?                              _tcpClient;
+    private Channel<Packet>?                        _sendChannel;
+    private readonly ConcurrentDictionary<long, Packet> _pending = new();
+    private CancellationTokenSource?                _cts;
+    private Task?                                   _sendLoop;
+    private Task?                                   _receiveLoop;
 
-    public BlockingCollection<Packet> PendingPackets;
-    public ConcurrentDictionary<long, Packet> SentPackets;
+    public string Host { get; }
+    public int    Port { get; }
 
-    private CancellationTokenSource _shutdownTokenSource;
-
-    private Thread _sendWorker;
-    private Thread _recieveWorker;
-
-    public readonly string MachineName;
-    public readonly int Port;
-
-    public ClientConnection(string machineName = "localhost", int port = 7182)
+    public ClientConnection(string host = "localhost", int port = 7182)
     {
-        MachineName = machineName;
+        Host = host;
         Port = port;
     }
 
-    public void Send(Packet packet)
-    {
-        if (!IsWorking)
-            throw new Exception("Client connection is not started.");
+    // ── Connect ──────────────────────────────────────────────────────────────
 
-        packet.Id = Interlocked.Increment(ref _id);
-        PendingPackets.Add(packet, _shutdownTokenSource.Token);
+    public async Task StartAsync(CancellationToken ct = default)
+    {
+        if (_sendLoop is not null)
+            throw new InvalidOperationException("ClientConnection is already started.");
+
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        _sendChannel = Channel.CreateBounded<Packet>(new BoundedChannelOptions(256)
+        {
+            FullMode                      = BoundedChannelFullMode.Wait,
+            SingleReader                  = true,
+            AllowSynchronousContinuations = false,
+        });
+
+        _tcpClient = new TcpClient { NoDelay = true };
+        await _tcpClient.ConnectAsync(Host, Port, _cts.Token).ConfigureAwait(false);
+
+        var stream   = _tcpClient.GetStream();
+        _sendLoop    = SendLoopAsync(stream, _cts.Token);
+        _receiveLoop = ReceiveLoopAsync(stream, _cts.Token);
     }
 
-    public void Start(int boundedCapacity = 64, int recieveTimeout = 0, int sendTimeout = 0)
+    // ── Send ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Assigns an ID, enqueues the packet for sending, and returns a Task
+    /// that completes when the matching response arrives from the server.
+    /// </summary>
+    public async Task<MemoryStream> SendAsync(Packet packet, CancellationToken ct = default)
     {
-        if (IsWorking)
-            throw new Exception("Client connection is already started.");
+        if (_sendChannel is null)
+            throw new InvalidOperationException("ClientConnection has not been started.");
 
-        PendingPackets = new BlockingCollection<Packet>(boundedCapacity);
-        SentPackets = new ConcurrentDictionary<long, Packet>();
-        _shutdownTokenSource = new CancellationTokenSource();
+        packet.Id = Interlocked.Increment(ref _idCounter);
+        _pending[packet.Id] = packet;
 
-        TcpClient = new TcpClient();
-        TcpClient.ReceiveTimeout = recieveTimeout;
-        TcpClient.SendTimeout = sendTimeout;
-        TcpClient.Connect(MachineName, Port);
-        var networkStream = TcpClient.GetStream();
-
-        _sendWorker = new Thread(DoSend);
-        _recieveWorker = new Thread(DoRecieve);
-
-        _sendWorker.Start(networkStream);
-        _recieveWorker.Start(networkStream);
-    }
-
-    public void Stop()
-    {
-        if (!IsWorking)
-            return;
-
-        _shutdownTokenSource.Cancel(false);
-
-        var thread = _recieveWorker;
-        if (thread != null)
-            thread.Join(2000);
-
-        thread = _sendWorker;
-        if (thread != null)
-            thread.Join(2000);
-
-        PendingPackets = null;
-        SetException(new Exception("Client stopped"));
-        _shutdownTokenSource = null;
-    }
-
-    public bool IsWorking => _sendWorker != null || _recieveWorker != null;
-
-    private void DoSend(object state)
-    {
-        var writer = new BinaryWriter((NetworkStream)state);
-
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts!.Token);
         try
         {
-            while (!Shutdown.IsCancellationRequested)
-            {
-                var packet = PendingPackets.Take(Shutdown);
-
-                SentPackets.TryAdd(packet.Id, packet);
-                packet.Write(writer, packet.Request);
-                writer.Flush();
-            }
+            await _sendChannel.Writer.WriteAsync(packet, linked.Token).ConfigureAwait(false);
+            return await packet.WaitAsync(linked.Token).ConfigureAwait(false);
         }
-        catch (Exception e)
+        catch
         {
-            SetException(e);
-        }
-        finally
-        {
-            _sendWorker = null;
+            _pending.TryRemove(packet.Id, out _);
+            throw;
         }
     }
 
-    private void DoRecieve(object state)
-    {
-        var reader = new BinaryReader((NetworkStream)state);
+    // ── Loops ─────────────────────────────────────────────────────────────────
 
+    private async Task SendLoopAsync(NetworkStream stream, CancellationToken ct)
+    {
         try
         {
-            while (!Shutdown.IsCancellationRequested)
-            {
-                var id = reader.ReadInt64();
-                var size = reader.ReadInt32();
-                var response = new MemoryStream(reader.ReadBytes(size));
+            await foreach (var packet in _sendChannel!.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+                await FrameProtocol.WriteAsync(stream, packet.Id, packet.Request, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { FailAll(ex); }
+    }
 
-                Packet packet = null;
-                if (SentPackets.TryRemove(id, out packet))
-                {
-                    packet.Response = response;
-                    packet.ResultEvent.Set();
-                }
+    private async Task ReceiveLoopAsync(NetworkStream stream, CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var (id, ms) = await FrameProtocol.ReadAsync(stream, ct).ConfigureAwait(false);
+                if (_pending.TryRemove(id, out var packet))
+                    packet.SetResponse(ms);
             }
         }
-        catch (Exception e)
-        {
-            SetException(e);
-        }
-        finally
-        {
-            _recieveWorker = null;
-        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { FailAll(ex); }
     }
 
-    private void SetException(Exception exception)
+    private void FailAll(Exception ex)
     {
-        lock (SentPackets)
-        {
-            foreach (var packet in SentPackets.Values)
-            {
-                packet.Exception = exception;
-                packet.ResultEvent.Set();
-            }
-
-            SentPackets.Clear();
-        }
+        foreach (var packet in _pending.Values)
+            packet.SetException(ex);
+        _pending.Clear();
     }
 
-    private CancellationToken Shutdown => _shutdownTokenSource.Token;
+    // ── Stop ─────────────────────────────────────────────────────────────────
 
-    public int BoundedCapacity
+    public async Task StopAsync()
     {
-        get
-        {
-            if (!IsWorking)
-                throw new Exception("Client connection is not started.");
-
-            return PendingPackets.BoundedCapacity;
-        }
+        _sendChannel?.Writer.TryComplete();
+        _cts?.Cancel();
+        if (_sendLoop    is not null) await _sendLoop.ConfigureAwait(false);
+        if (_receiveLoop is not null) await _receiveLoop.ConfigureAwait(false);
+        _tcpClient?.Dispose();
+        _sendLoop    = null;
+        _receiveLoop = null;
     }
+
+    public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 }

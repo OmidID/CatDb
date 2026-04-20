@@ -1,25 +1,20 @@
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
-﻿using CatDb.General.Communication;
+using CatDb.General.Communication;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Remote.Heap;
-public class HeapServer
-{
-    private CancellationTokenSource _shutdownTokenSource;
-    private Thread _worker;
 
-    private readonly IHeap _heap;
+public sealed class HeapServer
+{
+    private readonly IHeap    _heap;
     private readonly TcpServer _tcpServer;
 
     public HeapServer(IHeap heap, TcpServer tcpServer)
     {
-        if (heap == null)
-            throw new ArgumentNullException("heap");
-        if (tcpServer == null)
-            throw new ArgumentNullException("tcpServer");
+        _heap      = heap      ?? throw new ArgumentNullException(nameof(heap));
+        _tcpServer = tcpServer ?? throw new ArgumentNullException(nameof(tcpServer));
 
-        _heap = heap;
-        _tcpServer = tcpServer;
+        _tcpServer.PacketReceived = HandlePacketAsync;
     }
 
     public HeapServer(IHeap heap, int port = 7183)
@@ -27,130 +22,89 @@ public class HeapServer
     {
     }
 
-    public void Start()
-    {
-        Stop();
+    // ── Start / Stop ─────────────────────────────────────────────────────────
 
-        _shutdownTokenSource = new CancellationTokenSource();
+    public Task StartAsync(CancellationToken ct = default) => _tcpServer.StartAsync(ct);
+    public Task StopAsync()                                => _tcpServer.StopAsync();
 
-        _worker = new Thread(DoWork);
-        _worker.Start();
-    }
+    public void Start() => _tcpServer.Start();
+    public void Stop()  => _tcpServer.Stop();
 
-    public void Stop()
-    {
-        if (!IsWorking)
-            return;
+    public bool IsRunning    => _tcpServer.IsRunning;
+    public int  ClientsCount => _tcpServer.ServerConnections.Count;
 
-        _shutdownTokenSource.Cancel(false);
+    // ── Packet handler ───────────────────────────────────────────────────────
 
-        var thread = _worker;
-        if (thread != null)
-            thread.Join(5000);
-        _heap.Close();
-    }
-
-    private void DoWork()
+    private async Task HandlePacketAsync(ServerConnection conn, Packet packet, CancellationToken ct)
     {
         try
         {
-            _tcpServer.Start();
-
-            while (!_shutdownTokenSource.Token.IsCancellationRequested)
-            {
-                try
-                {
-                    var order = _tcpServer.RecievedPackets.Take(_shutdownTokenSource.Token);
-
-                    var reader = new BinaryReader(order.Value.Request);
-                    var ms = new MemoryStream();
-                    var writer = new BinaryWriter(ms);
-
-                    var code = (RemoteHeapCommandCodes)reader.ReadByte();
-
-                    switch (code)
-                    {
-                        case RemoteHeapCommandCodes.ObtainHandle:
-                            ObtainHandleCommand.WriteResponse(writer, _heap.ObtainNewHandle());
-                            break;
-
-                        case RemoteHeapCommandCodes.ReleaseHandle:
-                            {
-                                var handle = ReleaseHandleCommand.ReadRequest(reader).Handle;
-                                _heap.Release(handle);
-                                break;
-                            }
-
-                        case RemoteHeapCommandCodes.HandleExist:
-                            {
-                                var handle = HandleExistCommand.ReadRequest(reader).Handle;
-                                HandleExistCommand.WriteResponse(writer, _heap.Exists(handle));
-                                break;
-                            }
-
-                        case RemoteHeapCommandCodes.WriteCommand:
-                            var cmd = WriteCommand.ReadRequest(reader);
-                            _heap.Write(cmd.Handle, cmd.Buffer, cmd.Index, cmd.Count);
-                            break;
-
-                        case RemoteHeapCommandCodes.ReadCommand:
-                            {
-                                var handle = ReadCommand.ReadRequest(reader).Handle;
-                                ReadCommand.WriteResponse(writer, _heap.Read(handle));
-                                break;
-                            }
-
-                        case RemoteHeapCommandCodes.CommitCommand:
-                            _heap.Commit();
-                            break;
-
-                        case RemoteHeapCommandCodes.CloseCommand:
-                            _heap.Close();
-                            break;
-
-                        case RemoteHeapCommandCodes.SetTag:
-                            _heap.Tag = SetTagCommand.ReadRequest(reader).Tag;
-                            break;
-
-                        case RemoteHeapCommandCodes.GetTag:
-                            GetTagCommand.WriteResponse(writer, _heap.Tag);
-                            break;
-
-                        case RemoteHeapCommandCodes.Size:
-                            SizeCommand.WriteResponse(writer, _heap.Size);
-                            break;
-
-                        case RemoteHeapCommandCodes.DataBaseSize:
-                            DataBaseSizeCommand.WriteResponse(writer, _heap.DataSize);
-                            break;
-                    }
-
-                    ms.Position = 0;
-                    order.Value.Response = ms;
-                    order.Key.PendingPackets.Add(order.Value);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (Exception exc)
-                {
-                    _tcpServer.LogError(exc);
-                }
-            }
+            var responseMs = await Task.Run(() => ProcessPacket(packet.Request), ct).ConfigureAwait(false);
+            await conn.SendResponseAsync(packet.Id, responseMs, ct).ConfigureAwait(false);
         }
-        catch (Exception exc)
+        catch (Exception ex)
         {
-            _tcpServer.LogError(exc);
-        }
-        finally
-        {
-            _tcpServer.Stop();
-            _worker = null;
+            _tcpServer.LogError(ex);
         }
     }
 
-    public bool IsWorking => _worker != null;
+    private MemoryStream ProcessPacket(MemoryStream requestStream)
+    {
+        var reader = new BinaryReader(requestStream);
+        var ms     = new MemoryStream();
+        var writer = new BinaryWriter(ms);
 
-    public int ClientsCount => _tcpServer.ServerConnections.Count;
+        var code = (RemoteHeapCommandCodes)reader.ReadByte();
+
+        switch (code)
+        {
+            case RemoteHeapCommandCodes.ObtainHandle:
+                ObtainHandleCommand.WriteResponse(writer, _heap.ObtainNewHandle());
+                break;
+
+            case RemoteHeapCommandCodes.ReleaseHandle:
+                _heap.Release(ReleaseHandleCommand.ReadRequest(reader).Handle);
+                break;
+
+            case RemoteHeapCommandCodes.HandleExist:
+                HandleExistCommand.WriteResponse(writer, _heap.Exists(HandleExistCommand.ReadRequest(reader).Handle));
+                break;
+
+            case RemoteHeapCommandCodes.WriteCommand:
+                var wcmd = WriteCommand.ReadRequest(reader);
+                _heap.Write(wcmd.Handle, wcmd.Buffer, wcmd.Index, wcmd.Count);
+                break;
+
+            case RemoteHeapCommandCodes.ReadCommand:
+                ReadCommand.WriteResponse(writer, _heap.Read(ReadCommand.ReadRequest(reader).Handle));
+                break;
+
+            case RemoteHeapCommandCodes.CommitCommand:
+                _heap.Commit();
+                break;
+
+            case RemoteHeapCommandCodes.CloseCommand:
+                _heap.Close();
+                break;
+
+            case RemoteHeapCommandCodes.SetTag:
+                _heap.Tag = SetTagCommand.ReadRequest(reader).Tag;
+                break;
+
+            case RemoteHeapCommandCodes.GetTag:
+                GetTagCommand.WriteResponse(writer, _heap.Tag);
+                break;
+
+            case RemoteHeapCommandCodes.Size:
+                SizeCommand.WriteResponse(writer, _heap.Size);
+                break;
+
+            case RemoteHeapCommandCodes.DataBaseSize:
+                DataBaseSizeCommand.WriteResponse(writer, _heap.DataSize);
+                break;
+        }
+
+        ms.Position = 0;
+        return ms;
+    }
 }

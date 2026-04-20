@@ -28,7 +28,7 @@ public sealed class CatDbServerService(
         logger.LogInformation("Starting TCP listener on port {Port}", port);
         var tcpServer = new TcpServer(port);
         _server = new StorageEngineServer(_engine, tcpServer);
-        _server.Start();
+        await _server.StartAsync(stoppingToken).ConfigureAwait(false);
 
         state.IsRunning = true;
         state.Port      = port;
@@ -45,7 +45,7 @@ public sealed class CatDbServerService(
 
         state.IsRunning = false;
 
-        _server?.Stop();
+        if (_server is not null) await _server.StopAsync().ConfigureAwait(false);
         _engine?.Close();
 
         await base.StopAsync(cancellationToken);

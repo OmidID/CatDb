@@ -1,50 +1,45 @@
-#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
-﻿namespace CatDb.General.Communication;
-///--------------------- Packet Exchange Protocol
-///
-///--------------------- Comments-----------------------------------
-///format           : binary
-///byte style       : LittleEndian
-///ID               : Unique ID's per Connection and Unique ID per Packet.
-///
-///------------------------------------------------------------------
-///Packet           : long ID, int Size, byte[] buffer 
-///  
+namespace CatDb.General.Communication;
 
-public class Packet
+/// <summary>
+/// A single request/response pair in the CatDb wire protocol.
+/// Wire frame: Int64 id (LE) | Int32 size (LE) | byte[size] payload
+///
+/// On the <b>client side</b> the caller awaits <see cref="WaitAsync"/> after
+/// enqueuing the packet – no thread ever blocks on I/O.
+///
+/// On the <b>server side</b> the same object carries the inbound request; the
+/// handler writes to <see cref="Response"/> and enqueues it for sending.
+/// </summary>
+public sealed class Packet
 {
+    private readonly TaskCompletionSource<MemoryStream> _tcs =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     internal long Id;
 
-    public readonly MemoryStream Request; // Request Message
-    public MemoryStream Response; // Response Message
+    /// <summary>Inbound request payload (set by receive loop or by caller).</summary>
+    public MemoryStream Request { get; }
 
-    public readonly ManualResetEventSlim ResultEvent;
-    public Exception Exception;
+    /// <summary>Outbound response payload – set by the server handler before enqueuing.</summary>
+    public MemoryStream? Response { get; set; }
 
     public Packet(MemoryStream request)
     {
-        if (request == null)
-            throw new ArgumentNullException("request == null");
-
-        Request = request;
-
-        ResultEvent = new ManualResetEventSlim(false);
+        Request = request ?? throw new ArgumentNullException(nameof(request));
     }
 
-    public void Wait()
-    {
-        ResultEvent.Wait();
+    // ── Client-side API ──────────────────────────────────────────────────────
 
-        if (Exception != null)
-            throw Exception;
-    }
+    /// <summary>
+    /// Returns a Task that completes when the server's response arrives.
+    /// Pass a <see cref="CancellationToken"/> to support cancellation.
+    /// </summary>
+    public Task<MemoryStream> WaitAsync(CancellationToken ct = default) =>
+        ct == default ? _tcs.Task : _tcs.Task.WaitAsync(ct);
 
-    public void Write(BinaryWriter writer, MemoryStream memoryStream)
-    {
-        var size = (int)memoryStream.Length;
+    // ── Called by the receive loop ────────────────────────────────────────────
 
-        writer.Write(Id);
-        writer.Write(size);
-        writer.Write(memoryStream.GetBuffer(), 0, size);
-    }
+    internal void SetResponse(MemoryStream ms)  => _tcs.TrySetResult(ms);
+    internal void SetException(Exception ex)    => _tcs.TrySetException(ex);
+    internal void Cancel()                      => _tcs.TrySetCanceled();
 }

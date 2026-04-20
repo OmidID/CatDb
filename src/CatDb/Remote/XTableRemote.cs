@@ -11,6 +11,10 @@ public class XTableRemote : ITable<IData, IData>
     private readonly int _pageCapacity = 100000;
     private readonly CommandCollection _commands;
 
+    // Guards _commands and all operations that read/write the shared command buffer.
+    // Multiple services can share the same XTableRemote instance through StressContext.
+    private readonly object _lock = new();
+
     private Descriptor _indexDescriptor;
     private readonly StorageEngineClient _storageEngine;
 
@@ -18,6 +22,16 @@ public class XTableRemote : ITable<IData, IData>
     {
         _storageEngine = storageEngine;
         _indexDescriptor = descriptor;
+
+        // KeyComparer and KeyEqualityComparer are runtime-only fields that are never
+        // serialized over the wire.  Initialize them from KeyType so that the bounds
+        // checks in Forward/Backward don't throw NullReferenceException.
+        if (descriptor.KeyType != null && descriptor.KeyComparer == null)
+        {
+            var keyData = TypeEngine.Default(descriptor.KeyType);
+            descriptor.KeyComparer        = keyData.Comparer;
+            descriptor.KeyEqualityComparer = keyData.EqualityComparer;
+        }
 
         _commands = new CommandCollection(100 * 1024);
     }
@@ -29,19 +43,22 @@ public class XTableRemote : ITable<IData, IData>
 
     private void InternalExecute(ICommand command)
     {
-        if (_commands.Capacity == 0)
+        lock (_lock)
         {
-            var commands = new CommandCollection(1) { command };
+            if (_commands.Capacity == 0)
+            {
+                var commands = new CommandCollection(1) { command };
 
-            var resultCommands = _storageEngine.Execute(_indexDescriptor, commands);
-            SetResult(commands, resultCommands);
+                var resultCommands = _storageEngine.Execute(_indexDescriptor, commands);
+                SetResult(commands, resultCommands);
 
-            return;
+                return;
+            }
+
+            _commands.Add(command);
+            if (_commands.Count == _commands.Capacity || command.IsSynchronous)
+                FlushCore();
         }
-
-        _commands.Add(command);
-        if (_commands.Count == _commands.Capacity || command.IsSynchronous)
-            Flush();
     }
 
     public void Execute(ICommand command)
@@ -56,6 +73,13 @@ public class XTableRemote : ITable<IData, IData>
     }
 
     public void Flush()
+    {
+        lock (_lock)
+            FlushCore();
+    }
+
+    // Must be called with _lock held.
+    private void FlushCore()
     {
         if (_commands.Count == 0)
         {
@@ -196,33 +220,20 @@ public class XTableRemote : ITable<IData, IData>
 
         while (records != null)
         {
-            Task? task = null;
-            List<KeyValuePair<IData, IData>>? commandRecords = null;
-
             var returnCount = nextKey != null ? records.Count - 1 : records.Count;
-
-            if (nextKey != null)
-            {
-                task = Task.Factory.StartNew(() =>
-                {
-                    var forwardCommand = new ForwardCommand(_pageCapacity, nextKey, to, null);
-                    Execute(forwardCommand);
-
-                    commandRecords = forwardCommand.List;
-                    nextKey = commandRecords != null && commandRecords.Count == _pageCapacity ? commandRecords[commandRecords.Count - 1].Key : null;
-                });
-            }
 
             for (var i = 0; i < returnCount; i++)
                 yield return records[i];
 
             records = null;
 
-            if (task != null)
-                task.Wait();
-
-            if (commandRecords != null)
-                records = commandRecords;
+            if (nextKey != null)
+            {
+                var nextCommand = new ForwardCommand(_pageCapacity, nextKey, to, null);
+                Execute(nextCommand);
+                records  = nextCommand.List;
+                nextKey  = records != null && records.Count == _pageCapacity ? records[records.Count - 1].Key : null;
+            }
         }
     }
 
@@ -250,33 +261,20 @@ public class XTableRemote : ITable<IData, IData>
 
         while (records != null)
         {
-            Task? task = null;
-            List<KeyValuePair<IData, IData>>? commandRecords = null;
-
             var returnCount = nextKey != null ? records.Count - 1 : records.Count;
-
-            if (nextKey != null)
-            {
-                task = Task.Factory.StartNew(() =>
-                {
-                    var backwardCommand = new BackwardCommand(_pageCapacity, nextKey, from, null);
-                    Execute(backwardCommand);
-
-                    commandRecords = backwardCommand.List;
-                    nextKey = commandRecords != null && commandRecords.Count == _pageCapacity ? commandRecords[commandRecords.Count - 1].Key : null;
-                });
-            }
 
             for (var i = 0; i < returnCount; i++)
                 yield return records[i];
 
             records = null;
 
-            if (task != null)
-                task.Wait();
-
-            if (commandRecords != null)
-                records = commandRecords;
+            if (nextKey != null)
+            {
+                var nextCommand = new BackwardCommand(_pageCapacity, nextKey, from, null);
+                Execute(nextCommand);
+                records  = nextCommand.List;
+                nextKey  = records != null && records.Count == _pageCapacity ? records[records.Count - 1].Key : null;
+            }
         }
     }
 
@@ -426,6 +424,18 @@ public class XTableRemote : ITable<IData, IData>
         collection = _storageEngine.Execute(Descriptor, collection);
 
         var resultCommand = (XTableDescriptorGetCommand)collection[0];
-        Descriptor = resultCommand.Descriptor;
+
+        // The server-returned descriptor is serialized over the wire — runtime-only fields
+        // (comparers, persist helpers) are not serialized and arrive as null.
+        // Restore them from the current descriptor before replacing.
+        var returned = (Descriptor)resultCommand.Descriptor;
+        returned.KeyComparer          = _indexDescriptor.KeyComparer;
+        returned.KeyEqualityComparer  = _indexDescriptor.KeyEqualityComparer;
+        returned.KeyPersist           = _indexDescriptor.KeyPersist;
+        returned.RecordPersist        = _indexDescriptor.RecordPersist;
+        returned.KeyIndexerPersist    = _indexDescriptor.KeyIndexerPersist;
+        returned.RecordIndexerPersist = _indexDescriptor.RecordIndexerPersist;
+
+        Descriptor = returned;
     }
 }

@@ -39,7 +39,7 @@ public sealed class StressContext : IDisposable
     public const string ErrorLogPath = "stress_errors.log";
     private readonly StreamWriter _errorLog;
 
-    public StressContext(string dbPath)
+    public StressContext(IStorageEngine engine)
     {
         // Delete stale log from a previous run and create a fresh one
         if (File.Exists(ErrorLogPath)) File.Delete(ErrorLogPath);
@@ -47,7 +47,7 @@ public sealed class StressContext : IDisposable
         _errorLog.WriteLine($"CatDb Stress Test — Error Log — Started {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         _errorLog.WriteLine(new string('─', 80));
 
-        Engine = CatDb.Database.CatDb.FromFile(dbPath);
+        Engine = engine;
 
         Ticks    = Engine.OpenXTable<long,   Tick>          ("ticks");
         Sessions = Engine.OpenXTable<string, UserSession>   ("sessions");

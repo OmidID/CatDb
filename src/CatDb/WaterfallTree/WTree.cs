@@ -1,4 +1,4 @@
-#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
+﻿#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using CatDb.Data;
@@ -28,7 +28,7 @@ public partial class WTree : IDisposable
 
     private volatile bool _disposed;
     public bool IsDisposed => _disposed;
-    private volatile bool _shutdown;
+    private CancellationTokenSource _shutdownCts = new();
     private int _depth = 1;
 
     private long _globalVersion;
@@ -92,8 +92,7 @@ public partial class WTree : IDisposable
             _isRootCacheLoaded = true;
         }
 
-        _cacheThread = new Thread(DoCache);
-        _cacheThread.Start();
+        _cacheTask = Task.Run(() => DoCache(_shutdownCts.Token));
     }
 
     private void LoadRootCache()
@@ -385,7 +384,10 @@ public partial class WTree : IDisposable
     /// Branch.NodeID -> node
     /// </summary>
     private readonly ConcurrentDictionary<long, Node> _cache = new();
-    private readonly Thread _cacheThread;
+    private readonly Task _cacheTask;
+
+    // Signal: pulsed when cache exceeds threshold so DoCache wakes immediately
+    private readonly SemaphoreSlim _cacheSignal = new(0, 1);
 
     private SemaphoreSlim _cacheSemaphore = new(int.MaxValue, int.MaxValue);
 
@@ -403,8 +405,8 @@ public partial class WTree : IDisposable
 
             if (_cache.Count > CacheSize * 1.1)
             {
-                lock (_cache)
-                    Monitor.Pulse(_cache);
+                // Signal DoCache to wake up immediately (guard: TOCTOU race between check and Release)
+                try { _cacheSignal.Release(); } catch (SemaphoreFullException) { }
             }
         }
     }
@@ -416,8 +418,8 @@ public partial class WTree : IDisposable
 
         if (_cache.Count > CacheSize * 1.1)
         {
-            lock (_cache)
-                Monitor.Pulse(_cache);
+            // Signal DoCache to wake up immediately (guard: TOCTOU race between check and Release)
+            try { _cacheSignal.Release(); } catch (SemaphoreFullException) { }
         }
     }
 
@@ -435,14 +437,21 @@ public partial class WTree : IDisposable
 
         var delta = (int)(CacheSize * 1.1 - _cache.Count);
         if (delta > 0)
-            _cacheSemaphore.Release(delta);
+        {
+            // Capture the current semaphore reference — it may be swapped by DoCache.
+            // If the semaphore is already at MaximumCount (the "unthrottled" initial state),
+            // Release() would throw SemaphoreFullException; suppress it safely.
+            var sem = _cacheSemaphore;
+            try { sem.Release(delta); }
+            catch (SemaphoreFullException) { }
+        }
 
         return node;
     }
 
-    private void DoCache()
+    private void DoCache(CancellationToken ct)
     {
-        while (!_shutdown)
+        while (!ct.IsCancellationRequested)
         {
             while (_cache.Count > CacheSize * 1.1)
             {
@@ -462,14 +471,12 @@ public partial class WTree : IDisposable
 
                 token.CountdownEvent.Signal();
                 token.CountdownEvent.Wait();
-                _cacheSemaphore.Release(int.MaxValue / 2);
+                try { _cacheSemaphore.Release(int.MaxValue / 2); }
+                catch (SemaphoreFullException) { }
             }
 
-            lock (_cache)
-            {
-                if (_cache.Count <= CacheSize * 1.1)
-                    Monitor.Wait(_cache, 1);
-            }
+            // Wait for a signal (cache over limit) or wake up after 1 ms to re-check
+            _cacheSignal.Wait(1, ct);
         }
     }
 
@@ -483,9 +490,8 @@ public partial class WTree : IDisposable
         {
             if (disposing)
             {
-                _shutdown = true;
-                if (_cacheThread != null)
-                    _cacheThread.Join();
+                _shutdownCts.Cancel();
+                try { _cacheTask.Wait(); } catch (AggregateException) { }
 
                 _workingFallCount.Wait();
 
