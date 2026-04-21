@@ -94,6 +94,100 @@ public class XTablePortable<TKey, TRecord> : ITable<TKey, TRecord>
     public KeyValuePair<TKey, TRecord>? FirstRow => Table.FirstRow is { } f ? Pair(f) : null;
     public KeyValuePair<TKey, TRecord>? LastRow  => Table.LastRow  is { } l ? Pair(l) : null;
 
+    public long ScanCount(KeyQuery<TKey> query)
+    {
+        if (query.Filter is not null)
+        {
+            long n = 0;
+            foreach (var _ in Scan(query)) n++;
+            return n;
+        }
+
+        if (Table is XTablePortable raw)
+        {
+            var ifrom = query.HasFrom ? KeyTransformer.To(query.From) : null;
+            var ito   = query.HasTo   ? KeyTransformer.To(query.To)   : null;
+            return raw.ScanCount(ifrom, query.HasFrom, query.FromExclusive,
+                                 ito,  query.HasTo,   query.ToExclusive);
+        }
+
+        long count = 0;
+        foreach (var _ in Scan(query)) count++;
+        return count;
+    }
+
+    public IEnumerable<KeyValuePair<TKey, TRecord>> Scan(KeyQuery<TKey> query)
+    {
+        var ifrom  = query.HasFrom ? KeyTransformer.To(query.From) : null;
+        var ito    = query.HasTo   ? KeyTransformer.To(query.To)   : null;
+        var filter = query.Filter;
+
+        if (Table is XTablePortable raw)
+        {
+            foreach (var seg in raw.ScanSegments(
+                         ifrom, query.HasFrom, query.FromExclusive,
+                         ito,   query.HasTo,   query.ToExclusive))
+            {
+                var buf = seg.Buffer;
+                var cnt = seg.Count;
+                for (var i = 0; i < cnt; i++)
+                {
+                    var key = KeyTransformer.From(buf[i].Key);
+                    if (filter is not null && !filter(key)) continue;
+                    yield return new KeyValuePair<TKey, TRecord>(key, RecordTransformer.From(buf[i].Value));
+                }
+            }
+            yield break;
+        }
+
+        var eq = System.Collections.Generic.EqualityComparer<TKey>.Default;
+        bool skipFirst = query.FromExclusive && query.HasFrom;
+        foreach (var kv in Table.Forward(ifrom, query.HasFrom, ito, query.HasTo))
+        {
+            var key = KeyTransformer.From(kv.Key);
+            if (skipFirst) { skipFirst = false; if (eq.Equals(key, query.From)) continue; }
+            if (query.ToExclusive && query.HasTo && eq.Equals(key, query.To)) break;
+            if (filter is not null && !filter(key)) continue;
+            yield return new(key, RecordTransformer.From(kv.Value));
+        }
+    }
+
+    public IEnumerable<KeyValuePair<TKey, TRecord>> ScanBackward(KeyQuery<TKey> query)
+    {
+        var ifrom  = query.HasFrom ? KeyTransformer.To(query.From) : null;
+        var ito    = query.HasTo   ? KeyTransformer.To(query.To)   : null;
+        var filter = query.Filter;
+
+        if (Table is XTablePortable raw)
+        {
+            foreach (var seg in raw.ScanSegmentsBackward(
+                         ito,   query.HasTo,   query.ToExclusive,
+                         ifrom, query.HasFrom, query.FromExclusive))
+            {
+                var buf = seg.Buffer;
+                var cnt = seg.Count;
+                for (var i = 0; i < cnt; i++)
+                {
+                    var key = KeyTransformer.From(buf[i].Key);
+                    if (filter is not null && !filter(key)) continue;
+                    yield return new KeyValuePair<TKey, TRecord>(key, RecordTransformer.From(buf[i].Value));
+                }
+            }
+            yield break;
+        }
+
+        var eq = System.Collections.Generic.EqualityComparer<TKey>.Default;
+        bool skipFirst = query.ToExclusive && query.HasTo;
+        foreach (var kv in Table.Backward(ito, query.HasTo, ifrom, query.HasFrom))
+        {
+            var key = KeyTransformer.From(kv.Key);
+            if (skipFirst) { skipFirst = false; if (eq.Equals(key, query.To)) continue; }
+            if (query.FromExclusive && query.HasFrom && eq.Equals(key, query.From)) break;
+            if (filter is not null && !filter(key)) continue;
+            yield return new(key, RecordTransformer.From(kv.Value));
+        }
+    }
+
     public IEnumerator<KeyValuePair<TKey, TRecord>> GetEnumerator() => Forward().GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator()                         => GetEnumerator();
 }

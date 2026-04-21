@@ -87,6 +87,121 @@ public class XTable<TKey, TRecord>(ITable<IData, IData> table) : ITable<TKey, TR
     public KeyValuePair<TKey, TRecord>? FirstRow => Nullable(Table.FirstRow);
     public KeyValuePair<TKey, TRecord>? LastRow  => Nullable(Table.LastRow);
 
+    /// <summary>
+    /// Counts matching records using engine-native index arithmetic when possible.
+    /// For sorted-list-mode leaves: O(log leafSize) per leaf — no record access at all.
+    /// For 2M records across ~62 leaves: ~62 binary searches instead of 2M IData casts.
+    /// When no <see cref="KeyQuery{TKey}.Filter"/> is set, no record data is touched.
+    /// </summary>
+    public long ScanCount(KeyQuery<TKey> query)
+    {
+        if (query.Filter is not null)
+        {
+            // Filter requires per-record evaluation — must iterate
+            long n = 0;
+            foreach (var _ in Scan(query)) n++;
+            return n;
+        }
+
+        if (Table is XTablePortable raw)
+        {
+            var ifrom = query.HasFrom ? K(query.From) : null;
+            var ito   = query.HasTo   ? K(query.To)   : null;
+            return raw.ScanCount(ifrom, query.HasFrom, query.FromExclusive,
+                                 ito,  query.HasTo,   query.ToExclusive);
+        }
+
+        // Fallback for remote tables
+        long count = 0;
+        foreach (var _ in Scan(query)) count++;
+        return count;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// When the underlying table is a local <see cref="XTablePortable"/> the call uses
+    /// <c>ScanSegments</c> which yields one buffer per <b>leaf</b> (not per record).
+    /// This tight <c>for(i)</c> loop with direct <c>buffer[i]</c> access eliminates
+    /// 2 of the 3 iterator state machine transitions that the old approach required.
+    /// The leaf lock is held only during the buffer copy, not during caller processing.
+    /// For remote tables the default interface fallback is used.
+    /// </remarks>
+    public IEnumerable<KeyValuePair<TKey, TRecord>> Scan(KeyQuery<TKey> query)
+    {
+        var ifrom  = query.HasFrom ? K(query.From) : null;
+        var ito    = query.HasTo   ? K(query.To)   : null;
+        var filter = query.Filter;
+
+        if (Table is XTablePortable raw)
+        {
+            // ScanSegments yields once per LEAF — the for(i) loop below
+            // is the only per-record work, with direct array indexing.
+            foreach (var seg in raw.ScanSegments(
+                         ifrom, query.HasFrom, query.FromExclusive,
+                         ito,   query.HasTo,   query.ToExclusive))
+            {
+                var buf = seg.Buffer;
+                var cnt = seg.Count;
+                for (var i = 0; i < cnt; i++)
+                {
+                    var key = FromK(buf[i].Key);
+                    if (filter is not null && !filter(key)) continue;
+                    yield return new KeyValuePair<TKey, TRecord>(key, FromR(buf[i].Value));
+                }
+            }
+            yield break;
+        }
+
+        // Fallback: handles XTableRemote or any other ITable<IData,IData>
+        var eq = System.Collections.Generic.EqualityComparer<TKey>.Default;
+        bool skipFirst = query.FromExclusive && query.HasFrom;
+        foreach (var kv in Table.Forward(ifrom, query.HasFrom, ito, query.HasTo))
+        {
+            var key = FromK(kv.Key);
+            if (skipFirst) { skipFirst = false; if (eq.Equals(key, query.From)) continue; }
+            if (query.ToExclusive && query.HasTo && eq.Equals(key, query.To)) break;
+            if (filter is not null && !filter(key)) continue;
+            yield return new(key, FromR(kv.Value));
+        }
+    }
+
+    /// <inheritdoc/>
+    public IEnumerable<KeyValuePair<TKey, TRecord>> ScanBackward(KeyQuery<TKey> query)
+    {
+        var ifrom  = query.HasFrom ? K(query.From) : null;
+        var ito    = query.HasTo   ? K(query.To)   : null;
+        var filter = query.Filter;
+
+        if (Table is XTablePortable raw)
+        {
+            foreach (var seg in raw.ScanSegmentsBackward(
+                         ito,   query.HasTo,   query.ToExclusive,
+                         ifrom, query.HasFrom, query.FromExclusive))
+            {
+                var buf = seg.Buffer;
+                var cnt = seg.Count;
+                for (var i = 0; i < cnt; i++)
+                {
+                    var key = FromK(buf[i].Key);
+                    if (filter is not null && !filter(key)) continue;
+                    yield return new KeyValuePair<TKey, TRecord>(key, FromR(buf[i].Value));
+                }
+            }
+            yield break;
+        }
+
+        var eq = System.Collections.Generic.EqualityComparer<TKey>.Default;
+        bool skipFirst = query.ToExclusive && query.HasTo;
+        foreach (var kv in Table.Backward(ito, query.HasTo, ifrom, query.HasFrom))
+        {
+            var key = FromK(kv.Key);
+            if (skipFirst) { skipFirst = false; if (eq.Equals(key, query.To)) continue; }
+            if (query.FromExclusive && query.HasFrom && eq.Equals(key, query.From)) break;
+            if (filter is not null && !filter(key)) continue;
+            yield return new(key, FromR(kv.Value));
+        }
+    }
+
     public IEnumerator<KeyValuePair<TKey, TRecord>> GetEnumerator() => Forward().GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator()                         => GetEnumerator();
 }

@@ -58,11 +58,17 @@ static class KeyQueryPerfDemo
         var rangeSize = (last - first) / 20;   // ~5% of key space
         var rangeFrom = mid;
         var rangeTo   = mid + rangeSize;
-        Console.Write($"Count Between({rangeFrom},{rangeTo}): ");
+        Console.Write($"Count (range ~5%):          ");
         sw.Restart();
         var cnt = t.Count(KeyQuery<long>.Between(rangeFrom, rangeTo));
         sw.Stop();
-        Console.WriteLine($"{sw.Elapsed.TotalMilliseconds:F1} ms  ({cnt:N0} records)");
+        Console.WriteLine($"{sw.Elapsed.TotalMilliseconds:F3} ms  ({cnt:N0} records)");
+
+        Console.Write("Count (full 2M):            ");
+        sw.Restart();
+        var cntAll = t.Count(KeyQuery<long>.All());
+        sw.Stop();
+        Console.WriteLine($"{sw.Elapsed.TotalMilliseconds:F3} ms  ({cntAll:N0} records)");
 
         // ── 4. Range scan — take first 10K from range ─────────────────────
         Console.Write("Scan first 10K from mid:    ");
@@ -71,6 +77,53 @@ static class KeyQueryPerfDemo
         sw.Stop();
         Console.WriteLine($"{sw.Elapsed.TotalMilliseconds:F1} ms  ({scanned:N0} records)");
 
+        // ── 4b. Compare: Query.Scan engine path vs raw Forward() ──────────
+        Console.WriteLine();
+        Console.WriteLine("── Engine Scan vs raw Forward() comparison ──");
+
+        // Raw Forward() — the old approach (3 yield layers, lock held during iteration)
+        Console.Write("Forward() scan 100K:        ");
+        sw.Restart();
+        var fwdCount = 0;
+        foreach (var kv in t.Forward(mid, true, default!, false))
+        {
+            fwdCount++;
+            if (fwdCount >= 100_000) break;
+        }
+        sw.Stop();
+        var fwdMs = sw.Elapsed.TotalMilliseconds;
+        Console.WriteLine($"{fwdMs:F1} ms  ({fwdCount:N0} records, {fwdCount / fwdMs * 1000:N0} rec/sec)");
+
+        // Engine Scan (segment-based, 1 yield layer, buffer per leaf)
+        Console.Write("Query.Scan 100K:            ");
+        sw.Restart();
+        var scanCount = t.Query(KeyQuery<long>.AtLeast(mid)).Take(100_000).Count();
+        sw.Stop();
+        var scanMs = sw.Elapsed.TotalMilliseconds;
+        Console.WriteLine($"{scanMs:F1} ms  ({scanCount:N0} records, {scanCount / scanMs * 1000:N0} rec/sec)");
+
+        if (fwdMs > 0)
+            Console.WriteLine($"Speedup: {fwdMs / scanMs:F1}x");
+
+        // Full table scan comparison
+        Console.Write("Forward() full scan:        ");
+        sw.Restart();
+        var fullFwd = 0;
+        foreach (var kv in t.Forward()) fullFwd++;
+        sw.Stop();
+        var fullFwdMs = sw.Elapsed.TotalMilliseconds;
+        Console.WriteLine($"{fullFwdMs:F1} ms  ({fullFwd:N0} records, {fullFwd / fullFwdMs * 1000:N0} rec/sec)");
+
+        Console.Write("Query.Scan full scan:       ");
+        sw.Restart();
+        var fullScan = t.Count(KeyQuery<long>.All());
+        sw.Stop();
+        var fullScanMs = sw.Elapsed.TotalMilliseconds;
+        Console.WriteLine($"{fullScanMs:F1} ms  ({fullScan:N0} records, {fullScan / fullScanMs * 1000:N0} rec/sec)");
+
+        if (fullFwdMs > 0)
+            Console.WriteLine($"Speedup: {fullFwdMs / fullScanMs:F1}x");
+        Console.WriteLine();
         // ── 5. PageAfter deep — page 10000 (keyset, always O(log N)) ──────
         Console.Write("Cursor page 10000 (keyset): ");
         sw.Restart();

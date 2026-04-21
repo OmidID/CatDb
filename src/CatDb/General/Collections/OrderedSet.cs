@@ -499,5 +499,151 @@ public class OrderedSet<TKey, TValue> : IOrderedSet<TKey, TValue>
         }
     }
 
+    public IEnumerable<KeyValuePair<TKey, TValue>> ForwardExclusive(
+        TKey from, bool hasFrom, bool fromExclusive,
+        TKey to,   bool hasTo,   bool toExclusive)
+    {
+        if (hasFrom && hasTo && _comparer.Compare(from, to) > 0)
+            yield break;
+        if (hasFrom && hasTo && _comparer.Compare(from, to) == 0 && (fromExclusive || toExclusive))
+            yield break;
+
+        if (Count == 0)
+            yield break;
+
+        var fromKey = new KeyValuePair<TKey, TValue>(from, default(TValue));
+        var toKey   = new KeyValuePair<TKey, TValue>(to,   default(TValue));
+
+        if (List != null)
+        {
+            if (!FindIndexes(fromKey, hasFrom, toKey, hasTo, out var idxFrom, out var idxTo))
+                yield break;
+
+            // Adjust indices for exclusive endpoints: O(1) arithmetic, no per-record call
+            if (fromExclusive && hasFrom && _comparer.Compare(List[idxFrom].Key, from) == 0)
+                idxFrom++;
+            if (toExclusive   && hasTo   && idxTo >= idxFrom && _comparer.Compare(List[idxTo].Key, to) == 0)
+                idxTo--;
+
+            for (var i = idxFrom; i <= idxTo; i++)
+                yield return List[i];
+        }
+        else
+        {
+            if (_dictionary != null)
+                TransformDictionaryToTree();
+
+            var enumerable = hasFrom || hasTo ? _set.GetViewBetween(fromKey, toKey, hasFrom, hasTo) : _set;
+
+            // At most one skip at the start (fromExclusive) and one break at the end (toExclusive)
+            bool skipFrom = fromExclusive && hasFrom;
+            foreach (var x in enumerable)
+            {
+                if (skipFrom && _comparer.Compare(x.Key, from) == 0) { skipFrom = false; continue; }
+                skipFrom = false;
+                if (toExclusive && hasTo && _comparer.Compare(x.Key, to) == 0) yield break;
+                yield return x;
+            }
+        }
+    }
+
+    public IEnumerable<KeyValuePair<TKey, TValue>> BackwardExclusive(
+        TKey to,   bool hasTo,   bool toExclusive,
+        TKey from, bool hasFrom, bool fromExclusive)
+    {
+        if (hasFrom && hasTo && _comparer.Compare(from, to) > 0)
+            yield break;
+        if (hasFrom && hasTo && _comparer.Compare(from, to) == 0 && (fromExclusive || toExclusive))
+            yield break;
+
+        if (Count == 0)
+            yield break;
+
+        var fromKey = new KeyValuePair<TKey, TValue>(from, default(TValue));
+        var toKey   = new KeyValuePair<TKey, TValue>(to,   default(TValue));
+
+        if (List != null)
+        {
+            if (!FindIndexes(fromKey, hasFrom, toKey, hasTo, out var idxFrom, out var idxTo))
+                yield break;
+
+            // Backward start = idxTo (highest), end = idxFrom (lowest)
+            if (toExclusive   && hasTo   && _comparer.Compare(List[idxTo].Key, to)     == 0)
+                idxTo--;
+            if (fromExclusive && hasFrom && idxFrom <= idxTo && _comparer.Compare(List[idxFrom].Key, from) == 0)
+                idxFrom++;
+
+            for (var i = idxTo; i >= idxFrom; i--)
+                yield return List[i];
+        }
+        else
+        {
+            if (_dictionary != null)
+                TransformDictionaryToTree();
+
+            var enumerable = hasFrom || hasTo ? _set.GetViewBetween(fromKey, toKey, hasFrom, hasTo) : _set;
+
+            bool skipTo = toExclusive && hasTo;
+            foreach (var x in enumerable.Reverse())
+            {
+                if (skipTo && _comparer.Compare(x.Key, to) == 0) { skipTo = false; continue; }
+                skipTo = false;
+                if (fromExclusive && hasFrom && _comparer.Compare(x.Key, from) == 0) yield break;
+                yield return x;
+            }
+        }
+    }
+
+    // ─── Direct-access API for zero-yield leaf iteration ──────────────────
+
+    public List<KeyValuePair<TKey, TValue>>? InternalList => List;
+
+    public bool TryGetSortedRange(
+        TKey from, bool hasFrom, bool fromExclusive,
+        TKey to,   bool hasTo,   bool toExclusive,
+        out int startIndex, out int endIndex)
+    {
+        startIndex = endIndex = 0;
+
+        if (List == null || List.Count == 0)
+            return false;
+
+        if (hasFrom && hasTo && _comparer.Compare(from, to) > 0)
+            return false;
+        if (hasFrom && hasTo && _comparer.Compare(from, to) == 0 && (fromExclusive || toExclusive))
+            return false;
+
+        var fromKey = new KeyValuePair<TKey, TValue>(from, default(TValue));
+        var toKey   = new KeyValuePair<TKey, TValue>(to,   default(TValue));
+
+        if (!FindIndexes(fromKey, hasFrom, toKey, hasTo, out startIndex, out endIndex))
+            return false;
+
+        // Adjust for exclusive bounds: O(1) index arithmetic
+        if (fromExclusive && hasFrom && startIndex <= endIndex &&
+            _comparer.Compare(List[startIndex].Key, from) == 0)
+            startIndex++;
+
+        if (toExclusive && hasTo && endIndex >= startIndex &&
+            _comparer.Compare(List[endIndex].Key, to) == 0)
+            endIndex--;
+
+        return startIndex <= endIndex;
+    }
+
+    /// <summary>
+    /// Explicit implementation of <see cref="IOrderedSet{TKey,TValue}.CountRange"/>
+    /// that bypasses the DIM dispatch chain, calling <see cref="TryGetSortedRange"/> directly.
+    /// </summary>
+    public int CountRange(
+        TKey from, bool hasFrom, bool fromExclusive,
+        TKey to,   bool hasTo,   bool toExclusive)
+    {
+        if (TryGetSortedRange(from, hasFrom, fromExclusive, to, hasTo, toExclusive,
+                              out var si, out var ei))
+            return ei - si + 1;
+        return -1;
+    }
+
     #endregion
 }

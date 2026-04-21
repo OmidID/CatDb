@@ -27,8 +27,73 @@ public interface IOrderedSet<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
 
     void LoadFrom(KeyValuePair<TKey, TValue>[] array, int count, bool isOrdered);
 
+    /// <summary>Inclusive bounded forward iteration (existing contract).</summary>
     IEnumerable<KeyValuePair<TKey, TValue>> Forward(TKey from, bool hasFrom, TKey to, bool hasTo);
+
+    /// <summary>
+    /// Forward iteration with optional exclusive endpoints.
+    /// The binary-search start/stop positions are adjusted by one index position when
+    /// the matching boundary key is found, so no per-record predicate call is needed.
+    /// </summary>
+    IEnumerable<KeyValuePair<TKey, TValue>> ForwardExclusive(
+        TKey from, bool hasFrom, bool fromExclusive,
+        TKey to,   bool hasTo,   bool toExclusive);
+
+    /// <summary>Inclusive bounded backward iteration (existing contract).</summary>
     IEnumerable<KeyValuePair<TKey, TValue>> Backward(TKey to, bool hasTo, TKey from, bool hasFrom);
+
+    /// <summary>
+    /// Backward iteration with optional exclusive endpoints.
+    /// Mirrors <see cref="ForwardExclusive"/> for the descending direction.
+    /// </summary>
+    IEnumerable<KeyValuePair<TKey, TValue>> BackwardExclusive(
+        TKey to,   bool hasTo,   bool toExclusive,
+        TKey from, bool hasFrom, bool fromExclusive);
+
+    // ─── Direct-access API for zero-yield leaf iteration ──────────────────
+
+    /// <summary>
+    /// Returns the internal sorted backing list for direct indexed access.
+    /// Returns <c>null</c> when the ordered set is in dictionary or red-black-tree mode.
+    /// <para>
+    /// Callers MUST hold the appropriate lock while reading from the returned list.
+    /// </para>
+    /// </summary>
+    List<KeyValuePair<TKey, TValue>>? InternalList => null;
+
+    /// <summary>
+    /// Computes start/end indices for a range inside <see cref="InternalList"/>
+    /// with optional exclusive endpoints — using binary search and index arithmetic only.
+    /// Returns <c>false</c> if not in sorted-list mode, the set is empty, or the range is empty.
+    /// <para>
+    /// Time: O(log n) via binary search — zero per-record work.
+    /// When <c>true</c>, the caller can iterate <c>InternalList[startIndex..endIndex]</c> directly.
+    /// </para>
+    /// </summary>
+    bool TryGetSortedRange(
+        TKey from, bool hasFrom, bool fromExclusive,
+        TKey to,   bool hasTo,   bool toExclusive,
+        out int startIndex, out int endIndex)
+    {
+        startIndex = endIndex = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// Returns the number of records in the given range, using index arithmetic only.
+    /// Time: O(log n) for the binary search.  Zero per-record work.
+    /// Returns <c>-1</c> if the fast path is unavailable (dictionary / tree mode);
+    /// the caller should fall back to counting via iteration.
+    /// </summary>
+    int CountRange(
+        TKey from, bool hasFrom, bool fromExclusive,
+        TKey to,   bool hasTo,   bool toExclusive)
+    {
+        if (TryGetSortedRange(from, hasFrom, fromExclusive, to, hasTo, toExclusive,
+                              out var si, out var ei))
+            return ei - si + 1;
+        return -1; // fast path not available
+    }
 
     KeyValuePair<TKey, TValue> First { get; }
     KeyValuePair<TKey, TValue> Last { get; }
