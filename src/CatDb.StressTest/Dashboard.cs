@@ -75,10 +75,14 @@ public sealed class Dashboard
         Sep();
 
         // Totals
+        var corruptions = Volatile.Read(ref _ctx.TotalCorruptions);
         Col(ConsoleColor.Magenta,
             $"  Commits: {Volatile.Read(ref _ctx.TotalCommits),4}   " +
             $"Total Ops: {totalOps,14:N0}   " +
-            $"Total Errors: {totalErrs}\n");
+            $"Total Errors: {totalErrs}");
+        if (corruptions > 0)
+            Col(ConsoleColor.Red, $"   *** CORRUPTIONS: {corruptions} ***");
+        Console.WriteLine();
         Sep();
 
         // Recent errors
@@ -134,6 +138,19 @@ public sealed class Dashboard
         Console.WriteLine($"  Avg Ops/sec  : {opsPerSec:N0}");
         Console.WriteLine($"  DB Commits   : {_ctx.TotalCommits}");
         Console.WriteLine($"  Total Errors : {totalErrs}");
+        var finalCorruptions = Volatile.Read(ref _ctx.TotalCorruptions);
+        if (finalCorruptions > 0)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"  *** CORRUPTIONS : {finalCorruptions} ***  (check stress_errors.log)");
+            Console.ForegroundColor = ConsoleColor.White;
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("  Data Integrity : ✓ No corruptions detected");
+            Console.ForegroundColor = ConsoleColor.White;
+        }
         Console.WriteLine();
 
         Console.ForegroundColor = ConsoleColor.Yellow;

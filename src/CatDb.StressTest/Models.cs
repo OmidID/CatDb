@@ -71,6 +71,38 @@ public class SensorReading
     public DateTime ReadingTime { get; set; }
 }
 
+// ─── Integrity (used by DataIntegrityService) ─────────────────────────────
+// Every field is filled deterministically from the key so the reader
+// can verify correctness without keeping a separate reference copy.
+
+public class IntegrityRecord
+{
+    public long     Key       { get; set; }   // mirrors the table key
+    public string   StrVal    { get; set; } = "";
+    public double   DblVal    { get; set; }
+    public int      IntVal    { get; set; }
+    public DateTime TimeVal   { get; set; }
+    public bool     BoolVal   { get; set; }
+    public string   Tag       { get; set; } = "";
+    public int      Version   { get; set; }   // incremented on each update
+
+    // Build the "expected" record from just the key + version.
+    // Both writer and reader call this — no shared mutable state needed.
+    public static IntegrityRecord Build(long key, int version, string tag)
+        => new()
+        {
+            Key     = key,
+            StrVal  = $"str_{key}_{version}",
+            DblVal  = key * 1.111 + version,
+            IntVal  = (int)((key * 7 + version) & 0x7FFF_FFFF),
+            TimeVal = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+                          .AddSeconds(key).AddMilliseconds(version),
+            BoolVal = (key + version) % 2 == 0,
+            Tag     = tag,
+            Version = version,
+        };
+}
+
 // ─── Audit ─────────────────────────────────────────────────────────────────
 
 public class AuditEntry

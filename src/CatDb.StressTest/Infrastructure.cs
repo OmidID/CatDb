@@ -18,10 +18,14 @@ public sealed class StressContext : IDisposable
     public ITable<string, UserSession>   Sessions { get; }
     public ITable<long,   Order>         Orders   { get; }
     public ITable<long,   MetricSnapshot>Metrics  { get; }
-    public ITable<long,   AuditEntry>    Audit    { get; }
-    public ITable<string, PlayerScore>   Scores   { get; }
-    public ITable<long,   SensorReading> Sensors  { get; }
-    public ITable<string, string>        Config   { get; }
+    public ITable<long,   AuditEntry>    Audit     { get; }
+    public ITable<string, PlayerScore>   Scores    { get; }
+    public ITable<long,   SensorReading> Sensors   { get; }
+    public ITable<string, string>        Config    { get; }
+    public ITable<long,   IntegrityRecord> Integrity { get; }
+
+    // Counts corruption violations detected by DataIntegrityService.
+    public long TotalCorruptions = 0;
 
     // Global sequence counters – use Interlocked.Increment / Volatile.Read
     public long NextTickId   = 0;
@@ -53,10 +57,11 @@ public sealed class StressContext : IDisposable
         Sessions = Engine.OpenXTable<string, UserSession>   ("sessions");
         Orders   = Engine.OpenXTable<long,   Order>         ("orders");
         Metrics  = Engine.OpenXTable<long,   MetricSnapshot>("metrics");
-        Audit    = Engine.OpenXTable<long,   AuditEntry>    ("audit");
-        Scores   = Engine.OpenXTable<string, PlayerScore>   ("scores");
-        Sensors  = Engine.OpenXTable<long,   SensorReading> ("sensors");
-        Config   = Engine.OpenXTable<string, string>        ("config");
+        Audit      = Engine.OpenXTable<long,   AuditEntry>      ("audit");
+        Scores     = Engine.OpenXTable<string, PlayerScore>     ("scores");
+        Sensors    = Engine.OpenXTable<long,   SensorReading>   ("sensors");
+        Config     = Engine.OpenXTable<string, string>          ("config");
+        Integrity  = Engine.OpenXTable<long,   IntegrityRecord> ("integrity");
 
         Config["app"]     = "CatDb.StressTest";
         Config["version"] = "1.0";

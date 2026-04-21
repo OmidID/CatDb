@@ -54,6 +54,8 @@ var services = new List<BackgroundService>
     new MonkeyService         ("Monkey-2",      ctx),
     new MonkeyService         ("Monkey-3",      ctx),
     new CommitService         ("CommitTimer",   ctx, intervalMs: 2_000),
+    new KeySearchService      ("KeySearch",     ctx),
+    new DataIntegrityService  ("DataIntegrity", ctx),
 };
 
 // ─── Ctrl+C → graceful shutdown ───────────────────────────────────────────

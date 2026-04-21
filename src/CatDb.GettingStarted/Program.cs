@@ -12,67 +12,84 @@ const int    SERVER_PORT = 7182;
 const string FILE_NAME   = "test.CatDb";
 // ─────────────────────────────────────────────────────────────────────────────
 
-Example(1_000_000, KeysType.Random);
-Console.ReadKey();
-
 #pragma warning disable CS0162 // const-bool branch — flip USE_SERVER to enable
-static IStorageEngine OpenEngine(bool fresh = false)
+IStorageEngine OpenEngine(bool fresh = false)
 {
     if (USE_SERVER)
     {
         Console.WriteLine($"Connecting to server {SERVER_HOST}:{SERVER_PORT}...");
         return Database.CatDb.FromNetwork(SERVER_HOST, SERVER_PORT);
     }
-
     if (fresh) File.Delete(FILE_NAME);
     return Database.CatDb.FromFile(FILE_NAME);
 }
 #pragma warning restore CS0162
 
-static void Example(int tickCount, KeysType keysType)
+// ── Register all demos ────────────────────────────────────────────────────────
+var demos = new List<Demo>
 {
-    var sw = new Stopwatch();
+    new("Basic insert & read (1M records)",
+        () => BasicDemo.Run(OpenEngine)),
 
-    // insert
-    Console.WriteLine("Inserting...");
-    sw.Restart();
-    var c = 0;
-    using (var engine = OpenEngine(fresh: true))
+    new("KeyQuery — range search demo",
+        () => KeyQueryDemo.Run(OpenEngine)),
+
+    new("KeyQuery — performance on 2M records",
+        () => KeyQueryPerfDemo.Run(OpenEngine)),
+
+    new("KeyQuery — cursor (keyset) paging demo",
+        () => KeyQueryPagingDemo.Run(OpenEngine)),
+};
+
+// ── Menu loop ─────────────────────────────────────────────────────────────────
+while (true)
+{
+    Console.Clear();
+    Console.WriteLine("═══════════════════════════════════════════");
+    Console.WriteLine("  CatDb Getting Started");
+    Console.WriteLine($"  Mode: {(USE_SERVER ? $"Server ({SERVER_HOST}:{SERVER_PORT})" : "Local file")}");
+    Console.WriteLine("═══════════════════════════════════════════");
+    Console.WriteLine();
+
+    for (var i = 0; i < demos.Count; i++)
+        Console.WriteLine($"  [{i + 1}] {demos[i].Title}");
+
+    Console.WriteLine("  [0] Exit");
+    Console.WriteLine();
+    Console.Write("Select: ");
+
+    var input = Console.ReadLine()?.Trim();
+    if (!int.TryParse(input, out var choice) || choice < 0 || choice > demos.Count)
     {
-        var table = engine.OpenXTable<long, Tick>("table");
-
-        foreach (var kv in TicksGenerator.GetFlow(tickCount, keysType))
-        {
-            table[kv.Key] = kv.Value;
-            if (++c % 100_000 == 0) Console.WriteLine("Inserted {0} records", c);
-        }
-
-        var table2 = engine.OpenXTable<string, string>("table2");
-        table2["My Random Key"]  = "Random Value";
-        table2["My Random Key2"] = "Random Value2";
-
-        engine.Commit();
+        Console.WriteLine("Invalid choice. Press any key...");
+        Console.ReadKey();
+        continue;
     }
-    sw.Stop();
-    Console.WriteLine("Insert speed: {0} rec/sec", sw.GetSpeed(tickCount));
 
-    // read
-    Console.WriteLine("Reading...");
-    sw.Restart();
-    c = 0;
-    using (var engine = OpenEngine())
+    if (choice == 0) break;
+
+    Console.Clear();
+    Console.WriteLine($"▶ {demos[choice - 1].Title}");
+    Console.WriteLine(new string('─', 60));
+
+    try
     {
-        var table = engine.OpenXTable<long, Tick>("table");
-
-        foreach (var _ in table)
-        {
-            if (++c % 100_000 == 0) Console.WriteLine("Read {0} records", c);
-        }
-
-        var table2 = engine.OpenXTable<string, string>("table2");
-        Console.WriteLine(table2["My Random Key"]);
-        Console.WriteLine(table2["My Random Key2"]);
+        var sw = Stopwatch.StartNew();
+        demos[choice - 1].Action();
+        sw.Stop();
+        Console.WriteLine();
+        Console.WriteLine($"Done in {sw.Elapsed.TotalSeconds:F2}s");
     }
-    sw.Stop();
-    Console.WriteLine("Read speed: {0} rec/sec", sw.GetSpeed(c));
+    catch (Exception ex)
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"Error: {ex.Message}");
+        Console.ResetColor();
+    }
+
+    Console.WriteLine();
+    Console.Write("Press any key to return to menu...");
+    Console.ReadKey();
 }
+
+record Demo(string Title, Action Action);

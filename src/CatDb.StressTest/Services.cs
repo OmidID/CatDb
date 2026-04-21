@@ -1,3 +1,6 @@
+using CatDb.Database;
+using CatDb.Extensions;
+
 namespace CatDb.StressTest;
 
 // ─── 1. Tick Ingest ────────────────────────────────────────────────────────
@@ -796,5 +799,450 @@ public sealed class CommitService : BackgroundService
             }
             catch (Exception ex) { Fail(ex, _ctx); }
         }
+    }
+}
+
+// ─── 10. Key Search Service ───────────────────────────────────────────────
+// Exercises Query / QueryBackward / PageAfter under concurrent write load.
+// Runs against the tables that other services keep mutating — validates that
+// range scans return records in the correct order and within requested bounds.
+
+public sealed class KeySearchService : BackgroundService
+{
+    private readonly StressContext _ctx;
+    private readonly Random        _rng;
+
+    public KeySearchService(string name, StressContext ctx) : base(name)
+    {
+        _ctx = ctx;
+        _rng = new Random(name.GetHashCode() ^ unchecked((int)0x5EAD1234));
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                switch (_rng.Next(10))
+                {
+                    // ── Ticks: AtLeast (descending live edge) ─────────────────────────────
+                    case 0:
+                    {
+                        var top  = Volatile.Read(ref _ctx.NextTickId);
+                        if (top < 2) break;
+                        var from = Math.Max(1L, top - _rng.Next(100, 2_000));
+                        long prev = -1;
+                        int  n   = 0;
+                        foreach (var kv in _ctx.Ticks.Query(KeyQuery<long>.AtLeast(from)))
+                        {
+                            if (kv.Key < from)
+                            {
+                                Fail(new Exception(
+                                    $"Ticks.AtLeast: key {kv.Key} < from {from}"), _ctx);
+                            }
+                            if (prev != -1 && kv.Key <= prev)
+                            {
+                                Fail(new Exception(
+                                    $"Ticks.AtLeast: order violation {kv.Key} <= {prev}"), _ctx);
+                            }
+                            prev = kv.Key;
+                            if (++n >= 500) break;
+                        }
+                        Hit($"ticks.AtLeast({from})→{n}");
+                        break;
+                    }
+
+                    // ── Orders: Between (ascending, boundary inclusive check) ─────────────
+                    case 1:
+                    {
+                        var top = Volatile.Read(ref _ctx.NextOrderId);
+                        if (top < 4) break;
+                        var a = _rng.NextInt64(1, top / 2);
+                        var b = a + _rng.Next(50, 500);
+                        int n = 0;
+                        foreach (var kv in _ctx.Orders.Query(KeyQuery<long>.Between(a, b)))
+                        {
+                            if (kv.Key < a || kv.Key > b)
+                                Fail(new Exception(
+                                    $"Orders.Between: key {kv.Key} outside [{a},{b}]"), _ctx);
+                            if (++n >= 500) break;
+                        }
+                        Hit($"orders.Between({a},{b})→{n}");
+                        break;
+                    }
+
+                    // ── Orders: Between exclusive bounds ──────────────────────────────────
+                    case 2:
+                    {
+                        var top = Volatile.Read(ref _ctx.NextOrderId);
+                        if (top < 4) break;
+                        var a = _rng.NextInt64(1, top / 2);
+                        var b = a + _rng.Next(10, 200);
+                        foreach (var kv in _ctx.Orders.Query(
+                            KeyQuery<long>.Between(a, b, fromInclusive: false, toInclusive: false)))
+                        {
+                            if (kv.Key <= a || kv.Key >= b)
+                                Fail(new Exception(
+                                    $"Orders.BetweenExcl: key {kv.Key} not in ({a},{b})"), _ctx);
+                        }
+                        Hit($"orders.BetweenExcl({a},{b})");
+                        break;
+                    }
+
+                    // ── Ticks: GreaterThan (exclusive lower) ──────────────────────────────
+                    case 3:
+                    {
+                        var top = Volatile.Read(ref _ctx.NextTickId);
+                        if (top < 2) break;
+                        var pivot = _rng.NextInt64(1, top);
+                        foreach (var kv in _ctx.Ticks.Query(KeyQuery<long>.GreaterThan(pivot)).Take(200))
+                        {
+                            if (kv.Key <= pivot)
+                                Fail(new Exception(
+                                    $"Ticks.GreaterThan: key {kv.Key} <= pivot {pivot}"), _ctx);
+                        }
+                        Hit($"ticks.GreaterThan({pivot})");
+                        break;
+                    }
+
+                    // ── Ticks: LessThan (exclusive upper) ────────────────────────────────
+                    case 4:
+                    {
+                        var top = Volatile.Read(ref _ctx.NextTickId);
+                        if (top < 2) break;
+                        var pivot = _rng.NextInt64(2, top);
+                        foreach (var kv in _ctx.Ticks.Query(KeyQuery<long>.LessThan(pivot)).Take(200))
+                        {
+                            if (kv.Key >= pivot)
+                                Fail(new Exception(
+                                    $"Ticks.LessThan: key {kv.Key} >= pivot {pivot}"), _ctx);
+                        }
+                        Hit($"ticks.LessThan({pivot})");
+                        break;
+                    }
+
+                    // ── Scores: StartsWith prefix scan ────────────────────────────────────
+                    case 5:
+                    {
+                        var prefixes = new[] { "p0", "p1", "p2", "p3", "p4",
+                                               "p5", "p6", "p7", "p8", "p9" };
+                        var pfx  = prefixes[_rng.Next(prefixes.Length)];
+                        int n    = 0;
+                        foreach (var kv in _ctx.Scores.Query(KeyQuery.StartsWith(pfx)))
+                        {
+                            if (!kv.Key.StartsWith(pfx, StringComparison.Ordinal))
+                                Fail(new Exception(
+                                    $"Scores.StartsWith: key \"{kv.Key}\" doesn't start with \"{pfx}\""), _ctx);
+                            if (++n >= 200) break;
+                        }
+                        Hit($"scores.StartsWith(\"{pfx}\")→{n}");
+                        break;
+                    }
+
+                    // ── Orders: QueryBackward descending order check ───────────────────────
+                    case 6:
+                    {
+                        var top = Volatile.Read(ref _ctx.NextOrderId);
+                        if (top < 4) break;
+                        var a = _rng.NextInt64(1, top / 2);
+                        var b = a + _rng.Next(50, 500);
+                        long prev = long.MaxValue;
+                        int  n   = 0;
+                        foreach (var kv in _ctx.Orders.QueryBackward(KeyQuery<long>.Between(a, b)))
+                        {
+                            if (kv.Key > prev)
+                                Fail(new Exception(
+                                    $"Orders.Backward: order violation {kv.Key} > {prev}"), _ctx);
+                            if (kv.Key < a || kv.Key > b)
+                                Fail(new Exception(
+                                    $"Orders.Backward: key {kv.Key} outside [{a},{b}]"), _ctx);
+                            prev = kv.Key;
+                            if (++n >= 500) break;
+                        }
+                        Hit($"orders.Backward({a},{b})→{n}");
+                        break;
+                    }
+
+                    // ── Ticks: cursor paging — each page ascending, no gaps/overlaps ──────
+                    case 7:
+                    {
+                        var top = Volatile.Read(ref _ctx.NextTickId);
+                        if (top < 20) break;
+                        var from = Math.Max(1L, top - 300);
+                        var query = KeyQuery<long>.AtLeast(from);
+                        long? lastKey = null;
+                        int pages = 0, total = 0;
+
+                        while (pages < 5)
+                        {
+                            var page = lastKey == null
+                                ? _ctx.Ticks.PageAfter(query, take: 20).ToList()
+                                : _ctx.Ticks.PageAfter(query, afterKey: lastKey.Value, take: 20).ToList();
+                            if (page.Count == 0) break;
+
+                            // Each key must be > lastKey (strict ascending / no overlap)
+                            foreach (var kv in page)
+                            {
+                                if (lastKey.HasValue && kv.Key <= lastKey.Value)
+                                    Fail(new Exception(
+                                        $"Ticks.PageAfter: key {kv.Key} <= cursor {lastKey.Value}"), _ctx);
+                                lastKey = kv.Key;
+                            }
+                            total += page.Count;
+                            pages++;
+                        }
+                        Hit($"ticks.PageAfter→{pages}p/{total}rows");
+                        break;
+                    }
+
+                    // ── Sensors: AtMost scan ──────────────────────────────────────────────
+                    case 8:
+                    {
+                        var top = Volatile.Read(ref _ctx.NextSensorId);
+                        if (top < 2) break;
+                        var ceiling = _rng.NextInt64(1, top);
+                        foreach (var kv in _ctx.Sensors.Query(KeyQuery<long>.AtMost(ceiling)).Take(300))
+                        {
+                            if (kv.Key > ceiling)
+                                Fail(new Exception(
+                                    $"Sensors.AtMost: key {kv.Key} > ceiling {ceiling}"), _ctx);
+                        }
+                        Hit($"sensors.AtMost({ceiling})");
+                        break;
+                    }
+
+                    // ── Count: quick range count on orders ────────────────────────────────
+                    case 9:
+                    {
+                        var top = Volatile.Read(ref _ctx.NextOrderId);
+                        if (top < 4) break;
+                        var a = _rng.NextInt64(1, top / 2);
+                        var b = a + _rng.Next(10, 200);
+                        var cnt = _ctx.Orders.Count(KeyQuery<long>.Between(a, b));
+                        // Count must be >= 0 (trivially) and <= range size
+                        if (cnt < 0 || cnt > (b - a + 1))
+                            Fail(new Exception(
+                                $"Orders.Count({a},{b}) returned {cnt} which is out of range"), _ctx);
+                        Hit($"orders.Count({a},{b})={cnt}");
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested) { Fail(ex, _ctx); }
+
+            await Task.Delay(5, ct).ContinueWith(_ => { });
+        }
+    }
+}
+
+// ─── 11. Data Integrity Service ──────────────────────────────────────────
+// The ONLY service that uses the Integrity table.
+//
+// Phase A — INSERT:
+//   Write N records with deterministic payload (key + version → fields).
+//   Commit. Read every one back and verify all fields match exactly.
+//
+// Phase B — UPDATE (Replace):
+//   Increment version, write updated record, commit, read back, validate.
+//
+// Phase C — DELETE + re-INSERT:
+//   Delete a record, commit, confirm it's gone.
+//   Re-insert with a fresh version, commit, read back, validate.
+//
+// Any mismatch → ctx.RecordError (logged as a CORRUPTION) + TotalCorruptions++
+// This catches: wrong key mapping, truncated strings, flipped booleans,
+//               serialization bugs, off-by-one in keys, etc.
+
+public sealed class DataIntegrityService : BackgroundService
+{
+    private const int BatchSize  = 50;   // records per integrity round
+    private const string BaseTag = "integrity";
+
+    private readonly StressContext _ctx;
+    private readonly Random        _rng;
+    private long _nextIntegrityKey = 0;
+
+    public DataIntegrityService(string name, StressContext ctx) : base(name)
+    {
+        _ctx = ctx;
+        _rng = new Random(name.GetHashCode() ^ unchecked((int)0x1A2B3C4D));
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                switch (_rng.Next(3))
+                {
+                    case 0: await RoundInsert(ct);        break;
+                    case 1: await RoundUpdate(ct);        break;
+                    case 2: await RoundDeleteReinsert(ct); break;
+                }
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested) { Fail(ex, _ctx); }
+
+            await Task.Delay(10, ct).ContinueWith(_ => { });
+        }
+    }
+
+    // ── Phase A: batch insert, commit, verify ────────────────────────────
+    private async Task RoundInsert(CancellationToken ct)
+    {
+        var keys = new List<long>(BatchSize);
+        for (var i = 0; i < BatchSize; i++)
+        {
+            var key = Interlocked.Increment(ref _nextIntegrityKey);
+            var rec = IntegrityRecord.Build(key, version: 0, tag: $"{BaseTag}_insert");
+            _ctx.Integrity[key] = rec;
+            keys.Add(key);
+        }
+
+        // Force a commit so data is flushed before we read back
+        _ctx.Commit();
+        await Task.Yield();
+
+        int ok = 0, fail = 0;
+        foreach (var key in keys)
+        {
+            if (!_ctx.Integrity.TryGet(key, out var got))
+            {
+                RecordCorruption(key, "INSERT: record not found after commit");
+                fail++;
+                continue;
+            }
+            var expected = IntegrityRecord.Build(key, version: 0, tag: $"{BaseTag}_insert");
+            if (!Matches(key, expected, got, "INSERT"))
+                fail++;
+            else
+                ok++;
+        }
+        Hit($"insert {ok}✓ {fail}✗");
+    }
+
+    // ── Phase B: update (replace) existing records, commit, verify ───────
+    private async Task RoundUpdate(CancellationToken ct)
+    {
+        var top = Volatile.Read(ref _nextIntegrityKey);
+        if (top < BatchSize) return;
+
+        var keys = new List<long>(BatchSize);
+        for (var i = 0; i < BatchSize; i++)
+            keys.Add(_rng.NextInt64(1, top + 1));
+
+        // Write an updated version of each key
+        foreach (var key in keys)
+        {
+            // Read current version first
+            var version = _ctx.Integrity.TryGet(key, out var cur) ? cur.Version + 1 : 1;
+            var rec = IntegrityRecord.Build(key, version, tag: $"{BaseTag}_update");
+            _ctx.Integrity[key] = rec;
+        }
+
+        _ctx.Commit();
+        await Task.Yield();
+
+        int ok = 0, fail = 0;
+        foreach (var key in keys)
+        {
+            if (!_ctx.Integrity.TryGet(key, out var got))
+            {
+                RecordCorruption(key, "UPDATE: record not found after commit");
+                fail++;
+                continue;
+            }
+            // Version we actually wrote; just validate fields are self-consistent
+            var rebuilt = IntegrityRecord.Build(key, got.Version, tag: $"{BaseTag}_update");
+            if (!Matches(key, rebuilt, got, "UPDATE"))
+                fail++;
+            else
+                ok++;
+        }
+        Hit($"update {ok}✓ {fail}✗");
+    }
+
+    // ── Phase C: delete, confirm gone, re-insert, verify ─────────────────
+    private async Task RoundDeleteReinsert(CancellationToken ct)
+    {
+        var top = Volatile.Read(ref _nextIntegrityKey);
+        if (top < BatchSize) return;
+
+        var keys = new List<long>(BatchSize / 2);
+        for (var i = 0; i < BatchSize / 2; i++)
+            keys.Add(_rng.NextInt64(1, top + 1));
+
+        // Delete
+        foreach (var key in keys)
+            _ctx.Integrity.Delete(key);
+
+        _ctx.Commit();
+        await Task.Yield();
+
+        // Confirm deleted
+        int deleteFail = 0;
+        foreach (var key in keys)
+        {
+            if (_ctx.Integrity.TryGet(key, out _))
+            {
+                RecordCorruption(key, "DELETE: record still present after commit");
+                deleteFail++;
+            }
+        }
+
+        // Re-insert
+        foreach (var key in keys)
+        {
+            var rec = IntegrityRecord.Build(key, version: 99, tag: $"{BaseTag}_reinsert");
+            _ctx.Integrity[key] = rec;
+        }
+
+        _ctx.Commit();
+        await Task.Yield();
+
+        int ok = 0, fail = 0;
+        foreach (var key in keys)
+        {
+            if (!_ctx.Integrity.TryGet(key, out var got))
+            {
+                RecordCorruption(key, "REINSERT: record not found after commit");
+                fail++;
+                continue;
+            }
+            var expected = IntegrityRecord.Build(key, version: 99, tag: $"{BaseTag}_reinsert");
+            if (!Matches(key, expected, got, "REINSERT"))
+                fail++;
+            else
+                ok++;
+        }
+        Hit($"del+reinsert {ok}✓ {fail + deleteFail}✗");
+    }
+
+    // ── Field-by-field comparison ─────────────────────────────────────────
+    private bool Matches(long key, IntegrityRecord expected, IntegrityRecord actual, string phase)
+    {
+        var errors = new System.Text.StringBuilder();
+
+        if (actual.Key     != expected.Key)     errors.Append($" Key:{actual.Key}≠{expected.Key}");
+        if (actual.StrVal  != expected.StrVal)  errors.Append($" StrVal:\"{actual.StrVal}\"≠\"{expected.StrVal}\"");
+        if (Math.Abs(actual.DblVal - expected.DblVal) > 1e-9)
+                                                errors.Append($" DblVal:{actual.DblVal}≠{expected.DblVal}");
+        if (actual.IntVal  != expected.IntVal)  errors.Append($" IntVal:{actual.IntVal}≠{expected.IntVal}");
+        if (actual.TimeVal != expected.TimeVal) errors.Append($" TimeVal:{actual.TimeVal}≠{expected.TimeVal}");
+        if (actual.BoolVal != expected.BoolVal) errors.Append($" BoolVal:{actual.BoolVal}≠{expected.BoolVal}");
+        if (actual.Tag     != expected.Tag)     errors.Append($" Tag:\"{actual.Tag}\"≠\"{expected.Tag}\"");
+        if (actual.Version != expected.Version) errors.Append($" Version:{actual.Version}≠{expected.Version}");
+
+        if (errors.Length == 0) return true;
+
+        RecordCorruption(key, $"{phase} MISMATCH —{errors}");
+        return false;
+    }
+
+    private void RecordCorruption(long key, string detail)
+    {
+        Interlocked.Increment(ref _ctx.TotalCorruptions);
+        _ctx.RecordError(Name, $"CORRUPTION key={key}: {detail}");
     }
 }
