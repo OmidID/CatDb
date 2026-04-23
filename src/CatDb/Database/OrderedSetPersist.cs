@@ -123,16 +123,11 @@ public class OrderedSetPersist : IPersist<IOrderedSet<IData, IData>>
         for (var i = 0; i < buffers.Length; i++)
             buffers[i] = reader.ReadBytes((int)CountCompression.Deserialize(reader));
 
-        var task = Task.Factory.StartNew(() =>
-        {
-            using var ms = new MemoryStream(buffers[1]);
-            _recordIndexerPersist.Load(new BinaryReader(ms), (idx, value) => array[idx].SetValue(value), count);
-        });
-
         using (var ms = new MemoryStream(buffers[0]))
             _keyIndexerPersist.Load(new BinaryReader(ms), (idx, value) => array[idx].SetKey(value), count);
 
-        task.Wait();
+        using (var ms = new MemoryStream(buffers[1]))
+            _recordIndexerPersist.Load(new BinaryReader(ms), (idx, value) => array[idx].SetValue(value), count);
 
         var data = _orderedSetFactory.Create();
         data.LoadFrom(array, count, isOrdered);

@@ -335,7 +335,6 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
-                Task task = null;
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
@@ -349,9 +348,8 @@ public class XTablePortable : ITable<IData, IData>
                     }
                     if (shouldStop) break;
 
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
-                            Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
+                        Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
                 }
 
                 lock (records)
@@ -416,7 +414,6 @@ public class XTablePortable : ITable<IData, IData>
                 hasFromActive  = false;
                 fromExclActive = false;
 
-                task?.Wait();
                 records = recs;
             }
 
@@ -493,7 +490,6 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
-                Task task = null;
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
@@ -507,9 +503,8 @@ public class XTablePortable : ITable<IData, IData>
                     }
                     if (shouldStop) break;
 
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
-                            Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
+                        Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
                 }
 
                 bool continueScanning;
@@ -544,7 +539,6 @@ public class XTablePortable : ITable<IData, IData>
                 hasFromActive  = false;
                 fromExclActive = false;
 
-                task?.Wait();
                 records = recs;
             }
         }
@@ -629,7 +623,6 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
-                Task task = null;
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
@@ -643,9 +636,8 @@ public class XTablePortable : ITable<IData, IData>
                     }
                     if (shouldStop) break;
 
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
-                            Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
+                        Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
                 }
 
                 int segCount = 0;
@@ -687,7 +679,6 @@ public class XTablePortable : ITable<IData, IData>
                 hasFromActive  = false;
                 fromExclActive = false;
 
-                task?.Wait();
                 records = recs;
             }
         }
@@ -732,7 +723,6 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
-                Task task = null;
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey)
@@ -746,9 +736,8 @@ public class XTablePortable : ITable<IData, IData>
                     }
                     if (shouldStop) break;
 
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
-                            Direction.Backward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
+                        Direction.Backward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
                 }
 
                 int segCount = 0;
@@ -791,8 +780,6 @@ public class XTablePortable : ITable<IData, IData>
 
                 hasToActive  = false;
                 toExclActive = false;
-
-                task?.Wait();
 
                 if (recs is null) break;
 

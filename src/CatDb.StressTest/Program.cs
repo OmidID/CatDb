@@ -24,7 +24,7 @@ IStorageEngine OpenEngine()
         return Database.CatDb.FromNetwork(SERVER_HOST, SERVER_PORT);
     }
 
-    if (File.Exists(DB_FILE)) File.Delete(DB_FILE);
+    //if (File.Exists(DB_FILE)) File.Delete(DB_FILE);
     return Database.CatDb.FromFile(DB_FILE);
 }
 #pragma warning restore CS0162
@@ -56,6 +56,8 @@ var services = new List<BackgroundService>
     new CommitService         ("CommitTimer",   ctx, intervalMs: 2_000),
     new KeySearchService      ("KeySearch",     ctx),
     new DataIntegrityService  ("DataIntegrity", ctx),
+    new HighStressKeySearchService("HighSearch-A", ctx, wideMode: true),
+    new HighStressKeySearchService("HighSearch-B", ctx, wideMode: false),
 };
 
 // ─── Ctrl+C → graceful shutdown ───────────────────────────────────────────

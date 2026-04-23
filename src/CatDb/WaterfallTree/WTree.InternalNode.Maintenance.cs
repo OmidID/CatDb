@@ -17,12 +17,14 @@ public partial class WTree
                     helpers[index] = new MaintenanceHelper(level, token, helpers, Branches[index], index);
 
                 Branches.Clear();
+
+                // Run right to left: when helper[i] checks its right neighbor helpers[i+1],
+                // that neighbor is already fully processed — no Task, no Wait needed.
+                for (var index = helpers.Length - 1; index >= 0; index--)
+                    helpers[index].Run();
+
                 for (var index = 0; index < helpers.Length; index++)
-                {
-                    var helper = helpers[index];
-                    helper.Task.Wait();
-                    Branches.AddRange(helper.List);
-                }
+                    Branches.AddRange(helpers[index].List);
 
                 RebuildOptimizator();
 
@@ -46,8 +48,6 @@ public partial class WTree
 
                     if (operationCount <= Branch.Tree._internalNodeMinOperations)
                         break;
-
-                    //branch.WaitFall();
                 }
             }
         }
@@ -58,9 +58,9 @@ public partial class WTree
             private readonly Token _token;
             private readonly MaintenanceHelper[] _helpers;
             private readonly int _index;
+            private readonly KeyValuePair<FullKey, Branch> _kv;
 
             public BranchCollection List;
-            public readonly Task Task;
 
             public MaintenanceHelper(int level, Token token, MaintenanceHelper[] helpers, KeyValuePair<FullKey, Branch> kv, int index)
             {
@@ -68,7 +68,7 @@ public partial class WTree
                 _token = token;
                 _helpers = helpers;
                 _index = index;
-                Task = Task.Factory.StartNew(Do, kv, TaskCreationOptions.AttachedToParent);
+                _kv = kv;
             }
 
             private void Split(int index)
@@ -102,27 +102,28 @@ public partial class WTree
                 node.Branch.Tree._heap.Release(node.Branch.NodeHandle);
             }
 
-            private void Do(object state)
+            /// <summary>
+            /// Synchronous equivalent of the former Task-based Do(object state).
+            /// Must be called right-to-left so helpers[_index+1] is already Run() when
+            /// this helper needs to inspect or merge with it.
+            /// </summary>
+            public void Run()
             {
-                var kv = (KeyValuePair<FullKey, Branch>)state;
-                var branch = kv.Value;
-
+                var branch = _kv.Value;
                 var isFall = false;
 
-                branch.WaitFall();
                 if (branch.NodeState == NodeState.None)
-                    List = new BranchCollection(kv);
+                    List = new BranchCollection(_kv);
                 else
                 {
                     branch.Fall(_level, _token, new Params(WalkMethod.Current, WalkAction.None, null, true));
-                    branch.WaitFall();
                     isFall = true;
 
                     if (branch.NodeState == NodeState.None)
-                        List = new BranchCollection(kv);
+                        List = new BranchCollection(_kv);
                     else
                     {
-                        List = new BranchCollection { kv };
+                        List = new BranchCollection { _kv };
 
                         if (branch.NodeState == NodeState.Overflow)
                             Split(0);
@@ -132,22 +133,16 @@ public partial class WTree
                 if (_index + 1 >= _helpers.Length)
                     return;
 
+                // Right neighbor is already processed — no Wait() needed.
                 var h = _helpers[_index + 1];
-                h.Task.Wait();
 
                 if (branch.NodeState == NodeState.Underflow || h.List[0].Value.NodeState == NodeState.Underflow)
                 {
                     if (!isFall)
-                    {
                         branch.Fall(_level, _token, new Params(WalkMethod.Current, WalkAction.None, null, true));
-                        branch.WaitFall();
-                    }
 
                     if (h.List[0].Value.Cache.OperationCount > 0)
-                    {
                         h.List[0].Value.Fall(_level, _token, new Params(WalkMethod.Current, WalkAction.None, null, true));
-                        h.List[0].Value.WaitFall();
-                    }
 
                     Debug.Assert(h.List[0].Value.Cache.OperationCount == 0);
                     Merge(h.List[0].Value.Node);

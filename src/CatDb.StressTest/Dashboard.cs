@@ -76,10 +76,13 @@ public sealed class Dashboard
 
         // Totals
         var corruptions = Volatile.Read(ref _ctx.TotalCorruptions);
+        var searchOps   = Volatile.Read(ref HighStressKeySearchService.TotalSearchOps);
         Col(ConsoleColor.Magenta,
             $"  Commits: {Volatile.Read(ref _ctx.TotalCommits),4}   " +
             $"Total Ops: {totalOps,14:N0}   " +
             $"Total Errors: {totalErrs}");
+        Col(ConsoleColor.Cyan,
+            $"  HighSearch Ops: {searchOps,12:N0}");
         if (corruptions > 0)
             Col(ConsoleColor.Red, $"   *** CORRUPTIONS: {corruptions} ***");
         Console.WriteLine();

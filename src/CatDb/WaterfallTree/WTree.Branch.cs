@@ -57,12 +57,13 @@ public partial class WTree
 
                 if (_node != null)
                 {
-                    _node.Branch.WaitFall();
+                    // Node is already registered in the cache — just take ownership.
+                    // Do NOT call Packet: it would assert because the key is already present.
                     _node.Branch = this;
-                    Tree.Packet(NodeHandle, _node);
                 }
                 else
                 {
+                    // Load from disk; Node.Create registers it in the cache via Packet.
                     _node = Node.Create(this);
                     _node.Load();
                 }

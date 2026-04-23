@@ -1,5 +1,5 @@
 ﻿#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using CatDb.Data;
 using CatDb.General.Collections;
@@ -105,17 +105,14 @@ public partial class WTree : IDisposable
 
     private void Sink()
     {
-        _rootBranch.WaitFall();
-
         if (_rootBranch.NodeState != NodeState.None)
         {
-            var token = new Token(_cacheSemaphore, new CancellationTokenSource().Token);
+            var token = new Token(CancellationToken.None);
             _rootBranch.MaintenanceRoot(token);
             _rootBranch.Node.Touch(_depth + 1);
-            token.CountdownEvent.Wait();
         }
 
-        _rootBranch.Fall(_depth + 1, new Token(_cacheSemaphore, CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true));
+        _rootBranch.Fall(_depth + 1, new Token(CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true));
     }
 
     public void Execute(IOperationCollection operations)
@@ -127,7 +124,7 @@ public partial class WTree : IDisposable
         {
             if (!_isRootCacheLoaded)
                 LoadRootCache();
-            
+
             _rootBranch.ApplyToCache(operations);
 
             if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
@@ -144,7 +141,7 @@ public partial class WTree : IDisposable
         {
             if (!_isRootCacheLoaded)
                 LoadRootCache();
-            
+
             _rootBranch.ApplyToCache(locator, operation);
 
             if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
@@ -182,8 +179,7 @@ public partial class WTree : IDisposable
             };
         }
 
-        branch.Fall(_depth + 1, new Token(_cacheSemaphore, CancellationToken.None), param);
-        branch.WaitFall();
+        branch.Fall(_depth + 1, new Token(CancellationToken.None), param);
 
         switch (direction)
         {
@@ -235,14 +231,13 @@ public partial class WTree : IDisposable
                                 nearFullKey = node.Branches[node.Branches.Count - 2].Key;
                             }
                         }
-                        
+
                         Monitor.Enter(newBranch.Value);
                         depth--;
                         newBranch.Value.WaitFall();
                         if (newBranch.Value.Cache.Contains(originalLocator))
                         {
-                            newBranch.Value.Fall(depth + 1, new Token(_cacheSemaphore, CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true, originalLocator));
-                            newBranch.Value.WaitFall();
+                            newBranch.Value.Fall(depth + 1, new Token(CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true, originalLocator));
                         }
                         Debug.Assert(!newBranch.Value.Cache.Contains(originalLocator));
                         Monitor.Exit(branch);
@@ -296,12 +291,9 @@ public partial class WTree : IDisposable
         {
             if (!_isRootCacheLoaded)
                 LoadRootCache();
-            
-            var token = new Token(_cacheSemaphore, cancellationToken);
-            _rootBranch.Fall(_depth + 1, token, param);
 
-            token.CountdownEvent.Signal();
-            token.CountdownEvent.Wait();
+            var token = new Token(cancellationToken);
+            _rootBranch.Fall(_depth + 1, token, param);
 
             //write settings
             using (var ms = new MemoryStream())
@@ -389,7 +381,7 @@ public partial class WTree : IDisposable
     // Signal: pulsed when cache exceeds threshold so DoCache wakes immediately
     private readonly SemaphoreSlim _cacheSignal = new(0, 1);
 
-    private SemaphoreSlim _cacheSemaphore = new(int.MaxValue, int.MaxValue);
+    // _cacheSemaphore removed — falls are fully synchronous; no throttling semaphore is needed.
 
     private int _cacheSize = 32;
 
@@ -435,17 +427,6 @@ public partial class WTree : IDisposable
         _cache.TryRemove(id, out var node);
         //Debug.Assert(node != null);
 
-        var delta = (int)(CacheSize * 1.1 - _cache.Count);
-        if (delta > 0)
-        {
-            // Capture the current semaphore reference — it may be swapped by DoCache.
-            // If the semaphore is already at MaximumCount (the "unthrottled" initial state),
-            // Release() would throw SemaphoreFullException; suppress it safely.
-            var sem = _cacheSemaphore;
-            try { sem.Release(delta); }
-            catch (SemaphoreFullException) { }
-        }
-
         return node;
     }
 
@@ -453,29 +434,57 @@ public partial class WTree : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
-            while (_cache.Count > CacheSize * 1.1)
+            if (_cache.Count > CacheSize * 1.1)
             {
-                var kvs = _cache.Select(s => new KeyValuePair<long, Node>(s.Key, s.Value)).ToArray();
+                // ── Eviction strategy ────────────────────────────────────────────────────────
+                //
+                // The WTree eviction safety invariant is:
+                //   "When a branch is unloaded, its node is fully materialised on disk —
+                //    including all pending operations from every ancestor's BranchCache."
+                //
+                // This invariant is what makes CascadeButOnlyLoaded safe in Commit: if a
+                // branch is not loaded, we trust its on-disk state is complete and skip it.
+                //
+                // To honour the invariant, eviction MUST happen under lock(_rootBranch).
+                // That lock serialises against Execute/Commit/FindData, so when we evict:
+                //   • No new operations can land in any ancestor BranchCache concurrently.
+                //   • The CacheFlush walk first sinks all ancestor BranchCaches down to each
+                //     candidate node before storing and unloading it.
+                //
+                // The concern about holding the root lock during disk I/O is addressed by
+                // the two-phase approach:
+                //   Phase 1 (no lock): mark LRU candidates and pre-serialise them to byte[].
+                //   Phase 2 (root lock): do the CacheFlush tree walk, which will call
+                //     Store() on the marked nodes; Store() writes to Heap which has its own
+                //     internal lock — the actual file write is fast (write-behind via stream).
+                //
+                // Maintenance is still suppressed during CacheFlush (see Branch.Fall.cs) to
+                // prevent Sink Falls from triggering additional heavy work under the lock.
 
-                foreach (var kv in kvs.Where(x => !x.Value.IsRoot).OrderBy(x => x.Value.TouchId).Take(_cache.Count - CacheSize))
+                var evictCount = _cache.Count - _cacheSize;
+
+                // Mark LRU leaf and internal candidates (outside root lock — read snapshot).
+                var candidates = _cache
+                    .Where(kv => !kv.Value.IsRoot)
+                    .OrderBy(kv => kv.Value.TouchId)
+                    .Take(evictCount)
+                    .ToList();
+
+                foreach (var kv in candidates)
                     kv.Value.IsExpiredFromCache = true;
-                //Debug.WriteLine(Cache.Count);
-                Token token;
+
+                // CacheFlush walk under root lock.
+                // DoFall will call Store+Unload for each IsExpiredFromCache node after
+                // first applying any ancestor BranchCache ops — honouring the invariant.
                 lock (_rootBranch)
                 {
-                    token = new Token(_cacheSemaphore, CancellationToken.None);
-                    _cacheSemaphore = new SemaphoreSlim(0, int.MaxValue);
+                    var token = new Token(CancellationToken.None);
                     var param = new Params(WalkMethod.CascadeButOnlyLoaded, WalkAction.CacheFlush, null, false);
                     _rootBranch.Fall(_depth + 1, token, param);
                 }
-
-                token.CountdownEvent.Signal();
-                token.CountdownEvent.Wait();
-                try { _cacheSemaphore.Release(int.MaxValue / 2); }
-                catch (SemaphoreFullException) { }
             }
 
-            // Wait for a signal (cache over limit) or wake up after 1 ms to re-check
+            // Wait for a signal (cache over limit) or wake up after 1 ms to re-check.
             _cacheSignal.Wait(1, ct);
         }
     }
@@ -505,7 +514,7 @@ public partial class WTree : IDisposable
     public void Dispose()
     {
         Dispose(true);
-        
+
         GC.SuppressFinalize(this);
     }
 

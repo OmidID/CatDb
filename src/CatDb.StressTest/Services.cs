@@ -1246,3 +1246,384 @@ public sealed class DataIntegrityService : BackgroundService
         _ctx.RecordError(Name, $"CORRUPTION key={key}: {detail}");
     }
 }
+
+// ─── 12. High-Stress Key Search Service ──────────────────────────────────
+// Dedicated maximum-throughput stress service for the KeyQuery / ScanCount
+// engine-native search path.  Runs with NO Task.Delay — just continuous
+// tight loops.  Two instances (A and B) run different operation mixes:
+//
+//   A  — full-range and wide-range forward scans, Count, backward scans
+//   B  — narrow range scans, exclusive bounds, WithFilter, cursor paging
+//
+// Every operation validates correctness (key order, boundary compliance,
+// Count ≥ 0, page cursor integrity) and calls Fail() on any violation.
+//
+// Throughput metric: TotalSearchOps (visible on the dashboard as a separate
+// counter next to KeySearch).
+
+public sealed class HighStressKeySearchService : BackgroundService
+{
+    // ── Shared op counter across all instances ────────────────────────────
+    public static long TotalSearchOps = 0;
+
+    private readonly StressContext _ctx;
+    private readonly Random        _rng;
+    private readonly bool          _wideMode;   // true = instance A, false = instance B
+
+    public HighStressKeySearchService(string name, StressContext ctx, bool wideMode) : base(name)
+    {
+        _ctx      = ctx;
+        _rng      = new Random(name.GetHashCode() ^ (wideMode ? 0x1111_1111 : unchecked((int)0xEEEE_EEEE)));
+        _wideMode = wideMode;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                if (_wideMode)
+                    RunWide();
+                else
+                    RunNarrow();
+
+                Interlocked.Increment(ref TotalSearchOps);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested) { Fail(ex, _ctx); }
+
+            // No Task.Delay — yield only so other tasks get CPU time
+            await Task.Yield();
+        }
+    }
+
+    // ── Instance A: wide / full-range operations ─────────────────────────
+    private void RunWide()
+    {
+        var top = Volatile.Read(ref _ctx.NextTickId);
+        if (top < 10) return;
+
+        switch (_rng.Next(8))
+        {
+            // Full ascending scan (capped at 10 000 records to bound latency)
+            case 0:
+            {
+                long prev = -1;
+                int  n   = 0;
+                foreach (var kv in _ctx.Ticks.Scan(KeyQuery<long>.All()))
+                {
+                    if (prev != -1 && kv.Key <= prev)
+                        Fail(new Exception(
+                            $"HighStress.Wide.FullFwd: order violation {kv.Key} <= {prev}"), _ctx);
+                    prev = kv.Key;
+                    if (++n >= 10_000) break;
+                }
+                Hit($"wide.FullFwd {n:N0}");
+                break;
+            }
+
+            // Full descending scan (capped at 10 000)
+            case 1:
+            {
+                long prev = long.MaxValue;
+                int  n   = 0;
+                foreach (var kv in _ctx.Ticks.ScanBackward(KeyQuery<long>.All()))
+                {
+                    if (kv.Key >= prev)
+                        Fail(new Exception(
+                            $"HighStress.Wide.FullBwd: order violation {kv.Key} >= {prev}"), _ctx);
+                    prev = kv.Key;
+                    if (++n >= 10_000) break;
+                }
+                Hit($"wide.FullBwd {n:N0}");
+                break;
+            }
+
+            // ScanCount on a large range (50% of tick space)
+            case 2:
+            {
+                var from = Math.Max(1L, top / 4);
+                var to   = top * 3 / 4;
+                var cnt  = _ctx.Ticks.ScanCount(KeyQuery<long>.Between(from, to));
+                if (cnt < 0)
+                    Fail(new Exception(
+                        $"HighStress.Wide.Count: returned {cnt} for [{from},{to}]"), _ctx);
+                Hit($"wide.Count[{from},{to}]={cnt:N0}");
+                break;
+            }
+
+            // ScanCount on All() — counts every tick in the table
+            case 3:
+            {
+                var cnt = _ctx.Ticks.ScanCount(KeyQuery<long>.All());
+                if (cnt < 0)
+                    Fail(new Exception(
+                        $"HighStress.Wide.CountAll: returned {cnt}"), _ctx);
+                Hit($"wide.CountAll={cnt:N0}");
+                break;
+            }
+
+            // Large backward range on Sensors table (batch-import target)
+            case 4:
+            {
+                var sensorTop = Volatile.Read(ref _ctx.NextSensorId);
+                if (sensorTop < 10) break;
+                var from = Math.Max(1L, sensorTop - 5_000);
+                long prev = long.MaxValue;
+                int  n   = 0;
+                foreach (var kv in _ctx.Sensors.ScanBackward(KeyQuery<long>.AtLeast(from)))
+                {
+                    if (kv.Key >= prev)
+                        Fail(new Exception(
+                            $"HighStress.Wide.SensorBwd: order violation {kv.Key} >= {prev}"), _ctx);
+                    if (kv.Key < from)
+                        Fail(new Exception(
+                            $"HighStress.Wide.SensorBwd: key {kv.Key} < from {from}"), _ctx);
+                    prev = kv.Key;
+                    if (++n >= 5_000) break;
+                }
+                Hit($"wide.SensorBwd {n:N0}");
+                break;
+            }
+
+            // Large Metrics scan (ascending, full table)
+            case 5:
+            {
+                long prev = -1;
+                int  n   = 0;
+                foreach (var kv in _ctx.Metrics.Scan(KeyQuery<long>.All()))
+                {
+                    if (prev != -1 && kv.Key <= prev)
+                        Fail(new Exception(
+                            $"HighStress.Wide.MetricsFwd: order violation {kv.Key} <= {prev}"), _ctx);
+                    prev = kv.Key;
+                    if (++n >= 5_000) break;
+                }
+                Hit($"wide.MetricsFwd {n:N0}");
+                break;
+            }
+
+            // Concurrent Count + Scan — both on same live tick range
+            case 6:
+            {
+                var from = Math.Max(1L, top - 2_000);
+                var to   = top;
+                var q    = KeyQuery<long>.Between(from, to);
+                var cnt  = _ctx.Ticks.ScanCount(q);
+                int  n  = 0;
+                foreach (var _ in _ctx.Ticks.Scan(q))
+                    if (++n >= 2_000) break;
+                // Count may differ from n because inserts/deletes happen between the two calls
+                if (cnt < 0)
+                    Fail(new Exception(
+                        $"HighStress.Wide.CountVsScan: Count={cnt} negative"), _ctx);
+                Hit($"wide.CountVsScan cnt={cnt:N0} scan={n:N0}");
+                break;
+            }
+
+            // Audit full backward scan (append-only log)
+            case 7:
+            {
+                long prev = long.MaxValue;
+                int  n   = 0;
+                foreach (var kv in _ctx.Audit.ScanBackward(KeyQuery<long>.All()))
+                {
+                    if (kv.Key >= prev)
+                        Fail(new Exception(
+                            $"HighStress.Wide.AuditBwd: order violation {kv.Key} >= {prev}"), _ctx);
+                    prev = kv.Key;
+                    if (++n >= 5_000) break;
+                }
+                Hit($"wide.AuditBwd {n:N0}");
+                break;
+            }
+        }
+    }
+
+    // ── Instance B: narrow / precise boundary operations ─────────────────
+    private void RunNarrow()
+    {
+        switch (_rng.Next(8))
+        {
+            // Narrow tick window with exclusive-from bound
+            case 0:
+            {
+                var top = Volatile.Read(ref _ctx.NextTickId);
+                if (top < 10) break;
+                var pivot = _rng.NextInt64(1, top);
+                long prev = -1;
+                int  n   = 0;
+                foreach (var kv in _ctx.Ticks.Scan(KeyQuery<long>.GreaterThan(pivot)))
+                {
+                    if (kv.Key <= pivot)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.GreaterThan: key {kv.Key} <= pivot {pivot}"), _ctx);
+                    if (prev != -1 && kv.Key <= prev)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.GreaterThan: order violation {kv.Key} <= {prev}"), _ctx);
+                    prev = kv.Key;
+                    if (++n >= 300) break;
+                }
+                Hit($"narrow.GreaterThan({pivot})→{n}");
+                break;
+            }
+
+            // Orders exclusive-both-ends scan
+            case 1:
+            {
+                var top = Volatile.Read(ref _ctx.NextOrderId);
+                if (top < 10) break;
+                var a = _rng.NextInt64(1, Math.Max(2, top));
+                var b = a + _rng.Next(2, 100);
+                int n = 0;
+                foreach (var kv in _ctx.Orders.Scan(
+                    KeyQuery<long>.Between(a, b, fromInclusive: false, toInclusive: false)))
+                {
+                    if (kv.Key <= a || kv.Key >= b)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.BothExcl: key {kv.Key} not in ({a},{b})"), _ctx);
+                    if (++n >= 200) break;
+                }
+                Hit($"narrow.BothExcl({a},{b})→{n}");
+                break;
+            }
+
+            // WithFilter — only even keys from a tick range
+            case 2:
+            {
+                var top = Volatile.Read(ref _ctx.NextTickId);
+                if (top < 10) break;
+                var from = Math.Max(1L, top / 2);
+                var q    = KeyQuery<long>.AtLeast(from).WithFilter(k => k % 2 == 0);
+                int n   = 0;
+                foreach (var kv in _ctx.Ticks.Scan(q))
+                {
+                    if (kv.Key % 2 != 0)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.WithFilter: odd key {kv.Key}"), _ctx);
+                    if (kv.Key < from)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.WithFilter: key {kv.Key} < from {from}"), _ctx);
+                    if (++n >= 300) break;
+                }
+                Hit($"narrow.WithFilter→{n}");
+                break;
+            }
+
+            // ScanCount with exclusive bounds — must be <= range size
+            case 3:
+            {
+                var top = Volatile.Read(ref _ctx.NextOrderId);
+                if (top < 10) break;
+                var a   = _rng.NextInt64(1, Math.Max(2, top));
+                var b   = a + _rng.Next(1, 500);
+                var cnt = _ctx.Orders.ScanCount(
+                    KeyQuery<long>.Between(a, b, fromInclusive: false, toInclusive: false));
+                if (cnt < 0 || cnt > (b - a - 1))
+                    Fail(new Exception(
+                        $"HighStress.Narrow.CountExcl({a},{b}) returned {cnt}"), _ctx);
+                Hit($"narrow.CountExcl({a},{b})={cnt}");
+                break;
+            }
+
+            // Cursor paging with ascending forward scan — no key must repeat
+            case 4:
+            {
+                var top = Volatile.Read(ref _ctx.NextTickId);
+                if (top < 50) break;
+                var from   = Math.Max(1L, top - 1_000);
+                var q      = KeyQuery<long>.AtLeast(from);
+                long? cursor = null;
+                var seen   = new System.Collections.Generic.HashSet<long>();
+                int  pages = 0, total = 0;
+
+                while (pages < 10)
+                {
+                    var page = (cursor is null
+                        ? _ctx.Ticks.PageAfter(q, take: 50)
+                        : _ctx.Ticks.PageAfter(q, afterKey: cursor.Value, take: 50)).ToList();
+
+                    if (page.Count == 0) break;
+
+                    foreach (var kv in page)
+                    {
+                        if (!seen.Add(kv.Key))
+                            Fail(new Exception(
+                                $"HighStress.Narrow.PageAfter: duplicate key {kv.Key}"), _ctx);
+                        if (cursor.HasValue && kv.Key <= cursor.Value)
+                            Fail(new Exception(
+                                $"HighStress.Narrow.PageAfter: key {kv.Key} <= cursor {cursor.Value}"), _ctx);
+                        cursor = kv.Key;
+                    }
+                    total += page.Count;
+                    pages++;
+                }
+                Hit($"narrow.PageAfter {pages}p/{total}rows");
+                break;
+            }
+
+            // Scores: StartsWith scan — every result must have correct prefix
+            case 5:
+            {
+                var digits = "0123456789";
+                var pfx    = "p" + digits[_rng.Next(10)];
+                int n     = 0;
+                foreach (var kv in _ctx.Scores.Scan(KeyQuery.StartsWith(pfx)))
+                {
+                    if (!kv.Key.StartsWith(pfx, StringComparison.Ordinal))
+                        Fail(new Exception(
+                            $"HighStress.Narrow.StartsWith: key \"{kv.Key}\" missing prefix \"{pfx}\""), _ctx);
+                    if (++n >= 200) break;
+                }
+                Hit($"narrow.StartsWith(\"{pfx}\")→{n}");
+                break;
+            }
+
+            // AtMost backward scan — every result must be <= ceiling
+            case 6:
+            {
+                var top = Volatile.Read(ref _ctx.NextSensorId);
+                if (top < 5) break;
+                var ceiling = _rng.NextInt64(1, top);
+                long prev   = long.MaxValue;
+                int  n     = 0;
+                foreach (var kv in _ctx.Sensors.ScanBackward(KeyQuery<long>.AtMost(ceiling)))
+                {
+                    if (kv.Key > ceiling)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.AtMostBwd: key {kv.Key} > ceiling {ceiling}"), _ctx);
+                    if (kv.Key >= prev)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.AtMostBwd: order violation {kv.Key} >= {prev}"), _ctx);
+                    prev = kv.Key;
+                    if (++n >= 300) break;
+                }
+                Hit($"narrow.AtMostBwd({ceiling})→{n}");
+                break;
+            }
+
+            // LessThan descending scan with Count consistency check
+            case 7:
+            {
+                var top = Volatile.Read(ref _ctx.NextTickId);
+                if (top < 10) break;
+                var pivot = _rng.NextInt64(2, top);
+                var q     = KeyQuery<long>.LessThan(pivot);
+                var cnt   = _ctx.Ticks.ScanCount(q);
+                int  n   = 0;
+                foreach (var kv in _ctx.Ticks.ScanBackward(q))
+                {
+                    if (kv.Key >= pivot)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.LtBwd: key {kv.Key} >= pivot {pivot}"), _ctx);
+                    if (++n >= 500) break;
+                }
+                if (cnt < 0)
+                    Fail(new Exception(
+                        $"HighStress.Narrow.LtBwd: Count={cnt} negative"), _ctx);
+                Hit($"narrow.LtBwd({pivot}) cnt={cnt:N0} scan={n:N0}");
+                break;
+            }
+        }
+    }
+}

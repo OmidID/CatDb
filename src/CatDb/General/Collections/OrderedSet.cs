@@ -124,8 +124,13 @@ public class OrderedSet<TKey, TValue> : IOrderedSet<TKey, TValue>
         }
 
         Debug.Assert(0 <= idxFrom);
-        Debug.Assert(idxFrom <= idxTo);
         Debug.Assert(idxTo <= List.Count - 1);
+
+        // The range [from, to] may fall entirely between two adjacent keys
+        // (e.g. leaf has [10, 20], query is [12, 15]).  Binary search places
+        // idxFrom past idxTo — this is an empty result, not a bug.
+        if (idxFrom > idxTo)
+            return false;
 
         return true;
     }

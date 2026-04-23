@@ -7,27 +7,13 @@ public partial class WTree
 {
     private partial class Branch
     {
-        private volatile Task? _fallTask;
-
-        private void DoFall(object? state)
+        // DoFall executes synchronously — no task, no state boxing, no semaphore.
+        private void DoFall(BranchCache? cache, int level, Token? token, Params param)
         {
-            var tuple = (Tuple<Branch, BranchCache?, int, Token?, Params>)state!;
-            var branch = tuple.Item1;
-            var cache = tuple.Item2;
-            var level = tuple.Item3;
-            var token = tuple.Item4;
-            var param = tuple.Item5;
-            if (!branch.IsNodeLoaded)
-                token.Semaphore.Wait();
-            var node = branch.Node;
-            Debug.Assert(branch == node.Branch);
-//#if DEBUG
-//                Debug.Assert(node.TaskID == 0);
-//                node.TaskID = Task.CurrentId.Value;
-//#endif
+            var node = Node;
+            Debug.Assert(this == node.Branch);
 
-            //if (param.WalkAction != WalkAction.CacheFlush)
-                node.Touch(level);
+            node.Touch(level);
 
             //1. Apply cache
             if (cache != null)
@@ -46,7 +32,11 @@ public partial class WTree
                 }
                 else
                 {
-                    Parallel.ForEach(cache, kv =>
+                    // Sequential: we are already inside lock(this) which is held under
+                    // lock(_rootBranch). Parallel.ForEach here would grab ThreadPool threads
+                    // that are all blocked on lock(_rootBranch) from concurrent callers —
+                    // causing ThreadPool starvation that gets progressively worse over time.
+                    foreach (var kv in cache)
                     {
                         //compact operations
                         kv.Key.Apply.Internal(kv.Value);
@@ -54,19 +44,28 @@ public partial class WTree
                         //apply
                         if (kv.Value.Count > 0)
                             node.Apply(kv.Value);
-                    });
+                    }
                 }
 
                 cache.Clear();
             }
-            
+
             //2. Maintenance
-            if (node.Type == NodeType.Internal)
+            // Skip during CacheFlush walks — CacheFlush is for evicting cold nodes, not for sinking
+            // accumulated operations. Running Maintenance here causes cascading Sink Falls (disk I/O)
+            // under the root lock, which is the primary cause of the performance cliff.
+            if (node.Type == NodeType.Internal && (param.WalkAction & WalkAction.CacheFlush) == 0)
                 ((InternalNode)node).Maintenance(level, token);
-            branch.NodeState = node.State;
+            NodeState = node.State;
 
             if (node.IsExpiredFromCache && (param.WalkAction & WalkAction.CacheFlush) == WalkAction.CacheFlush)
-                param = new Params(param.WalkMethod, WalkAction.Store | WalkAction.Unload, param.WalkParams, param.Sink);
+            {
+                // Upgrade to Store|Unload for this node only.
+                // Use WalkMethod.Current so BroadcastFall is NOT called — children stay in cache
+                // with their current state. The InternalNode.Store() below serialises child branch
+                // caches, preserving all pending operations on disk.
+                param = new Params(WalkMethod.Current, WalkAction.Store | WalkAction.Unload, param.WalkParams, param.Sink);
+            }
 
             if (node.Type == NodeType.Internal)
             {
@@ -85,34 +84,17 @@ public partial class WTree
 
             if ((param.WalkAction & WalkAction.Unload) == WalkAction.Unload)
             {
-                //node.IsExpiredFromCache = false;
-                branch.Node = null;
-                Tree.Exclude(branch.NodeHandle);
+                Node = null;
+                Tree.Exclude(NodeHandle);
             }
-
-            if (token != null)
-                token.CountdownEvent.Signal();
-//#if DEBUG
-//                node.TaskID = 0;
-//#endif
-            branch._fallTask = null;
-
-            Tree._workingFallCount.Decrement();
         }
 
         public bool Fall(int level, Token token, Params param, TaskCreationOptions taskCreationOptions = TaskCreationOptions.None)
         {
             lock (this)
             {
-                WaitFall();
-
-                if (token != null)
-                {
-                    if (token.Cancellation.IsCancellationRequested)
-                        return false;
-
-                    token.CountdownEvent.AddCount(1);
-                }
+                if (token != null && token.Cancellation.IsCancellationRequested)
+                    return false;
 
                 var haveSink = false;
                 BranchCache? cache = null;
@@ -138,21 +120,17 @@ public partial class WTree
                     }
                 }
 
-                Tree._workingFallCount.Increment();
-                _fallTask = Task.Factory.StartNew(DoFall, new Tuple<Branch, BranchCache?, int, Token?, Params>(this, cache, level - 1, token, param), taskCreationOptions);
+                DoFall(cache, level - 1, token, param);
 
                 return haveSink;
             }
         }
 
+        /// <summary>
+        /// Falls are now synchronous; this is a no-op kept for call-site compatibility.
+        /// </summary>
         public void WaitFall()
         {
-            lock (this)
-            {
-                var task = _fallTask;
-                if (task != null)
-                    task.Wait();
-            }
         }
 
         public void ApplyToCache(Locator locator, IOperation operation)
@@ -206,8 +184,6 @@ public partial class WTree
 
                 //Tree.Depth--;
             }
-
-            token.CountdownEvent.Signal();
         }
     }
 
@@ -322,22 +298,18 @@ public partial class WTree
         }
     }
 
+    /// <summary>
+    /// Passed through the tree walk to carry cancellation.
+    /// CountdownEvent and SemaphoreSlim have been removed — falls are fully synchronous.
+    /// </summary>
     private class Token
     {
-        //private static long globalID = 0;
-
-        //public readonly long ID;
-        public readonly CountdownEvent CountdownEvent = new(1);
-        public readonly SemaphoreSlim Semaphore;
         public readonly CancellationToken Cancellation;
 
         [DebuggerStepThrough]
-        public Token(SemaphoreSlim semaphore, CancellationToken cancellationToken)
+        public Token(CancellationToken cancellationToken)
         {
-            Semaphore = semaphore;
             Cancellation = cancellationToken;
-
-            //ID = Interlocked.Increment(ref globalID);
         }
     }
 }

@@ -236,25 +236,18 @@ public partial class WTree
                 _ => throw new NotSupportedException(param.WalkMethod.ToString())
             };
 
-            var taskCreationOptions = TaskCreationOptions.None;
-            //if ((param.WalkAction & WalkAction.Store) == WTree<TPath>.WalkAction.Store)
-              //  taskCreationOptions = TaskCreationOptions.AttachedToParent;
-
-            Parallel.ForEach(branches, branch =>
+            // Falls are synchronous — iterate sequentially, no parallel overhead or deadlock risk.
+            foreach (var branch in branches)
+            {
+                if (param.WalkMethod == WalkMethod.CascadeButOnlyLoaded)
                 {
-                    if (param.WalkMethod == WalkMethod.CascadeButOnlyLoaded)
-                    {
-                        branch.Value.WaitFall();
-                        if (!branch.Value.IsNodeLoaded)
-                            return;
-                    }
+                    if (!branch.Value.IsNodeLoaded)
+                        continue;
+                }
 
-                    if (branch.Value.Fall(level, token, param, taskCreationOptions))
-                        IsModified = true;
-
-                    //if ((param.WalkAction & WalkAction.Store) == WTree<TPath>.WalkAction.Store)
-                    //    branch.Value.WaitFall();
-                });
+                if (branch.Value.Fall(level, token, param))
+                    IsModified = true;
+            }
         }
 
         public override bool IsOverflow => Branches.Count > Branch.Tree._internalNodeMaxBranches;
