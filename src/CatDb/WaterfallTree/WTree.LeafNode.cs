@@ -33,7 +33,8 @@ public partial class WTree
 
             if (_container.TryGetValue(locator, out var data))
             {
-                lock (data)
+                data.Lock.EnterWrite();
+                try
                 {
                     RecordCount -= data.Count;
 
@@ -45,6 +46,7 @@ public partial class WTree
                     if (data.Count == 0)
                         _container.Remove(locator);
                 }
+                finally { data.Lock.ExitWrite(); }
             }
             else
             {
@@ -76,8 +78,9 @@ public partial class WTree
             {
                 var kv = _container.First();
                 IOrderedSet<IData, IData> data;
-                lock (kv.Value)
-                    data = kv.Value.Split(halfRecordCount);
+                kv.Value.Lock.EnterWrite();
+                try { data = kv.Value.Split(halfRecordCount); }
+                finally { kv.Value.Lock.ExitWrite(); }
 
                 Debug.Assert(data.Count > 0);
                 rightContainer.Add(kv.Key, data);
@@ -106,8 +109,9 @@ public partial class WTree
                     if (leftRecordCount > halfRecordCount)
                     {
                         IOrderedSet<IData, IData> data;
-                        lock (kv.Value)
-                            data = kv.Value.Split(leftRecordCount - halfRecordCount);
+                        kv.Value.Lock.EnterWrite();
+                        try { data = kv.Value.Split(leftRecordCount - halfRecordCount); }
+                        finally { kv.Value.Lock.ExitWrite(); }
                         if (data.Count > 0)
                         {
                             specialCase = new KeyValuePair<Locator, IOrderedSet<IData, IData>>(kv.Key, data);
@@ -157,11 +161,22 @@ public partial class WTree
                     _container[kv.Key] = data = kv.Value;
                 else
                 {
-                    lock (data)
+                    // Acquire write on target and READ on source.
+                    // Without the source read lock a concurrent Fall→Apply on the source branch
+                    // can acquire source.Lock.EnterWrite() (Merge holds no read lock on source)
+                    // and mutate source._set while Merge iterates it → SortedSet corruption.
+                    data.Lock.EnterWrite();
+                    kv.Value.Lock.EnterRead();
+                    try
                     {
                         RecordCount -= data.Count;
                         data.Merge(kv.Value);
                         RecordCount += data.Count;
+                    }
+                    finally
+                    {
+                        kv.Value.Lock.ExitRead();
+                        data.Lock.ExitWrite();
                     }
                     continue;
                 }
@@ -193,8 +208,9 @@ public partial class WTree
             get
             {
                 var kv = (_container.Count == 1) ? _container.First() : _container.OrderBy(x => x.Key).First();
-
-                return new FullKey(kv.Key, kv.Value.First.Key);
+                kv.Value.Lock.EnterRead();
+                try { return new FullKey(kv.Key, kv.Value.First.Key); }
+                finally { kv.Value.Lock.ExitRead(); }
             }
         }
 
@@ -270,7 +286,9 @@ public partial class WTree
                 if (havePrev)
                 {
                     hasNearFullKey = true;
-                    nearFullKey = new FullKey(prev, nearData.Last.Key);
+                    nearData.Lock.EnterRead();
+                    try { nearFullKey = new FullKey(prev, nearData.Last.Key); }
+                    finally { nearData.Lock.ExitRead(); }
                 }
             }
             else //if (direction == Direction.Forward)
@@ -294,7 +312,9 @@ public partial class WTree
                 if (haveNext)
                 {
                     hasNearFullKey = true;
-                    nearFullKey = new FullKey(next, nearData.First.Key);
+                    nearData.Lock.EnterRead();
+                    try { nearFullKey = new FullKey(next, nearData.First.Key); }
+                    finally { nearData.Lock.ExitRead(); }
                 }
             }
 

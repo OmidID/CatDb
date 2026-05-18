@@ -162,6 +162,11 @@ public partial class WTree : IDisposable
 
         var branch = _rootBranch;
         Monitor.Enter(branch);
+        // 'heldBranch' always tracks the branch whose Monitor lock we currently own.
+        // The try/finally guarantees the lock is released even if an exception escapes.
+        var heldBranch = branch;
+        try
+        {
 
         if (!_isRootCacheLoaded)
             LoadRootCache();
@@ -190,11 +195,13 @@ public partial class WTree : IDisposable
                         var newBranch = ((InternalNode)branch.Node).FindBranch(locator, key, direction, ref nearFullKey, ref hasNearFullKey);
 
                         Monitor.Enter(newBranch.Value);
+                        var prevBranch = heldBranch;
+                        heldBranch = newBranch.Value;
+                        branch = newBranch.Value;
                         newBranch.Value.WaitFall();
                         Debug.Assert(!newBranch.Value.Cache.Contains(originalLocator));
-                        Monitor.Exit(branch);
+                        Monitor.Exit(prevBranch);
 
-                        branch = newBranch.Value;
                     }
                 }
                 break;
@@ -215,10 +222,6 @@ public partial class WTree : IDisposable
                             else
                                 cmp = newBranch.Key.Locator.KeyComparer.Compare(newBranch.Key.Key, lastVisitedFullKey.Key);
                         }
-                        //else
-                        //{
-                        //    Debug.WriteLine("");
-                        //}
 
                         //newBranch.Key.CompareTo(lastVisitedFullKey) >= 0
                         if (cmp >= 0)
@@ -233,6 +236,10 @@ public partial class WTree : IDisposable
                         }
 
                         Monitor.Enter(newBranch.Value);
+                        // Update heldBranch immediately after acquiring the new lock so
+                        // that the outer finally releases it if anything below throws.
+                        var prevBranch = heldBranch;
+                        heldBranch = newBranch.Value;
                         depth--;
                         newBranch.Value.WaitFall();
                         if (newBranch.Value.Cache.Contains(originalLocator))
@@ -240,7 +247,7 @@ public partial class WTree : IDisposable
                             newBranch.Value.Fall(depth + 1, new Token(CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true, originalLocator));
                         }
                         Debug.Assert(!newBranch.Value.Cache.Contains(originalLocator));
-                        Monitor.Exit(branch);
+                        Monitor.Exit(prevBranch);
 
                         branch = newBranch.Value;
                     }
@@ -261,9 +268,18 @@ public partial class WTree : IDisposable
 
         var data = ((LeafNode)branch.Node).FindData(originalLocator, direction, ref nearFullKey, ref hasNearFullKey);
 
-        Monitor.Exit(branch);
+        Monitor.Exit(heldBranch);
+        heldBranch = null; // mark as released so the finally block skips it
 
         return data;
+
+        } // end try
+        finally
+        {
+            // Released in the success path above; only needed when an exception escapes.
+            if (heldBranch != null)
+                Monitor.Exit(heldBranch);
+        }
     }
 
     private void Commit(CancellationToken cancellationToken, Locator locator = default(Locator), bool hasLocator = false, IData fromKey = null, IData toKey = null)
@@ -379,7 +395,7 @@ public partial class WTree : IDisposable
     private readonly Task _cacheTask;
 
     // Signal: pulsed when cache exceeds threshold so DoCache wakes immediately
-    private readonly SemaphoreSlim _cacheSignal = new(0, 1);
+    private readonly ManualResetEventSlim _cacheSignal = new(false);
 
     // _cacheSemaphore removed — falls are fully synchronous; no throttling semaphore is needed.
 
@@ -396,10 +412,7 @@ public partial class WTree : IDisposable
             _cacheSize = value;
 
             if (_cache.Count > CacheSize * 1.1)
-            {
-                // Signal DoCache to wake up immediately (guard: TOCTOU race between check and Release)
-                try { _cacheSignal.Release(); } catch (SemaphoreFullException) { }
-            }
+                _cacheSignal.Set();
         }
     }
 
@@ -409,10 +422,7 @@ public partial class WTree : IDisposable
         _cache[id] = node;
 
         if (_cache.Count > CacheSize * 1.1)
-        {
-            // Signal DoCache to wake up immediately (guard: TOCTOU race between check and Release)
-            try { _cacheSignal.Release(); } catch (SemaphoreFullException) { }
-        }
+            _cacheSignal.Set();
     }
 
     private Node Retrieve(long id)
@@ -485,7 +495,8 @@ public partial class WTree : IDisposable
             }
 
             // Wait for a signal (cache over limit) or wake up after 1 ms to re-check.
-            _cacheSignal.Wait(1, ct);
+            _cacheSignal.Reset();
+            try { _cacheSignal.Wait(1, ct); } catch (OperationCanceledException) { break; }
         }
     }
 

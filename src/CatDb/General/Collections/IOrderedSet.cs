@@ -1,6 +1,10 @@
-﻿namespace CatDb.General.Collections;
+﻿using CatDb.General.Threading;
+
+namespace CatDb.General.Collections;
 public interface IOrderedSet<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>
 {
+    DataRwLock Lock { get; }
+
     IComparer<TKey> Comparer { get; }
     IEqualityComparer<TKey> EqualityComparer { get; }
 

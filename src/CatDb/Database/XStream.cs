@@ -1,5 +1,6 @@
 ﻿using CatDb.Data;
 using CatDb.General.Extensions;
+using CatDb.General.Threading;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Database;
@@ -8,7 +9,7 @@ public class XStream : Stream
 {
     internal const int BLOCK_SIZE = 2 * 1024;
 
-    private readonly object _syncRoot;
+    private readonly ReentrantLock _syncRoot = new();
     private long _position;
     private bool _isModified;
     private long _cachedLength;
@@ -18,7 +19,6 @@ public class XStream : Stream
     internal XStream(ITable<IData, IData> table)
     {
         Table       = table;
-        _syncRoot   = new object();
         SetCahchedLenght();
     }
 
@@ -39,7 +39,8 @@ public class XStream : Stream
 
     public override void Write(byte[] buffer, int offset, int count)
     {
-        lock (_syncRoot)
+        _syncRoot.Enter();
+        try
         {
             while (count > 0)
             {
@@ -56,6 +57,7 @@ public class XStream : Stream
 
             _isModified = true;
         }
+        finally { _syncRoot.Exit(); }
     }
 
     public override int Read(byte[] buffer, int offset, int count)
@@ -65,7 +67,8 @@ public class XStream : Stream
         if (count  < 0) throw new ArgumentException("count < 0");
         if (offset + count > buffer.Length) throw new ArgumentException("offset + count > buffer.Length");
 
-        lock (_syncRoot)
+        _syncRoot.Enter();
+        try
         {
             var result = (int)(Length - _position);
             if (result > count) result = count;
@@ -134,6 +137,7 @@ public class XStream : Stream
             _position += result;
             return result;
         }
+        finally { _syncRoot.Exit(); }
     }
 
     public override void Flush() { } // no-op
@@ -146,24 +150,37 @@ public class XStream : Stream
     {
         get
         {
-            lock (_syncRoot)
+            _syncRoot.Enter();
+            try
             {
                 if (!_isModified) return _cachedLength;
                 SetCahchedLenght();
                 return _cachedLength;
             }
+            finally { _syncRoot.Exit(); }
         }
     }
 
     public override long Position
     {
-        get { lock (_syncRoot) return _position; }
-        set { lock (_syncRoot) _position = value; }
+        get
+        {
+            _syncRoot.Enter();
+            try { return _position; }
+            finally { _syncRoot.Exit(); }
+        }
+        set
+        {
+            _syncRoot.Enter();
+            try { _position = value; }
+            finally { _syncRoot.Exit(); }
+        }
     }
 
     public override long Seek(long offset, SeekOrigin origin)
     {
-        lock (_syncRoot)
+        _syncRoot.Enter();
+        try
         {
             _position = origin switch
             {
@@ -174,11 +191,13 @@ public class XStream : Stream
             };
             return _position;
         }
+        finally { _syncRoot.Exit(); }
     }
 
     public override void SetLength(long value)
     {
-        lock (_syncRoot)
+        _syncRoot.Enter();
+        try
         {
             var length = Length;
             if (value == length) return;
@@ -203,11 +222,13 @@ public class XStream : Stream
                 _isModified = true;
             }
         }
+        finally { _syncRoot.Exit(); }
     }
 
     public void Zero(long count)
     {
-        lock (_syncRoot)
+        _syncRoot.Enter();
+        try
         {
             var fromKey = new Data<long>(_position);
             var toKey   = new Data<long>(_position + count - 1);
@@ -216,5 +237,6 @@ public class XStream : Stream
             _position   += count;
             _isModified  = true;
         }
+        finally { _syncRoot.Exit(); }
     }
 }

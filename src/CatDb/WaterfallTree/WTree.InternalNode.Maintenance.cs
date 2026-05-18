@@ -73,20 +73,23 @@ public partial class WTree
 
             private void Split(int index)
             {
-                var node = List[index].Value.Node;
-                var branch = node.Branch;
+                var branch = List[index].Value;
 
-                var rightNode = node.Split();
-                node.Branch.NodeState = node.State;
+                Node rightNode;
+                lock (branch)
+                {
+                    var node = branch.Node;
+                    rightNode = node.Split();
+                    branch.NodeState = node.State;
+                }
+
                 var rightBranch = rightNode.Branch;
-
-                branch.NodeState = node.State;
                 rightBranch.NodeState = rightNode.State;
 
                 List.Insert(index + 1, new KeyValuePair<FullKey, Branch>(rightNode.FirstKey, rightBranch));
                 if (rightNode.IsOverflow)
                     Split(index + 1);
-                if (node.IsOverflow)
+                if (branch.NodeState == NodeState.Overflow)
                     Split(index);
             }
 
@@ -95,7 +98,8 @@ public partial class WTree
                 var branch = List[List.Count - 1].Value;
                 Debug.Assert(branch.Cache.OperationCount == 0);
 
-                branch.Node.Merge(node);
+                lock (branch)
+                    branch.Node.Merge(node);
                 branch.NodeState = branch.Node.State;
 
                 //release node space
