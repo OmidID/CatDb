@@ -9,7 +9,7 @@ namespace CatDb.WaterfallTree;
 public partial class WTree : IDisposable
 {
     private int _internalNodeMinBranches = 2; //default values
-    private int _internalNodeMaxBranches = 5;
+    private int _internalNodeMaxBranches = 64;
     private int _internalNodeMaxOperationsInRoot = 8 * 1024;
     private int _internalNodeMinOperations = 32 * 1024;
     private int _internalNodeMaxOperations = 64 * 1024;
@@ -394,7 +394,7 @@ public partial class WTree : IDisposable
     /// </summary>
     private readonly ConcurrentDictionary<long, Node> _cache = new();
 
-    private int _cacheSize = 256;
+    private int _cacheSize = 4096;
 
     public int CacheSize
     {
@@ -440,15 +440,51 @@ public partial class WTree : IDisposable
 
         var evictCount = _cache.Count - _cacheSize;
 
-        // Mark LRU candidates for eviction.
-        var candidates = _cache
-            .Where(kv => !kv.Value.IsRoot)
-            .OrderBy(kv => kv.Value.TouchId)
-            .Take(evictCount)
-            .ToList();
+        // O(n) partial select: find the evictCount nodes with lowest TouchId
+        // without sorting the entire collection (avoids LINQ OrderBy allocation storm).
+        var candidates = new (long TouchId, Node Node)[evictCount];
+        var candidateCount = 0;
+        long maxCandidateTouchId = long.MinValue;
+        var maxCandidateIdx = 0;
 
-        foreach (var kv in candidates)
-            kv.Value.IsExpiredFromCache = true;
+        foreach (var kv in _cache)
+        {
+            var node = kv.Value;
+            if (node.IsRoot)
+                continue;
+
+            var touchId = node.TouchId;
+
+            if (candidateCount < evictCount)
+            {
+                candidates[candidateCount] = (touchId, node);
+                if (touchId > maxCandidateTouchId)
+                {
+                    maxCandidateTouchId = touchId;
+                    maxCandidateIdx = candidateCount;
+                }
+                candidateCount++;
+            }
+            else if (touchId < maxCandidateTouchId)
+            {
+                // Replace the warmest candidate with this colder node
+                candidates[maxCandidateIdx] = (touchId, node);
+
+                // Rescan for new max (small array, fits in L1 cache)
+                maxCandidateTouchId = long.MinValue;
+                for (var i = 0; i < evictCount; i++)
+                {
+                    if (candidates[i].TouchId > maxCandidateTouchId)
+                    {
+                        maxCandidateTouchId = candidates[i].TouchId;
+                        maxCandidateIdx = i;
+                    }
+                }
+            }
+        }
+
+        for (var i = 0; i < candidateCount; i++)
+            candidates[i].Node.IsExpiredFromCache = true;
 
         // CacheFlush walk — already under root lock from Commit.
         // DoFall will Store+Unload each IsExpiredFromCache node.

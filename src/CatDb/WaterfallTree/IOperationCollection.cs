@@ -6,6 +6,7 @@ public interface IOperationCollection : IEnumerable<IOperation>
 {
     void Add(IOperation operation);
     void AddRange(IOperationCollection operations);
+    void AddRange(IOperationCollection operations, int startIndex, int count);
     void Clear();
 
     IOperation this[int index] { get; }

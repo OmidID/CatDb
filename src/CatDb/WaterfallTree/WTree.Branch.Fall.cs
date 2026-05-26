@@ -147,6 +147,12 @@ public partial class WTree
                 Cache.Apply(operations);
         }
 
+        public void ApplyToCache(IOperationCollection operations, int startIndex, int count)
+        {
+            lock (this)
+                Cache.Apply(operations, startIndex, count);
+        }
+
         public void MaintenanceRoot(Token token)
         {
             if (_node.IsOverflow)

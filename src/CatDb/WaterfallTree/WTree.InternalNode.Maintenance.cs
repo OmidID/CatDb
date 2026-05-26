@@ -42,14 +42,44 @@ public partial class WTree
                 }
             }
 
-            //sink branches
-            var operationCount = Branches.Sum(x => x.Value.Cache.OperationCount);
+            //sink branches — allocation-free: no LINQ, no closures
+            var operationCount = 0;
+            for (var i = 0; i < Branches.Count; i++)
+                operationCount += Branches[i].Value.Cache.OperationCount;
+
             if (operationCount > Branch.Tree._internalNodeMaxOperations)
             {
-                //Debug.WriteLine(string.Format("{0}: {1} = {2}", level, Branch.NodeHandle, operationCount));
-                foreach (var kv in Branches.Where(x => x.Value.Cache.OperationCount > 0).OrderByDescending(x => x.Value.Cache.OperationCount))
+                // Sort descending by OperationCount without LINQ.
+                // Use a simple insertion into a local array (Branches.Count is small, typically ≤ MaxBranches).
+                var branchCount = Branches.Count;
+                Span<int> indices = branchCount <= 128
+                    ? stackalloc int[branchCount]
+                    : new int[branchCount];
+
+                var sinkCount = 0;
+                for (var i = 0; i < branchCount; i++)
                 {
-                    var branch = kv.Value;
+                    if (Branches[i].Value.Cache.OperationCount > 0)
+                        indices[sinkCount++] = i;
+                }
+
+                // Sort the indices by descending OperationCount (insertion sort — N is small)
+                for (var i = 1; i < sinkCount; i++)
+                {
+                    var key = indices[i];
+                    var keyVal = Branches[key].Value.Cache.OperationCount;
+                    var j = i - 1;
+                    while (j >= 0 && Branches[indices[j]].Value.Cache.OperationCount < keyVal)
+                    {
+                        indices[j + 1] = indices[j];
+                        j--;
+                    }
+                    indices[j + 1] = key;
+                }
+
+                for (var i = 0; i < sinkCount; i++)
+                {
+                    var branch = Branches[indices[i]].Value;
 
                     operationCount -= branch.Cache.OperationCount;
                     if (branch.Fall(level, token, new Params(WalkMethod.Current, WalkAction.None, null, true)))

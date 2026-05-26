@@ -72,6 +72,31 @@ public class OperationCollection : List<IOperation>, IOperationCollection
         }
     }
 
+    public void AddRange(IOperationCollection operations, int startIndex, int count)
+    {
+        if (!operations.AreAllMonotoneAndPoint)
+            AreAllMonotoneAndPoint = false;
+        else if (AreAllMonotoneAndPoint && Count > 0 && count > 0 &&
+                 Locator.KeyComparer.Compare(this[Count - 1].FromKey, operations[startIndex].FromKey) >= 0)
+            AreAllMonotoneAndPoint = false;
+
+        if (operations.CommonAction != CommonAction)
+        {
+            if (Count == 0)
+                CommonAction = operations.CommonAction;
+            else if (count > 0)
+                CommonAction = OperationCode.UNDEFINED;
+        }
+
+        if (operations is OperationCollection oprs)
+            this.AddRange(oprs.Array, startIndex, count);
+        else
+        {
+            for (var i = startIndex; i < startIndex + count; i++)
+                base.Add(operations[i]);
+        }
+    }
+
     public new void Clear()
     {
         base.Clear();

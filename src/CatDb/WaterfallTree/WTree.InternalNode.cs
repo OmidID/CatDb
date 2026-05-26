@@ -73,11 +73,13 @@ public partial class WTree
                 var count = idx - index + 1;
                 if (count > 0)
                 {
-                    var oprs = count < operations.Count ? operations.Midlle(index, count) : operations;
                     var branchIndex = Math.Max(0, i - 1);
                     var branch = Branches[branchIndex].Value;
 
-                    branch.ApplyToCache(oprs);
+                    if (count < operations.Count)
+                        branch.ApplyToCache(operations, index, count);
+                    else
+                        branch.ApplyToCache(operations);
                     if (branch.NodeState != NodeState.None)
                         HaveChildrenForMaintenance = true;
 
@@ -87,13 +89,16 @@ public partial class WTree
 
             if (operations.Count - index > 0)
             {
-                var oprs = index > 0 ? operations.Midlle(index, operations.Count - index) : operations;
                 var branch = Branches[range.LastIndex].Value;
+                var remainCount = operations.Count - index;
 
-                Debug.Assert(Branches[range.LastIndex].Key.Locator.Equals(oprs.Locator));
-                Debug.Assert(oprs.Locator.KeyComparer.Compare(Branches[range.LastIndex].Key.Key, oprs[0].FromKey) <= 0);
+                Debug.Assert(Branches[range.LastIndex].Key.Locator.Equals(operations.Locator));
+                Debug.Assert(operations.Locator.KeyComparer.Compare(Branches[range.LastIndex].Key.Key, operations[index].FromKey) <= 0);
 
-                branch.ApplyToCache(oprs);
+                if (index > 0)
+                    branch.ApplyToCache(operations, index, remainCount);
+                else
+                    branch.ApplyToCache(operations);
                 if (branch.NodeState != NodeState.None)
                     HaveChildrenForMaintenance = true;
             }
@@ -242,25 +247,41 @@ public partial class WTree
             if (firstIndex < 0)
                 firstIndex = 0;
 
-            IEnumerable<KeyValuePair<FullKey, Branch>> branches = param.WalkMethod switch
+            // Resolve actual iteration range based on walk method (no allocation)
+            int iterFirst, iterLast;
+            switch (param.WalkMethod)
             {
-                WalkMethod.CascadeFirst => Branches.Range(firstIndex, firstIndex),
-                WalkMethod.CascadeLast => Branches.Range(lastIndex, lastIndex),
-                WalkMethod.Cascade => Branches.Range(firstIndex, lastIndex),
-                WalkMethod.CascadeButOnlyLoaded => Branches.Range(firstIndex, lastIndex),
-                _ => throw new NotSupportedException(param.WalkMethod.ToString())
-            };
+                case WalkMethod.CascadeFirst:
+                    iterFirst = iterLast = firstIndex;
+                    break;
+                case WalkMethod.CascadeLast:
+                    iterFirst = iterLast = lastIndex;
+                    break;
+                case WalkMethod.Cascade:
+                case WalkMethod.CascadeButOnlyLoaded:
+                    iterFirst = firstIndex;
+                    iterLast = lastIndex;
+                    break;
+                default:
+                    throw new NotSupportedException(param.WalkMethod.ToString());
+            }
 
-            // Falls are synchronous — iterate sequentially, no parallel overhead or deadlock risk.
-            foreach (var branch in branches)
+            // Clamp to valid bounds after resolution
+            if (iterLast >= branchCount)
+                iterLast = branchCount - 1;
+
+            // Falls are synchronous — direct indexed loop, zero allocation.
+            for (var i = iterFirst; i <= iterLast; i++)
             {
+                var branch = Branches[i].Value;
+
                 if (param.WalkMethod == WalkMethod.CascadeButOnlyLoaded)
                 {
-                    if (!branch.Value.IsNodeLoaded)
+                    if (!branch.IsNodeLoaded)
                         continue;
                 }
 
-                if (branch.Value.Fall(level, token, param))
+                if (branch.Fall(level, token, param))
                     IsModified = true;
             }
         }
