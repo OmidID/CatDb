@@ -131,8 +131,9 @@ public class XTable<TKey, TRecord>(ITable<IData, IData> table) : ITable<TKey, TR
         var ifrom  = query.HasFrom ? K(query.From) : null;
         var ito    = query.HasTo   ? K(query.To)   : null;
         var filter = query.Filter;
+        var useSegmentPath = filter is not null || (query.HasFrom && query.HasTo);
 
-        if (Table is XTablePortable raw)
+        if (Table is XTablePortable raw && useSegmentPath)
         {
             // ScanSegments yields once per LEAF — the for(i) loop below
             // is the only per-record work, with direct array indexing.
@@ -165,14 +166,56 @@ public class XTable<TKey, TRecord>(ITable<IData, IData> table) : ITable<TKey, TR
         }
     }
 
+    public IEnumerable<KeyValuePair<TKey, TRecord>> ScanTake(KeyQuery<TKey> query, int take)
+    {
+        if (take <= 0)
+            yield break;
+
+        var ifrom  = query.HasFrom ? K(query.From) : null;
+        var ito    = query.HasTo   ? K(query.To)   : null;
+        var filter = query.Filter;
+        var useSegmentPath = filter is not null || (query.HasFrom && query.HasTo);
+
+        if (Table is XTablePortable raw && useSegmentPath)
+        {
+            var produced = 0;
+            foreach (var seg in raw.ScanSegments(
+                         ifrom, query.HasFrom, query.FromExclusive,
+                         ito,   query.HasTo,   query.ToExclusive,
+                         take))
+            {
+                var buf = seg.Buffer;
+                var cnt = seg.Count;
+                for (var i = 0; i < cnt; i++)
+                {
+                    var key = FromK(buf[i].Key);
+                    if (filter is not null && !filter(key)) continue;
+                    yield return new KeyValuePair<TKey, TRecord>(key, FromR(buf[i].Value));
+                    if (++produced >= take)
+                        yield break;
+                }
+            }
+            yield break;
+        }
+
+        var n = 0;
+        foreach (var kv in Scan(query))
+        {
+            yield return kv;
+            if (++n >= take)
+                yield break;
+        }
+    }
+
     /// <inheritdoc/>
     public IEnumerable<KeyValuePair<TKey, TRecord>> ScanBackward(KeyQuery<TKey> query)
     {
         var ifrom  = query.HasFrom ? K(query.From) : null;
         var ito    = query.HasTo   ? K(query.To)   : null;
         var filter = query.Filter;
+        var useSegmentPath = filter is not null || (query.HasFrom && query.HasTo);
 
-        if (Table is XTablePortable raw)
+        if (Table is XTablePortable raw && useSegmentPath)
         {
             foreach (var seg in raw.ScanSegmentsBackward(
                          ito,   query.HasTo,   query.ToExclusive,
@@ -199,6 +242,47 @@ public class XTable<TKey, TRecord>(ITable<IData, IData> table) : ITable<TKey, TR
             if (query.FromExclusive && query.HasFrom && eq.Equals(key, query.From)) break;
             if (filter is not null && !filter(key)) continue;
             yield return new(key, FromR(kv.Value));
+        }
+    }
+
+    public IEnumerable<KeyValuePair<TKey, TRecord>> ScanBackwardTake(KeyQuery<TKey> query, int take)
+    {
+        if (take <= 0)
+            yield break;
+
+        var ifrom  = query.HasFrom ? K(query.From) : null;
+        var ito    = query.HasTo   ? K(query.To)   : null;
+        var filter = query.Filter;
+        var useSegmentPath = filter is not null || (query.HasFrom && query.HasTo);
+
+        if (Table is XTablePortable raw && useSegmentPath)
+        {
+            var produced = 0;
+            foreach (var seg in raw.ScanSegmentsBackward(
+                         ito,   query.HasTo,   query.ToExclusive,
+                         ifrom, query.HasFrom, query.FromExclusive,
+                         take))
+            {
+                var buf = seg.Buffer;
+                var cnt = seg.Count;
+                for (var i = 0; i < cnt; i++)
+                {
+                    var key = FromK(buf[i].Key);
+                    if (filter is not null && !filter(key)) continue;
+                    yield return new KeyValuePair<TKey, TRecord>(key, FromR(buf[i].Value));
+                    if (++produced >= take)
+                        yield break;
+                }
+            }
+            yield break;
+        }
+
+        var n = 0;
+        foreach (var kv in ScanBackward(query))
+        {
+            yield return kv;
+            if (++n >= take)
+                yield break;
         }
     }
 

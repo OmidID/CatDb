@@ -127,6 +127,12 @@ dashboard.WaitForRefresh();  // ensure no background count-refresh races engine 
 
 ctx.Commit();                // final flush to disk
 
+Console.Clear();
+
+#if PERFORMANCE_CHECK
+CatDb.General.Diagnostics.PerformanceCheck.Flush("stress.final");
+#endif
+
 // ─── Final results ────────────────────────────────────────────────────────
 
 dashboard.RenderFinal();

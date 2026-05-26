@@ -1,3 +1,4 @@
+using CatDb.Database;
 using CatDb.Storage;
 using CatDb.WaterfallTree;
 using FluentAssertions;
@@ -164,7 +165,7 @@ public class WalHeapTests : IDisposable
     [Fact]
     public void StorageEngine_WithWal_BasicCrud()
     {
-        using var engine = CatDbFactory.FromFile(_dbPath, CommitMode.WriteAheadLog);
+        using var engine = CatDbFactory.FromFile(_dbPath, new DatabaseOptions { CommitMode = CommitMode.WriteAheadLog });
         var table = engine.OpenXTable<int, string>("test");
 
         table[1] = "hello";
@@ -179,14 +180,14 @@ public class WalHeapTests : IDisposable
     public void StorageEngine_WithWal_PersistsAcrossReopen()
     {
         {
-            using var engine = CatDbFactory.FromFile(_dbPath, CommitMode.WriteAheadLog);
+            using var engine = CatDbFactory.FromFile(_dbPath, new DatabaseOptions { CommitMode = CommitMode.WriteAheadLog });
             var table = engine.OpenXTable<int, string>("persist_test");
             table[42] = "persisted";
             engine.Commit();
         }
 
         {
-            using var engine = CatDbFactory.FromFile(_dbPath, CommitMode.WriteAheadLog);
+            using var engine = CatDbFactory.FromFile(_dbPath, new DatabaseOptions { CommitMode = CommitMode.WriteAheadLog });
             var table = engine.OpenXTable<int, string>("persist_test");
             table[42].Should().Be("persisted");
         }

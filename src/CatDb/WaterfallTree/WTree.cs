@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using CatDb.Data;
+using CatDb.Database;
 using CatDb.General.Collections;
 using CatDb.General.Threading;
 
@@ -10,11 +11,11 @@ public partial class WTree : IDisposable
 {
     private int _internalNodeMinBranches = 2; //default values
     private int _internalNodeMaxBranches = 64;
-    private int _internalNodeMaxOperationsInRoot = 8 * 1024;
-    private int _internalNodeMinOperations = 32 * 1024;
-    private int _internalNodeMaxOperations = 64 * 1024;
-    private int _leafNodeMinRecords = 8 * 1024;
-    private int _leafNodeMaxRecords = 64 * 1024;
+    private int _internalNodeMaxOperationsInRoot = 4 * 1024;
+    private int _internalNodeMinOperations = 4 * 1024;
+    private int _internalNodeMaxOperations = 8 * 1024;
+    private int _leafNodeMinRecords = 4 * 1024;
+    private int _leafNodeMaxRecords = 8 * 1024;
 
     //reserved handles
     private const long HANDLE_SETTINGS = 0;
@@ -41,12 +42,25 @@ public partial class WTree : IDisposable
     private readonly Scheme _scheme;
     private readonly IHeap _heap;
 
-    public WTree(IHeap heap)
+    public WTree(IHeap heap, DatabaseOptions? options = null)
     {
         if (heap == null)
             throw new NullReferenceException("heap");
 
         _heap = heap;
+
+        // Apply options for NEW databases (existing DBs load settings from header)
+        if (options != null && !heap.Exists(HANDLE_SETTINGS))
+        {
+            _internalNodeMaxBranches = options.MaxBranchesPerNode;
+            _internalNodeMinBranches = Math.Max(2, options.MaxBranchesPerNode / 32);
+            _internalNodeMaxOperationsInRoot = options.MaxOperationsInRoot;
+            _internalNodeMinOperations = options.MinOperationsPerNode;
+            _internalNodeMaxOperations = options.MaxOperationsPerNode;
+            _leafNodeMinRecords = options.MinRecordsPerLeaf;
+            _leafNodeMaxRecords = options.MaxRecordsPerLeaf;
+            _cacheSize = options.CacheSize;
+        }
 
         if (heap.Exists(HANDLE_SETTINGS))
         {

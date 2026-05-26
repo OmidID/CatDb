@@ -12,7 +12,7 @@ public class StorageEngine : WTree, IStorageEngine
     private readonly Dictionary<string, Item1> _map = new();
     private readonly ReentrantLock _syncRoot = new();
 
-    public StorageEngine(IHeap heap) : base(heap)
+    public StorageEngine(IHeap heap, DatabaseOptions? options = null) : base(heap, options)
     {
         foreach (var locator in GetAllLocators())
         {

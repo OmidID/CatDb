@@ -794,6 +794,9 @@ public sealed class CommitService : BackgroundService
             if (ct.IsCancellationRequested) break;
             try
             {
+#if PERFORMANCE_CHECK
+                CatDb.General.Diagnostics.PerformanceCheck.Increment("stress.commit.source.timer");
+#endif
                 _ctx.Commit();
                 Hit($"commit #{_ctx.TotalCommits}");
             }
@@ -896,7 +899,7 @@ public sealed class KeySearchService : BackgroundService
                         var top = Volatile.Read(ref _ctx.NextTickId);
                         if (top < 2) break;
                         var pivot = _rng.NextInt64(1, top);
-                        foreach (var kv in _ctx.Ticks.Query(KeyQuery<long>.GreaterThan(pivot)).Take(200))
+                        foreach (var kv in _ctx.Ticks.QueryTake(KeyQuery<long>.GreaterThan(pivot), 200))
                         {
                             if (kv.Key <= pivot)
                                 Fail(new Exception(
@@ -912,7 +915,7 @@ public sealed class KeySearchService : BackgroundService
                         var top = Volatile.Read(ref _ctx.NextTickId);
                         if (top < 2) break;
                         var pivot = _rng.NextInt64(2, top);
-                        foreach (var kv in _ctx.Ticks.Query(KeyQuery<long>.LessThan(pivot)).Take(200))
+                        foreach (var kv in _ctx.Ticks.QueryTake(KeyQuery<long>.LessThan(pivot), 200))
                         {
                             if (kv.Key >= pivot)
                                 Fail(new Exception(
@@ -1002,7 +1005,7 @@ public sealed class KeySearchService : BackgroundService
                         var top = Volatile.Read(ref _ctx.NextSensorId);
                         if (top < 2) break;
                         var ceiling = _rng.NextInt64(1, top);
-                        foreach (var kv in _ctx.Sensors.Query(KeyQuery<long>.AtMost(ceiling)).Take(300))
+                        foreach (var kv in _ctx.Sensors.QueryTake(KeyQuery<long>.AtMost(ceiling), 300))
                         {
                             if (kv.Key > ceiling)
                                 Fail(new Exception(
@@ -1101,6 +1104,9 @@ public sealed class DataIntegrityService : BackgroundService
         }
 
         // Force a commit so data is flushed before we read back
+    #if PERFORMANCE_CHECK
+        CatDb.General.Diagnostics.PerformanceCheck.Increment("stress.commit.source.integrity.insert");
+    #endif
         _ctx.Commit();
         await Task.Yield();
 
@@ -1141,6 +1147,9 @@ public sealed class DataIntegrityService : BackgroundService
             _ctx.Integrity[key] = rec;
         }
 
+    #if PERFORMANCE_CHECK
+        CatDb.General.Diagnostics.PerformanceCheck.Increment("stress.commit.source.integrity.update");
+    #endif
         _ctx.Commit();
         await Task.Yield();
 
@@ -1177,6 +1186,9 @@ public sealed class DataIntegrityService : BackgroundService
         foreach (var key in keys)
             _ctx.Integrity.Delete(key);
 
+    #if PERFORMANCE_CHECK
+        CatDb.General.Diagnostics.PerformanceCheck.Increment("stress.commit.source.integrity.delete");
+    #endif
         _ctx.Commit();
         await Task.Yield();
 
@@ -1198,6 +1210,9 @@ public sealed class DataIntegrityService : BackgroundService
             _ctx.Integrity[key] = rec;
         }
 
+    #if PERFORMANCE_CHECK
+        CatDb.General.Diagnostics.PerformanceCheck.Increment("stress.commit.source.integrity.reinsert");
+    #endif
         _ctx.Commit();
         await Task.Yield();
 
@@ -1310,13 +1325,13 @@ public sealed class HighStressKeySearchService : BackgroundService
             {
                 long prev = -1;
                 int  n   = 0;
-                foreach (var kv in _ctx.Ticks.Scan(KeyQuery<long>.All()))
+                foreach (var kv in _ctx.Ticks.QueryTake(KeyQuery<long>.All(), 10_000))
                 {
                     if (prev != -1 && kv.Key <= prev)
                         Fail(new Exception(
                             $"HighStress.Wide.FullFwd: order violation {kv.Key} <= {prev}"), _ctx);
                     prev = kv.Key;
-                    if (++n >= 10_000) break;
+                    n++;
                 }
                 Hit($"wide.FullFwd {n:N0}");
                 break;
@@ -1327,13 +1342,13 @@ public sealed class HighStressKeySearchService : BackgroundService
             {
                 long prev = long.MaxValue;
                 int  n   = 0;
-                foreach (var kv in _ctx.Ticks.ScanBackward(KeyQuery<long>.All()))
+                foreach (var kv in _ctx.Ticks.QueryBackwardTake(KeyQuery<long>.All(), 10_000))
                 {
                     if (kv.Key >= prev)
                         Fail(new Exception(
                             $"HighStress.Wide.FullBwd: order violation {kv.Key} >= {prev}"), _ctx);
                     prev = kv.Key;
-                    if (++n >= 10_000) break;
+                    n++;
                 }
                 Hit($"wide.FullBwd {n:N0}");
                 break;
@@ -1371,7 +1386,7 @@ public sealed class HighStressKeySearchService : BackgroundService
                 var from = Math.Max(1L, sensorTop - 5_000);
                 long prev = long.MaxValue;
                 int  n   = 0;
-                foreach (var kv in _ctx.Sensors.ScanBackward(KeyQuery<long>.AtLeast(from)))
+                foreach (var kv in _ctx.Sensors.QueryBackwardTake(KeyQuery<long>.AtLeast(from), 5_000))
                 {
                     if (kv.Key >= prev)
                         Fail(new Exception(
@@ -1380,7 +1395,7 @@ public sealed class HighStressKeySearchService : BackgroundService
                         Fail(new Exception(
                             $"HighStress.Wide.SensorBwd: key {kv.Key} < from {from}"), _ctx);
                     prev = kv.Key;
-                    if (++n >= 5_000) break;
+                    n++;
                 }
                 Hit($"wide.SensorBwd {n:N0}");
                 break;
@@ -1391,13 +1406,13 @@ public sealed class HighStressKeySearchService : BackgroundService
             {
                 long prev = -1;
                 int  n   = 0;
-                foreach (var kv in _ctx.Metrics.Scan(KeyQuery<long>.All()))
+                foreach (var kv in _ctx.Metrics.QueryTake(KeyQuery<long>.All(), 5_000))
                 {
                     if (prev != -1 && kv.Key <= prev)
                         Fail(new Exception(
                             $"HighStress.Wide.MetricsFwd: order violation {kv.Key} <= {prev}"), _ctx);
                     prev = kv.Key;
-                    if (++n >= 5_000) break;
+                    n++;
                 }
                 Hit($"wide.MetricsFwd {n:N0}");
                 break;
@@ -1411,8 +1426,8 @@ public sealed class HighStressKeySearchService : BackgroundService
                 var q    = KeyQuery<long>.Between(from, to);
                 var cnt  = _ctx.Ticks.ScanCount(q);
                 int  n  = 0;
-                foreach (var _ in _ctx.Ticks.Scan(q))
-                    if (++n >= 2_000) break;
+                foreach (var _ in _ctx.Ticks.QueryTake(q, 2_000))
+                    n++;
                 // Count may differ from n because inserts/deletes happen between the two calls
                 if (cnt < 0)
                     Fail(new Exception(
@@ -1426,13 +1441,13 @@ public sealed class HighStressKeySearchService : BackgroundService
             {
                 long prev = long.MaxValue;
                 int  n   = 0;
-                foreach (var kv in _ctx.Audit.ScanBackward(KeyQuery<long>.All()))
+                foreach (var kv in _ctx.Audit.QueryBackwardTake(KeyQuery<long>.All(), 5_000))
                 {
                     if (kv.Key >= prev)
                         Fail(new Exception(
                             $"HighStress.Wide.AuditBwd: order violation {kv.Key} >= {prev}"), _ctx);
                     prev = kv.Key;
-                    if (++n >= 5_000) break;
+                    n++;
                 }
                 Hit($"wide.AuditBwd {n:N0}");
                 break;
@@ -1453,7 +1468,7 @@ public sealed class HighStressKeySearchService : BackgroundService
                 var pivot = _rng.NextInt64(1, top);
                 long prev = -1;
                 int  n   = 0;
-                foreach (var kv in _ctx.Ticks.Scan(KeyQuery<long>.GreaterThan(pivot)))
+                foreach (var kv in _ctx.Ticks.QueryTake(KeyQuery<long>.GreaterThan(pivot), 300))
                 {
                     if (kv.Key <= pivot)
                         Fail(new Exception(
@@ -1462,7 +1477,7 @@ public sealed class HighStressKeySearchService : BackgroundService
                         Fail(new Exception(
                             $"HighStress.Narrow.GreaterThan: order violation {kv.Key} <= {prev}"), _ctx);
                     prev = kv.Key;
-                    if (++n >= 300) break;
+                    n++;
                 }
                 Hit($"narrow.GreaterThan({pivot})→{n}");
                 break;
@@ -1476,13 +1491,13 @@ public sealed class HighStressKeySearchService : BackgroundService
                 var a = _rng.NextInt64(1, Math.Max(2, top));
                 var b = a + _rng.Next(2, 100);
                 int n = 0;
-                foreach (var kv in _ctx.Orders.Scan(
-                    KeyQuery<long>.Between(a, b, fromInclusive: false, toInclusive: false)))
+                foreach (var kv in _ctx.Orders.QueryTake(
+                    KeyQuery<long>.Between(a, b, fromInclusive: false, toInclusive: false), 200))
                 {
                     if (kv.Key <= a || kv.Key >= b)
                         Fail(new Exception(
                             $"HighStress.Narrow.BothExcl: key {kv.Key} not in ({a},{b})"), _ctx);
-                    if (++n >= 200) break;
+                    n++;
                 }
                 Hit($"narrow.BothExcl({a},{b})→{n}");
                 break;
@@ -1496,7 +1511,7 @@ public sealed class HighStressKeySearchService : BackgroundService
                 var from = Math.Max(1L, top / 2);
                 var q    = KeyQuery<long>.AtLeast(from).WithFilter(k => k % 2 == 0);
                 int n   = 0;
-                foreach (var kv in _ctx.Ticks.Scan(q))
+                foreach (var kv in _ctx.Ticks.QueryTake(q, 300))
                 {
                     if (kv.Key % 2 != 0)
                         Fail(new Exception(
@@ -1504,7 +1519,7 @@ public sealed class HighStressKeySearchService : BackgroundService
                     if (kv.Key < from)
                         Fail(new Exception(
                             $"HighStress.Narrow.WithFilter: key {kv.Key} < from {from}"), _ctx);
-                    if (++n >= 300) break;
+                    n++;
                 }
                 Hit($"narrow.WithFilter→{n}");
                 break;
@@ -1568,12 +1583,12 @@ public sealed class HighStressKeySearchService : BackgroundService
                 var digits = "0123456789";
                 var pfx    = "p" + digits[_rng.Next(10)];
                 int n     = 0;
-                foreach (var kv in _ctx.Scores.Scan(KeyQuery.StartsWith(pfx)))
+                foreach (var kv in _ctx.Scores.QueryTake(KeyQuery.StartsWith(pfx), 200))
                 {
                     if (!kv.Key.StartsWith(pfx, StringComparison.Ordinal))
                         Fail(new Exception(
                             $"HighStress.Narrow.StartsWith: key \"{kv.Key}\" missing prefix \"{pfx}\""), _ctx);
-                    if (++n >= 200) break;
+                    n++;
                 }
                 Hit($"narrow.StartsWith(\"{pfx}\")→{n}");
                 break;
@@ -1587,7 +1602,7 @@ public sealed class HighStressKeySearchService : BackgroundService
                 var ceiling = _rng.NextInt64(1, top);
                 long prev   = long.MaxValue;
                 int  n     = 0;
-                foreach (var kv in _ctx.Sensors.ScanBackward(KeyQuery<long>.AtMost(ceiling)))
+                foreach (var kv in _ctx.Sensors.QueryBackwardTake(KeyQuery<long>.AtMost(ceiling), 300))
                 {
                     if (kv.Key > ceiling)
                         Fail(new Exception(
@@ -1596,7 +1611,7 @@ public sealed class HighStressKeySearchService : BackgroundService
                         Fail(new Exception(
                             $"HighStress.Narrow.AtMostBwd: order violation {kv.Key} >= {prev}"), _ctx);
                     prev = kv.Key;
-                    if (++n >= 300) break;
+                    n++;
                 }
                 Hit($"narrow.AtMostBwd({ceiling})→{n}");
                 break;
@@ -1611,12 +1626,12 @@ public sealed class HighStressKeySearchService : BackgroundService
                 var q     = KeyQuery<long>.LessThan(pivot);
                 var cnt   = _ctx.Ticks.ScanCount(q);
                 int  n   = 0;
-                foreach (var kv in _ctx.Ticks.ScanBackward(q))
+                foreach (var kv in _ctx.Ticks.QueryBackwardTake(q, 500))
                 {
                     if (kv.Key >= pivot)
                         Fail(new Exception(
                             $"HighStress.Narrow.LtBwd: key {kv.Key} >= pivot {pivot}"), _ctx);
-                    if (++n >= 500) break;
+                    n++;
                 }
                 if (cnt < 0)
                     Fail(new Exception(

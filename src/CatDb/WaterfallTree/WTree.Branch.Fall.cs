@@ -56,7 +56,11 @@ public partial class WTree
             // Skip during CacheFlush walks — CacheFlush is for evicting cold nodes, not for sinking
             // accumulated operations. Running Maintenance here causes cascading Sink Falls (disk I/O)
             // under the root lock, which is the primary cause of the performance cliff.
-            if (node.Type == NodeType.Internal && (param.WalkAction & WalkAction.CacheFlush) == 0)
+            // Skip during NoMaintenance — this is a child being sinked by a parent's Maintenance;
+            // allowing recursive Maintenance would cause O(depth * B) cascading I/Os.
+            if (node.Type == NodeType.Internal
+                && (param.WalkAction & WalkAction.CacheFlush) == 0
+                && (param.WalkAction & WalkAction.NoMaintenance) == 0)
                 ((InternalNode)node).Maintenance(level, token);
             NodeState = node.State;
 
@@ -210,7 +214,13 @@ public partial class WTree
         None = 0,
         Store = 0x01,
         Unload = 0x02,
-        CacheFlush = 0x04
+        CacheFlush = 0x04,
+        /// <summary>
+        /// Skip Maintenance during DoFall — prevents recursive cascading.
+        /// Used by Maintenance when sinking child branches so that a single Sink
+        /// pushes operations only ONE level at a time (B-epsilon tree amortization).
+        /// </summary>
+        NoMaintenance = 0x08,
     }
 
     private class WalkParams

@@ -21,7 +21,9 @@ public class XTablePortable : ITable<IData, IData>
     {
         Tree    = tree;
         Locator = locator;
-        _operations = locator.OperationCollectionFactory.Create(256);
+        // Larger default queue lowers Execute/Flush frequency under heavy write load.
+        // 1024 still fits comfortably under root sink threshold (default 4096).
+        _operations = locator.OperationCollectionFactory.Create(1024);
     }
 
     private void Execute(IOperation operation)
@@ -645,8 +647,16 @@ public class XTablePortable : ITable<IData, IData>
     /// </summary>
     internal IEnumerable<ScanSegment> ScanSegments(
         IData from, bool hasFrom, bool fromExclusive,
-        IData to,   bool hasTo,   bool toExclusive)
+        IData to,   bool hasTo,   bool toExclusive,
+        int maxRows = int.MaxValue)
     {
+#if PERFORMANCE_CHECK
+        var perfStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        long leafCount = 0;
+        long segmentCount = 0;
+        long rowCount = 0;
+#endif
+
         SyncRoot.Enter();
         try
         {
@@ -660,6 +670,11 @@ public class XTablePortable : ITable<IData, IData>
             }
 
             Flush();
+
+            if (maxRows <= 0)
+                yield break;
+
+            var remaining = maxRows;
 
             var buffer = Array.Empty<KeyValuePair<IData, IData>>();
 
@@ -681,6 +696,12 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
+#if PERFORMANCE_CHECK
+                leafCount++;
+#endif
+                if (remaining <= 0)
+                    break;
+
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
@@ -711,6 +732,8 @@ public class XTablePortable : ITable<IData, IData>
                             out var si, out var ei))
                     {
                         segCount = ei - si + 1;
+                        if (segCount > remaining)
+                            segCount = remaining;
                         if (buffer.Length < segCount)
                             buffer = new KeyValuePair<IData, IData>[Math.Max(segCount, 4096)];
                         records.InternalList!.CopyTo(si, buffer, 0, segCount);
@@ -722,7 +745,11 @@ public class XTablePortable : ITable<IData, IData>
                         foreach (var kv in records.ForwardExclusive(
                                      fromActive, hasFromActive, fromExclActive,
                                      to, hasTo, toExclusive))
+                        {
                             temp.Add(kv);
+                            if (temp.Count >= remaining)
+                                break;
+                        }
 
                         segCount = temp.Count;
                         if (segCount > 0)
@@ -736,7 +763,14 @@ public class XTablePortable : ITable<IData, IData>
                 finally { records.Lock.ExitRead(); }
 
                 if (segCount > 0)
+                {
+#if PERFORMANCE_CHECK
+                    segmentCount++;
+                    rowCount += segCount;
+#endif
+                    remaining -= segCount;
                     yield return new ScanSegment(buffer, segCount);
+                }
 
                 hasFromActive  = false;
                 fromExclActive = false;
@@ -744,7 +778,16 @@ public class XTablePortable : ITable<IData, IData>
                 records = recs;
             }
         }
-        finally { SyncRoot.Exit(); }
+        finally
+        {
+            SyncRoot.Exit();
+#if PERFORMANCE_CHECK
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.forward.leaves", leafCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.forward.segments", segmentCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.forward.rows", rowCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("xtable.scan.forward", perfStart);
+#endif
+        }
     }
 
     /// <summary>
@@ -756,8 +799,16 @@ public class XTablePortable : ITable<IData, IData>
     /// </summary>
     internal IEnumerable<ScanSegment> ScanSegmentsBackward(
         IData to,   bool hasTo,   bool toExclusive,
-        IData from, bool hasFrom, bool fromExclusive)
+        IData from, bool hasFrom, bool fromExclusive,
+        int maxRows = int.MaxValue)
     {
+#if PERFORMANCE_CHECK
+        var perfStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        long leafCount = 0;
+        long segmentCount = 0;
+        long rowCount = 0;
+#endif
+
         SyncRoot.Enter();
         try
         {
@@ -771,6 +822,11 @@ public class XTablePortable : ITable<IData, IData>
             }
 
             Flush();
+
+            if (maxRows <= 0)
+                yield break;
+
+            var remaining = maxRows;
 
             var buffer = Array.Empty<KeyValuePair<IData, IData>>();
 
@@ -794,6 +850,12 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
+#if PERFORMANCE_CHECK
+                leafCount++;
+#endif
+                if (remaining <= 0)
+                    break;
+
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey)
@@ -836,6 +898,11 @@ public class XTablePortable : ITable<IData, IData>
                                 out var si, out var ei))
                         {
                             segCount = ei - si + 1;
+                            if (segCount > remaining)
+                            {
+                                si = ei - remaining + 1;
+                                segCount = remaining;
+                            }
                             if (buffer.Length < segCount)
                                 buffer = new KeyValuePair<IData, IData>[Math.Max(segCount, 4096)];
                             var list = records.InternalList!;
@@ -877,7 +944,11 @@ public class XTablePortable : ITable<IData, IData>
                             foreach (var kv in records.BackwardExclusive(
                                          toActive, hasToActive, toExclActive,
                                          from, hasFrom, fromExclusive))
+                            {
                                 temp.Add(kv);
+                                if (temp.Count >= remaining)
+                                    break;
+                            }
 
                             segCount = temp.Count;
                             if (segCount > 0)
@@ -895,7 +966,14 @@ public class XTablePortable : ITable<IData, IData>
                 if (guardFailed) break;
 
                 if (segCount > 0)
+                {
+#if PERFORMANCE_CHECK
+                    segmentCount++;
+                    rowCount += segCount;
+#endif
+                    remaining -= segCount;
                     yield return new ScanSegment(buffer, segCount);
+                }
 
                 // Only update prevFirstKey when this leaf had actual data.
                 // An empty leaf (after range-delete) sets thisFirstKey = null; preserving
@@ -912,7 +990,16 @@ public class XTablePortable : ITable<IData, IData>
                 records = recs;
             }
         }
-        finally { SyncRoot.Exit(); }
+        finally
+        {
+            SyncRoot.Exit();
+#if PERFORMANCE_CHECK
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.backward.leaves", leafCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.backward.segments", segmentCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.backward.rows", rowCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("xtable.scan.backward", perfStart);
+#endif
+        }
     }
 
     // ── Legacy Scan / ScanBackward kept for ITable<IData,IData> callers ───

@@ -32,6 +32,41 @@ public static class TableQueryExtensions
         => table.Scan(query);
 
     /// <summary>
+    /// Forward query with a hard row limit pushed down to engine scan internals when available.
+    /// This avoids copying/scanning large leaf segments when callers only need a small prefix.
+    /// </summary>
+    public static IEnumerable<KeyValuePair<TKey, TRecord>> QueryTake<TKey, TRecord>(
+        this ITable<TKey, TRecord> table,
+        KeyQuery<TKey> query,
+        int take)
+    {
+        if (take <= 0)
+            yield break;
+
+        if (table is XTable<TKey, TRecord> direct)
+        {
+            foreach (var kv in direct.ScanTake(query, take))
+                yield return kv;
+            yield break;
+        }
+
+        if (table is XTablePortable<TKey, TRecord> portable)
+        {
+            foreach (var kv in portable.ScanTake(query, take))
+                yield return kv;
+            yield break;
+        }
+
+        var n = 0;
+        foreach (var kv in table.Scan(query))
+        {
+            yield return kv;
+            if (++n >= take)
+                yield break;
+        }
+    }
+
+    /// <summary>
     /// Scans the table <b>backward</b> (descending) using the WTree engine's native
     /// bounded leaf iterator.  All bound semantics are resolved inside
     /// <c>IOrderedSet.BackwardExclusive</c>.
@@ -40,6 +75,40 @@ public static class TableQueryExtensions
         this ITable<TKey, TRecord> table,
         KeyQuery<TKey> query)
         => table.ScanBackward(query);
+
+    /// <summary>
+    /// Backward query with a hard row limit pushed down to engine scan internals when available.
+    /// </summary>
+    public static IEnumerable<KeyValuePair<TKey, TRecord>> QueryBackwardTake<TKey, TRecord>(
+        this ITable<TKey, TRecord> table,
+        KeyQuery<TKey> query,
+        int take)
+    {
+        if (take <= 0)
+            yield break;
+
+        if (table is XTable<TKey, TRecord> direct)
+        {
+            foreach (var kv in direct.ScanBackwardTake(query, take))
+                yield return kv;
+            yield break;
+        }
+
+        if (table is XTablePortable<TKey, TRecord> portable)
+        {
+            foreach (var kv in portable.ScanBackwardTake(query, take))
+                yield return kv;
+            yield break;
+        }
+
+        var n = 0;
+        foreach (var kv in table.ScanBackward(query))
+        {
+            yield return kv;
+            if (++n >= take)
+                yield break;
+        }
+    }
 
     // ─── Count ───────────────────────────────────────────────────────────────
 
@@ -93,15 +162,7 @@ public static class TableQueryExtensions
         this ITable<TKey, TRecord> table,
         KeyQuery<TKey> query,
         int take)
-    {
-        if (take <= 0) throw new ArgumentOutOfRangeException(nameof(take));
-        var n = 0;
-        foreach (var kv in table.Scan(query))
-        {
-            yield return kv;
-            if (++n == take) yield break;
-        }
-    }
+        => table.QueryTake(query, take);
 
     /// <summary>
     /// Returns the <b>next</b> page after <paramref name="afterKey"/> (exclusive),
@@ -132,11 +193,7 @@ public static class TableQueryExtensions
             query.To, query.HasTo, query.ToExclusive,     // preserve original upper bound
             query.Filter);
 
-        var n = 0;
-        foreach (var kv in table.Scan(cursor))
-        {
+        foreach (var kv in table.QueryTake(cursor, take))
             yield return kv;
-            if (++n == take) yield break;
-        }
     }
 }

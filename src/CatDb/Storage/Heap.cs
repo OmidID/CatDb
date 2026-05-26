@@ -257,6 +257,10 @@ public class Heap : IHeap
     /// </summary>
     public void Write(long handle, byte[] buffer, int index, int count)
     {
+#if PERFORMANCE_CHECK
+        var perfStart = Stopwatch.GetTimestamp();
+#endif
+
         var originalCount = count;
 
         if (UseCompression)
@@ -292,12 +296,21 @@ public class Heap : IHeap
             _used[handle] = pointer = new Pointer(_currentVersion, ptr);
 
             InternalWrite(ptr.Position, originalCount, buffer, index, count);
+
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.Observe("heap.write.bytes", size);
+            CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("heap.write", perfStart);
+#endif
         }
         finally { _syncRoot.Exit(); }
     }
 
     public byte[] Read(long handle)
     {
+#if PERFORMANCE_CHECK
+        var perfStart = Stopwatch.GetTimestamp();
+#endif
+
         _syncRoot.Enter();
         try
         {
@@ -307,13 +320,25 @@ public class Heap : IHeap
             var ptr = pointer.Ptr;
             Debug.Assert(ptr != Ptr.NULL);
 
-            return InternalRead(ptr.Position, ptr.Size);
+            var buffer = InternalRead(ptr.Position, ptr.Size);
+
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.Observe("heap.read.bytes", ptr.Size);
+            CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("heap.read", perfStart);
+#endif
+
+            return buffer;
         }
         finally { _syncRoot.Exit(); }
     }
 
     public void Commit()
     {
+#if PERFORMANCE_CHECK
+        var perfStart = Stopwatch.GetTimestamp();
+        var beforeLength = Stream.Length;
+#endif
+
         _syncRoot.Enter();
         try
         {
@@ -346,6 +371,17 @@ public class Heap : IHeap
             //try to truncate the stream
             if (Stream.Length > _maxPositionPlusSize)
                 Stream.SetLength(_maxPositionPlusSize);
+
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.Observe("heap.commit.used.count", _used.Count);
+            CatDb.General.Diagnostics.PerformanceCheck.Observe("heap.commit.reserved.count", _reserved.Count);
+            CatDb.General.Diagnostics.PerformanceCheck.Observe("heap.commit.free.chunks", _space.FreeChunkCount);
+            CatDb.General.Diagnostics.PerformanceCheck.Observe("heap.commit.stream.before.bytes", beforeLength);
+            CatDb.General.Diagnostics.PerformanceCheck.Observe("heap.commit.stream.after.bytes", Stream.Length);
+            CatDb.General.Diagnostics.PerformanceCheck.Observe("heap.commit.metadata.bytes", _header.SystemData.Size);
+            CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("heap.commit", perfStart);
+            CatDb.General.Diagnostics.PerformanceCheck.MaybeFlush("heap.commit");
+#endif
 
             _currentVersion++;
         }

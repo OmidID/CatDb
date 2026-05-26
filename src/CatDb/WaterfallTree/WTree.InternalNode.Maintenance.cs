@@ -10,6 +10,10 @@ public partial class WTree
 
         public void Maintenance(int level, Token token)
         {
+#if PERFORMANCE_CHECK
+            var perfStart = Stopwatch.GetTimestamp();
+#endif
+
             if (HaveChildrenForMaintenance)
             {
                 var helpers = new MaintenanceHelper[Branches.Count];
@@ -49,6 +53,13 @@ public partial class WTree
 
             if (operationCount > Branch.Tree._internalNodeMaxOperations)
             {
+#if PERFORMANCE_CHECK
+                var initialOperationCount = operationCount;
+                var totalSinkedOperations = 0;
+                var coldBranchesSkipped = 0;
+                var coldBranchesForced = 0;
+#endif
+
                 // Sort descending by OperationCount without LINQ.
                 // Use a simple insertion into a local array (Branches.Count is small, typically ≤ MaxBranches).
                 var branchCount = Branches.Count;
@@ -81,14 +92,61 @@ public partial class WTree
                 {
                     var branch = Branches[indices[i]].Value;
 
+                    if (!branch.IsNodeLoaded)
+                    {
+                        // Cold-branch bounding: only force-sink unloaded branches when
+                        // accumulation has grown far beyond normal operating range.
+                        // At normal scale, hot-branch sinking keeps total near max.
+                        // Cold accumulation only becomes problematic at large scale when
+                        // many cold branches each hold moderate counts that sum unboundedly.
+                        //
+                        // Threshold: 3× max prevents unnecessary disk I/O at small scale
+                        // while still bounding accumulation. Per-branch min (max/4) avoids
+                        // loading a node from disk for trivial savings.
+                        if (operationCount <= 3 * Branch.Tree._internalNodeMaxOperations)
+                        {
+#if PERFORMANCE_CHECK
+                            coldBranchesSkipped++;
+#endif
+                            continue;
+                        }
+                        if (branch.Cache.OperationCount < Branch.Tree._internalNodeMaxOperations / 4)
+                        {
+#if PERFORMANCE_CHECK
+                            coldBranchesSkipped++;
+#endif
+                            continue;
+                        }
+
+#if PERFORMANCE_CHECK
+                        coldBranchesForced++;
+#endif
+                    }
+
                     operationCount -= branch.Cache.OperationCount;
+#if PERFORMANCE_CHECK
+                    totalSinkedOperations += branch.Cache.OperationCount;
+#endif
                     if (branch.Fall(level, token, new Params(WalkMethod.Current, WalkAction.None, null, true)))
                         IsModified = true;
 
                     if (operationCount <= Branch.Tree._internalNodeMinOperations)
                         break;
                 }
+
+#if PERFORMANCE_CHECK
+                CatDb.General.Diagnostics.PerformanceCheck.Observe("wtree.maintenance.sink.initial.ops", initialOperationCount);
+                CatDb.General.Diagnostics.PerformanceCheck.Observe("wtree.maintenance.sink.final.ops", operationCount);
+                CatDb.General.Diagnostics.PerformanceCheck.Observe("wtree.maintenance.sink.applied.ops", totalSinkedOperations);
+                CatDb.General.Diagnostics.PerformanceCheck.Observe("wtree.maintenance.sink.cold.skipped", coldBranchesSkipped);
+                CatDb.General.Diagnostics.PerformanceCheck.Observe("wtree.maintenance.sink.cold.forced", coldBranchesForced);
+                CatDb.General.Diagnostics.PerformanceCheck.Observe("wtree.maintenance.sink.branch.count", branchCount);
+#endif
             }
+
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.maintenance", perfStart);
+#endif
         }
 
         private class MaintenanceHelper

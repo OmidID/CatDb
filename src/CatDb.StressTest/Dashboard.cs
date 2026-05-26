@@ -122,7 +122,6 @@ public sealed class Dashboard
         // One last synchronous count refresh
         SyncRefreshCounts();
 
-        Console.Clear();
         var elapsed   = _elapsed.Elapsed;
         var totalOps  = _services.Sum(s => s.TotalOps);
         var totalErrs = _services.Sum(s => s.TotalErrors);
