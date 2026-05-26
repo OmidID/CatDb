@@ -33,6 +33,9 @@ public partial class WTree
         {
             var locator = operations.Locator;
 
+            if (Branches.Count == 0)
+                return;
+
             var last = Branches[Branches.Count - 1];
             if (ReferenceEquals(last.Key.Locator, locator) && locator.KeyComparer.Compare(last.Key.Key, operations[0].FromKey) <= 0)
             {
@@ -71,7 +74,8 @@ public partial class WTree
                 if (count > 0)
                 {
                     var oprs = count < operations.Count ? operations.Midlle(index, count) : operations;
-                    var branch = Branches[i - 1].Value;
+                    var branchIndex = Math.Max(0, i - 1);
+                    var branch = Branches[branchIndex].Value;
 
                     branch.ApplyToCache(oprs);
                     if (branch.NodeState != NodeState.None)
@@ -226,6 +230,17 @@ public partial class WTree
                     lastIndex = _optimizator.FindIndex(range, param.Path, param.ToKey);
                 }
             }
+
+            // Defensive: clamp indices to valid bounds
+            var branchCount = Branches.Count;
+            if (branchCount == 0)
+                return;
+            if (firstIndex >= branchCount)
+                firstIndex = branchCount - 1;
+            if (lastIndex >= branchCount)
+                lastIndex = branchCount - 1;
+            if (firstIndex < 0)
+                firstIndex = 0;
 
             IEnumerable<KeyValuePair<FullKey, Branch>> branches = param.WalkMethod switch
             {

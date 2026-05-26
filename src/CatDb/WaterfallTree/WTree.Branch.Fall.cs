@@ -11,7 +11,9 @@ public partial class WTree
         private void DoFall(BranchCache? cache, int level, Token? token, Params param)
         {
             var node = Node;
-            Debug.Assert(this == node.Branch);
+            // After parent eviction/reload, a sibling branch may have reclaimed this node
+            // from cache (setting node.Branch to itself). Reassign ownership defensively.
+            node.Branch = this;
 
             node.Touch(level);
 

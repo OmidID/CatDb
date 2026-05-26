@@ -18,19 +18,28 @@ public partial class WTree
 
                 Branches.Clear();
 
-                // Run right to left: when helper[i] checks its right neighbor helpers[i+1],
-                // that neighbor is already fully processed — no Task, no Wait needed.
-                for (var index = helpers.Length - 1; index >= 0; index--)
-                    helpers[index].Run();
+                try
+                {
+                    // Run right to left: when helper[i] checks its right neighbor helpers[i+1],
+                    // that neighbor is already fully processed — no Task, no Wait needed.
+                    for (var index = helpers.Length - 1; index >= 0; index--)
+                        helpers[index].Run();
+                }
+                finally
+                {
+                    // ALWAYS rebuild Branches from helpers, even if Run() threw.
+                    // Each helper's List is initialized before Run() processes it,
+                    // so we can safely collect whatever was built.
+                    for (var index = 0; index < helpers.Length; index++)
+                    {
+                        if (helpers[index].List != null)
+                            Branches.AddRange(helpers[index].List);
+                    }
 
-                for (var index = 0; index < helpers.Length; index++)
-                    Branches.AddRange(helpers[index].List);
-
-                RebuildOptimizator();
-
-                HaveChildrenForMaintenance = false;
-
-                IsModified = true;
+                    RebuildOptimizator();
+                    HaveChildrenForMaintenance = false;
+                    IsModified = true;
+                }
             }
 
             //sink branches

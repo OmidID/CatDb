@@ -53,6 +53,9 @@ public partial class WTree
 
         public IEnumerable<KeyValuePair<FullKey, Branch>> Range(int fromIndex, int toIndex)
         {
+            var count = Count;
+            if (toIndex >= count)
+                toIndex = count - 1;
             for (var i = fromIndex; i <= toIndex; i++)
                 yield return this[i];
         }

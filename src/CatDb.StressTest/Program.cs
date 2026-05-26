@@ -2,6 +2,20 @@ using CatDb.StressTest;
 using CatDb.Database;
 using Database = CatDb.Database;
 
+// ─── Parse command-line arguments ─────────────────────────────────────────
+// Usage: dotnet run -- --duration 120   (runs for 120 seconds then stops)
+//        dotnet run                     (runs until key press or Ctrl+C)
+
+TimeSpan? maxDuration = null;
+for (var i = 0; i < args.Length - 1; i++)
+{
+    if (args[i] is "--duration" or "-d" && int.TryParse(args[i + 1], out var seconds))
+    {
+        maxDuration = TimeSpan.FromSeconds(seconds);
+        break;
+    }
+}
+
 // ─── Bootstrap ────────────────────────────────────────────────────────────
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -63,6 +77,13 @@ var services = new List<BackgroundService>
 // ─── Ctrl+C → graceful shutdown ───────────────────────────────────────────
 
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; ctx.Stop(); };
+
+// ─── Auto-stop timer (if --duration was specified) ────────────────────────
+
+if (maxDuration.HasValue)
+{
+    _ = Task.Delay(maxDuration.Value, CancellationToken.None).ContinueWith(_ => ctx.Stop());
+}
 
 // ─── Launch all services as long-running tasks ────────────────────────────
 

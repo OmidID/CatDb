@@ -2,12 +2,13 @@
 ﻿using System.Diagnostics;
 using System.IO.Compression;
 using CatDb.General.IO;
+using CatDb.General.Threading;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Storage;
 public class Heap : IHeap
 {
-    private readonly object _syncRoot = new();
+    private readonly ReentrantLock _syncRoot = new();
     private readonly AtomicHeader _header;
     private readonly Space _space;
 
@@ -27,13 +28,15 @@ public class Heap : IHeap
     {
         get
         {
-            lock (_syncRoot)
-                return _space.Strategy;
+            _syncRoot.Enter();
+            try { return _space.Strategy; }
+            finally { _syncRoot.Exit(); }
         }
         set
         {
-            lock (_syncRoot)
-                _space.Strategy = value;
+            _syncRoot.Enter();
+            try { _space.Strategy = value; }
+            finally { _syncRoot.Exit(); }
         }
     }
 
@@ -200,28 +203,32 @@ public class Heap : IHeap
     {
         get
         {
-            lock (_syncRoot)
-                return _header.Tag;
+            _syncRoot.Enter();
+            try { return _header.Tag; }
+            finally { _syncRoot.Exit(); }
         }
         set
         {
-            lock (_syncRoot)
-                _header.Tag = value;
+            _syncRoot.Enter();
+            try { _header.Tag = value; }
+            finally { _syncRoot.Exit(); }
         }
     }
 
     public long ObtainNewHandle()
     {
-        lock (_syncRoot)
-            return _maxHandle++;
+        _syncRoot.Enter();
+        try { return _maxHandle++; }
+        finally { _syncRoot.Exit(); }
     }
 
     public void Release(long handle)
     {
-        lock (_syncRoot)
+        _syncRoot.Enter();
+        try
         {
             if (!_used.TryGetValue(handle, out var pointer))
-                return; //throw new ArgumentException("handle");
+                return;
 
             if (pointer.Version == _currentVersion)
                 _space.Free(pointer.Ptr);
@@ -233,12 +240,14 @@ public class Heap : IHeap
 
             _used.Remove(handle);
         }
+        finally { _syncRoot.Exit(); }
     }
 
     public bool Exists(long handle)
     {
-        lock (_syncRoot)
-            return _used.ContainsKey(handle);
+        _syncRoot.Enter();
+        try { return _used.ContainsKey(handle); }
+        finally { _syncRoot.Exit(); }
     }
 
     /// <summary>
@@ -261,7 +270,8 @@ public class Heap : IHeap
             count = (int)stream.Length;
         }
 
-        lock (_syncRoot)
+        _syncRoot.Enter();
+        try
         {
             if (handle >= _maxHandle)
                 throw new ArgumentException("Invalid handle.");
@@ -283,11 +293,13 @@ public class Heap : IHeap
 
             InternalWrite(ptr.Position, originalCount, buffer, index, count);
         }
+        finally { _syncRoot.Exit(); }
     }
 
     public byte[] Read(long handle)
     {
-        lock (_syncRoot)
+        _syncRoot.Enter();
+        try
         {
             if (!_used.TryGetValue(handle, out var pointer))
                 throw new ArgumentException("No such handle or data exists.");
@@ -297,11 +309,13 @@ public class Heap : IHeap
 
             return InternalRead(ptr.Position, ptr.Size);
         }
+        finally { _syncRoot.Exit(); }
     }
 
     public void Commit()
     {
-        lock (_syncRoot)
+        _syncRoot.Enter();
+        try
         {
             Stream.Flush();
 
@@ -335,14 +349,16 @@ public class Heap : IHeap
 
             _currentVersion++;
         }
+        finally { _syncRoot.Exit(); }
     }
 
     public long DataSize
     {
         get
         {
-            lock (_syncRoot)
-                return _used.Sum(kv => kv.Value.Ptr.Size);
+            _syncRoot.Enter();
+            try { return _used.Sum(kv => kv.Value.Ptr.Size); }
+            finally { _syncRoot.Exit(); }
         }
     }
 
@@ -350,8 +366,9 @@ public class Heap : IHeap
     {
         get
         {
-            lock (_syncRoot)
-                return Stream.Length;
+            _syncRoot.Enter();
+            try { return Stream.Length; }
+            finally { _syncRoot.Exit(); }
         }
     }
 
@@ -359,22 +376,25 @@ public class Heap : IHeap
     {
         get
         {
-            lock (_syncRoot)
-                return _header.UseCompression;
+            _syncRoot.Enter();
+            try { return _header.UseCompression; }
+            finally { _syncRoot.Exit(); }
         }
     }
 
     public void Close()
     {
-        lock (_syncRoot)
-            Stream.Close();
+        _syncRoot.Enter();
+        try { Stream.Close(); }
+        finally { _syncRoot.Exit(); }
     }
 
     public IEnumerable<KeyValuePair<long, byte[]>> GetLatest(long atVersion)
     {
         var list = new List<KeyValuePair<long, Pointer>>();
 
-        lock (_syncRoot)
+        _syncRoot.Enter();
+        try
         {
             foreach (var kv in _used.Union(_reserved))
             {
@@ -388,6 +408,7 @@ public class Heap : IHeap
                 }
             }
         }
+        finally { _syncRoot.Exit(); }
 
         foreach (var kv in list)
         {
@@ -395,7 +416,8 @@ public class Heap : IHeap
             var pointer = kv.Value;
 
             byte[] buffer;
-            lock (_syncRoot)
+            _syncRoot.Enter();
+            try
             {
                 buffer = InternalRead(pointer.Ptr.Position, pointer.Ptr.Size);
                 pointer.RefCount--;
@@ -405,6 +427,7 @@ public class Heap : IHeap
                     _reserved.Remove(handle);
                 }
             }
+            finally { _syncRoot.Exit(); }
 
             yield return new KeyValuePair<long, byte[]>(handle, buffer);
         }
@@ -412,7 +435,8 @@ public class Heap : IHeap
 
     public KeyValuePair<long, Ptr>[] GetUsedSpace()
     {
-        lock (_syncRoot)
+        _syncRoot.Enter();
+        try
         {
             var array = new KeyValuePair<long, Ptr>[_used.Count + _reserved.Count];
 
@@ -422,14 +446,16 @@ public class Heap : IHeap
 
             return array;
         }
+        finally { _syncRoot.Exit(); }
     }
 
     public long CurrentVersion
     {
         get
         {
-            lock (_syncRoot)
-                return _currentVersion;
+            _syncRoot.Enter();
+            try { return _currentVersion; }
+            finally { _syncRoot.Exit(); }
         }
     }
 }

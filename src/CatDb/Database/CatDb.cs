@@ -11,14 +11,30 @@ public static class CatDb
     public static IStorageEngine FromHeap(IHeap heap) =>
         new StorageEngine(heap);
 
-    public static IStorageEngine FromStream(Stream stream) =>
+    public static IStorageEngine FromStream(Stream stream, CommitMode commitMode = CommitMode.InPlace) =>
         FromHeap(new Heap(stream));
 
     public static IStorageEngine FromMemory() =>
-        FromStream(new MemoryStream());
+        FromStream(new MemoryStream(), CommitMode.InPlace);
 
-    public static IStorageEngine FromFile(string fileName) =>
-        FromStream(new OptimizedFileStream(fileName, FileMode.OpenOrCreate));
+    /// <summary>
+    /// Open or create a database from a file.
+    /// Default commit mode is WriteAheadLog (crash-safe).
+    /// </summary>
+    public static IStorageEngine FromFile(string fileName, CommitMode commitMode = CommitMode.WriteAheadLog)
+    {
+        var stream = new OptimizedFileStream(fileName, FileMode.OpenOrCreate);
+        var heap = new Heap(stream);
+
+        if (commitMode == CommitMode.WriteAheadLog)
+        {
+            var walPath = fileName + ".wal";
+            var walHeap = new WalHeap(heap, walPath);
+            return new StorageEngine(walHeap);
+        }
+
+        return new StorageEngine(heap);
+    }
 
     public static IStorageEngine FromNetwork(string host, int port = 7182) =>
         new StorageEngineClient(host, port);

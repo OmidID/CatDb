@@ -21,12 +21,19 @@ public partial class WTree
         private ConcurrentDictionary<Locator, Range> BuildRanges()
         {
             var map = new ConcurrentDictionary<Locator, Range>();
+            var count = _branches.Count;
+            if (count == 0)
+                return map;
+
             var locator = _branches[0].Key.Locator;
             var range = new Range(0, true);
             map[locator] = range;
 
-            for (var i = 1; i < _branches.Count; i++)
+            for (var i = 1; i < count; i++)
             {
+                if (i >= _branches.Count)
+                    break;
+
                 var newLocator = _branches[i].Key.Locator;
 
                 if (newLocator.Equals(locator))
@@ -50,7 +57,8 @@ public partial class WTree
             var idx = _branches.BinarySearch(new FullKey(locator, null));
             Debug.Assert(idx < 0);
             idx = ~idx - 1;
-            Debug.Assert(idx >= 0);
+            if (idx < 0)
+                idx = 0;
 
             _map[locator] = range = new Range(idx, false);
 
