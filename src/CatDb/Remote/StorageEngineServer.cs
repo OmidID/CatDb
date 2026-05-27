@@ -79,10 +79,6 @@ public sealed class StorageEngineServer
     public Task StartAsync(CancellationToken ct = default) => _tcpServer.StartAsync(ct);
     public Task StopAsync()                                => _tcpServer.StopAsync();
 
-    /// <summary>Sync wrapper — safe to call from non-async code.</summary>
-    public void Start() => _tcpServer.Start();
-    public void Stop()  => _tcpServer.Stop();
-
     public bool IsRunning => _tcpServer.IsRunning;
 
     // ── Packet handler ───────────────────────────────────────────────────────

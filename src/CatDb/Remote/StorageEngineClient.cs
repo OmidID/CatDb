@@ -9,16 +9,16 @@ using CatDb.WaterfallTree;
 namespace CatDb.Remote;
 
 /// <summary>
-/// Remote <see cref="IStorageEngine"/> client backed by an async TCP connection.
+/// Remote <see cref="IStorageEngine"/> client backed by a TCP connection.
 /// <para>
-/// <b>Async-first:</b> use <see cref="ConnectAsync"/> + <see cref="ExecuteAsync"/> for
-/// fully non-blocking operation from async callers.
+/// <b>Two transports, no sync-over-async:</b>
 /// </para>
-/// <para>
-/// <b>Sync compat:</b> the default constructor connects synchronously via
-/// <c>Task.Run(…).GetAwaiter().GetResult()</c> which is deadlock-safe because
-/// <c>Task.Run</c> strips any <see cref="System.Threading.SynchronizationContext"/>.
-/// </para>
+/// <list type="bullet">
+///   <item><b>Async:</b> <see cref="CreateUnconnected"/> + <see cref="ConnectAsync"/> + <see cref="ExecuteAsync"/>.
+///     Uses channel-based pipelined I/O.</item>
+///   <item><b>Sync:</b> default constructor + <see cref="Execute"/>.
+///     Uses true blocking socket I/O — no <c>Task.Run</c>, no <c>GetResult</c>, no <c>.Wait()</c>.</item>
+/// </list>
 /// </summary>
 public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
 {
@@ -39,9 +39,10 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
     // ── Construction ──────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Creates the client and connects synchronously.
-    /// Safe to call from any context — uses <c>Task.Run</c> to avoid
-    /// SynchronizationContext deadlocks.
+    /// Creates the client and connects synchronously using a true blocking
+    /// socket transport. No <c>Task.Run</c> / <c>GetResult</c> / <c>Wait</c>
+    /// is involved, so this is safe from any context including
+    /// <see cref="System.Threading.SynchronizationContext"/>-bound threads.
     /// </summary>
     public StorageEngineClient(string host = "localhost", int port = 7182, string databaseName = "default", string? userName = null, string? password = null)
     {
@@ -49,8 +50,7 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
         _userName = userName;
         _password = password;
         _connection = new ClientConnection(host, port);
-        // Safe sync connect: Task.Run strips SynchronizationContext
-        Task.Run(() => _connection.StartAsync(CancellationToken.None)).GetAwaiter().GetResult();
+        _connection.Start(); // true sync — blocking socket connect, no Task involved
         Heap = new RemoteHeap(this);
     }
 
@@ -98,11 +98,20 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
     }
 
     /// <summary>
-    /// Sync bridge — internally calls <see cref="ExecuteAsync"/> via
-    /// <c>Task.Run</c> to avoid SynchronizationContext deadlocks.
+    /// Synchronous execute — uses the blocking socket transport.
+    /// No <c>Task.Run</c>, no <c>GetResult</c>, no <c>.Wait()</c>.
     /// </summary>
-    public CommandCollection Execute(IDescriptor descriptor, CommandCollection commands) =>
-        Task.Run(() => ExecuteAsync(descriptor, commands)).GetAwaiter().GetResult();
+    public CommandCollection Execute(IDescriptor descriptor, CommandCollection commands)
+    {
+        var ms = new MemoryStream();
+        new Message(descriptor, commands, _databaseName, _userName, _password).Serialize(new BinaryWriter(ms));
+        ms.Position = 0;
+
+        var responseMs = _connection.SendSync(new Packet(ms));
+
+        var message = Message.Deserialize(new BinaryReader(responseMs), (_, _, _, _) => descriptor);
+        return message.Commands;
+    }
 
     // ── IStorageEngine ────────────────────────────────────────────────────────
 
@@ -270,7 +279,7 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
         await _connection.StopAsync().ConfigureAwait(false);
     }
 
-    public void Dispose() => _connection.StopAsync().GetAwaiter().GetResult();
+    public void Dispose() => _connection.Stop();
     public void Close()   => Dispose();
 
     // ── Remote heap ───────────────────────────────────────────────────────────

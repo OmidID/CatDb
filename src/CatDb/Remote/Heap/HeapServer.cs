@@ -27,9 +27,6 @@ public sealed class HeapServer
     public Task StartAsync(CancellationToken ct = default) => _tcpServer.StartAsync(ct);
     public Task StopAsync()                                => _tcpServer.StopAsync();
 
-    public void Start() => _tcpServer.Start();
-    public void Stop()  => _tcpServer.Stop();
-
     public bool IsRunning    => _tcpServer.IsRunning;
     public int  ClientsCount => _tcpServer.ServerConnections.Count;
 

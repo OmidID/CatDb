@@ -5,7 +5,7 @@ namespace CatDb.General.Diagnostics;
 public class MemoryMonitor
 {
     private readonly Process _process;
-    private Task _worker;
+    private Thread _worker;
     private bool _shutDown;
 
     private long _peakPagedMemorySize64;
@@ -83,7 +83,8 @@ public class MemoryMonitor
 
         DoUpate();
 
-        _worker = Task.Factory.StartNew(DoMonitor, TaskCreationOptions.LongRunning);
+        _worker = new Thread(DoMonitor) { IsBackground = true, Name = "CatDb.MemoryMonitor" };
+        _worker.Start();
     }
 
     public void Stop()
@@ -94,7 +95,7 @@ public class MemoryMonitor
         try
         {
             _shutDown = true;
-            _worker.Wait();
+            _worker.Join();
         }
         finally
         {

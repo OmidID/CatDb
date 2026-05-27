@@ -1,12 +1,12 @@
 using CatDb.Server.Services;
 
-namespace CatDb.Server.Apis.Admin.Database;
+namespace CatDb.Server.Apis.Admin;
 
 public static class AdminDatabaseEndpoints
 {
     public static IEndpointRouteBuilder MapAdminDatabaseEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/admin/databases");
+        var group = app.MapGroup("/api/v1/admin/databases");
 
         group.MapGet("/", (
             HttpContext http,

@@ -1,10 +1,7 @@
-﻿using System.Text.Json;
-using CatDb.Server.Apis.Admin;
-using CatDb.Server.Apis.Admin.Database;
+﻿using CatDb.Server.Apis.Admin;
 using CatDb.Server;
 using CatDb.Server.Services;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;

@@ -5,112 +5,189 @@ using CatDb.Database;
 namespace CatDb.StressTest;
 
 // ─── Shared context (one engine, many tables, global counters) ──────────────
+//
+// In server (network) mode every service gets its own StressContext fork so
+// each one has its own dedicated TCP connection and table handles.  The
+// SharedState inner class holds the counters, error log, and CancellationToken
+// that must be the SAME object across every fork — no copying.
+//
+// In file mode all services share a single StressContext (unchanged behaviour).
 
 public sealed class StressContext : IDisposable
 {
-    private readonly CancellationTokenSource _cts = new();
+    // ── Shared state: the same object for primary + all forks ──────────────
 
-    public IStorageEngine Engine  { get; }
-    public CancellationToken CancellationToken => _cts.Token;
+    private sealed class SharedState
+    {
+        // Global sequence counters — use Interlocked.Increment / Volatile.Read
+        public long NextTickId;
+        public long NextOrderId;
+        public long NextAuditSeq;
+        public long NextSensorId;
+        public long NextMetricId;
 
-    // Tables
-    public ITable<long,   Tick>          Ticks    { get; }
-    public ITable<string, UserSession>   Sessions { get; }
-    public ITable<long,   Order>         Orders   { get; }
-    public ITable<long,   MetricSnapshot>Metrics  { get; }
-    public ITable<long,   AuditEntry>    Audit     { get; }
-    public ITable<string, PlayerScore>   Scores    { get; }
-    public ITable<long,   SensorReading> Sensors   { get; }
-    public ITable<string, string>        Config    { get; }
+        // Stats
+        public long TotalCommits;
+        public long TotalErrors;
+        public long TotalCorruptions;
+
+        public readonly ConcurrentQueue<(DateTime At, string Svc, string Msg)> RecentErrors = new();
+
+        public readonly CancellationTokenSource Cts = new();
+
+        private readonly StreamWriter _errorLog;
+
+        public SharedState()
+        {
+            if (File.Exists(StressContext.ErrorLogPath)) File.Delete(StressContext.ErrorLogPath);
+            _errorLog = new StreamWriter(StressContext.ErrorLogPath, append: false) { AutoFlush = true };
+            _errorLog.WriteLine($"CatDb Stress Test — Error Log — Started {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            _errorLog.WriteLine(new string('─', 80));
+        }
+
+        public void RecordError(string svc, string msg, Exception? ex = null)
+        {
+            Interlocked.Increment(ref TotalErrors);
+            var shortMsg = msg.Length > 100 ? msg[..100] : msg;
+            RecentErrors.Enqueue((DateTime.Now, svc, shortMsg));
+            while (RecentErrors.Count > 8)
+                RecentErrors.TryDequeue(out _);
+
+            lock (_errorLog)
+            {
+                _errorLog.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [{svc}] {msg}");
+                if (ex != null)
+                {
+                    _errorLog.WriteLine($"  Type   : {ex.GetType().FullName}");
+                    _errorLog.WriteLine($"  Stack  :");
+                    foreach (var line in (ex.StackTrace ?? "").Split('\n'))
+                        _errorLog.WriteLine($"    {line.TrimEnd()}");
+                    if (ex.InnerException != null)
+                    {
+                        _errorLog.WriteLine($"  InnerException: {ex.InnerException.GetType().FullName}: {ex.InnerException.Message}");
+                        foreach (var line in (ex.InnerException.StackTrace ?? "").Split('\n'))
+                            _errorLog.WriteLine($"    {line.TrimEnd()}");
+                    }
+                }
+                _errorLog.WriteLine();
+            }
+        }
+
+        public void Dispose()
+        {
+            Cts.Dispose();
+            _errorLog.Flush();
+            _errorLog.Dispose();
+        }
+    }
+
+    // ── Per-context fields ─────────────────────────────────────────────────
+
+    private readonly SharedState _s;
+    private readonly bool _ownsShared; // only primary disposes SharedState
+
+    public const string ErrorLogPath = "stress_errors.log";
+
+    // ── Forwarded ref-returning properties (transparent to callers) ────────
+    // Interlocked.Increment(ref ctx.NextTickId) and Volatile.Read(ref ctx.NextTickId)
+    // work exactly as before because the property returns a ref to the shared field.
+
+    public ref long NextTickId       => ref _s.NextTickId;
+    public ref long NextOrderId      => ref _s.NextOrderId;
+    public ref long NextAuditSeq     => ref _s.NextAuditSeq;
+    public ref long NextSensorId     => ref _s.NextSensorId;
+    public ref long NextMetricId     => ref _s.NextMetricId;
+    public ref long TotalCommits     => ref _s.TotalCommits;
+    public ref long TotalErrors      => ref _s.TotalErrors;
+    public ref long TotalCorruptions => ref _s.TotalCorruptions;
+
+    public ConcurrentQueue<(DateTime At, string Svc, string Msg)> RecentErrors
+        => _s.RecentErrors;
+
+    public CancellationToken CancellationToken => _s.Cts.Token;
+
+    // ── Per-context: engine + table handles ───────────────────────────────
+
+    public IStorageEngine Engine { get; }
+
+    public ITable<long,   Tick>            Ticks     { get; }
+    public ITable<string, UserSession>     Sessions  { get; }
+    public ITable<long,   Order>           Orders    { get; }
+    public ITable<long,   MetricSnapshot>  Metrics   { get; }
+    public ITable<long,   AuditEntry>      Audit     { get; }
+    public ITable<string, PlayerScore>     Scores    { get; }
+    public ITable<long,   SensorReading>   Sensors   { get; }
+    public ITable<string, string>          Config    { get; }
     public ITable<long,   IntegrityRecord> Integrity { get; }
 
-    // Counts corruption violations detected by DataIntegrityService.
-    public long TotalCorruptions = 0;
-
-    // Global sequence counters – use Interlocked.Increment / Volatile.Read
-    public long NextTickId   = 0;
-    public long NextOrderId  = 0;
-    public long NextAuditSeq = 0;
-    public long NextSensorId = 0;
-    public long NextMetricId = 0;
-
-    // Stats
-    public long TotalCommits = 0;
-    public long TotalErrors  = 0;
-    public readonly ConcurrentQueue<(DateTime At, string Svc, string Msg)> RecentErrors = new();
-
-    // Error log file
-    public const string ErrorLogPath = "stress_errors.log";
-    private readonly StreamWriter _errorLog;
+    // ── Primary constructor ────────────────────────────────────────────────
 
     public StressContext(IStorageEngine engine)
     {
-        // Delete stale log from a previous run and create a fresh one
-        if (File.Exists(ErrorLogPath)) File.Delete(ErrorLogPath);
-        _errorLog = new StreamWriter(ErrorLogPath, append: false) { AutoFlush = true };
-        _errorLog.WriteLine($"CatDb Stress Test — Error Log — Started {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        _errorLog.WriteLine(new string('─', 80));
-
+        _s = new SharedState();
+        _ownsShared = true;
         Engine = engine;
 
-        Ticks    = Engine.OpenXTable<long,   Tick>          ("ticks");
-        Sessions = Engine.OpenXTable<string, UserSession>   ("sessions");
-        Orders   = Engine.OpenXTable<long,   Order>         ("orders");
-        Metrics  = Engine.OpenXTable<long,   MetricSnapshot>("metrics");
-        Audit      = Engine.OpenXTable<long,   AuditEntry>      ("audit");
-        Scores     = Engine.OpenXTable<string, PlayerScore>     ("scores");
-        Sensors    = Engine.OpenXTable<long,   SensorReading>   ("sensors");
-        Config     = Engine.OpenXTable<string, string>          ("config");
-        Integrity  = Engine.OpenXTable<long,   IntegrityRecord> ("integrity");
+        Ticks     = Engine.OpenXTable<long,   Tick>            ("ticks");
+        Sessions  = Engine.OpenXTable<string, UserSession>     ("sessions");
+        Orders    = Engine.OpenXTable<long,   Order>           ("orders");
+        Metrics   = Engine.OpenXTable<long,   MetricSnapshot>  ("metrics");
+        Audit     = Engine.OpenXTable<long,   AuditEntry>      ("audit");
+        Scores    = Engine.OpenXTable<string, PlayerScore>     ("scores");
+        Sensors   = Engine.OpenXTable<long,   SensorReading>   ("sensors");
+        Config    = Engine.OpenXTable<string, string>          ("config");
+        Integrity = Engine.OpenXTable<long,   IntegrityRecord> ("integrity");
 
         Config["app"]     = "CatDb.StressTest";
         Config["version"] = "1.0";
         Config["started"] = DateTime.UtcNow.ToString("O");
     }
 
+    // ── Fork constructor ───────────────────────────────────────────────────
+    // Shares SharedState (counters / log / CTS) with the primary but opens
+    // its own table handles on a new engine — i.e. its own TCP connection.
+
+    private StressContext(SharedState shared, IStorageEngine engine)
+    {
+        _s = shared;
+        _ownsShared = false;
+        Engine = engine;
+
+        Ticks     = Engine.OpenXTable<long,   Tick>            ("ticks");
+        Sessions  = Engine.OpenXTable<string, UserSession>     ("sessions");
+        Orders    = Engine.OpenXTable<long,   Order>           ("orders");
+        Metrics   = Engine.OpenXTable<long,   MetricSnapshot>  ("metrics");
+        Audit     = Engine.OpenXTable<long,   AuditEntry>      ("audit");
+        Scores    = Engine.OpenXTable<string, PlayerScore>     ("scores");
+        Sensors   = Engine.OpenXTable<long,   SensorReading>   ("sensors");
+        Config    = Engine.OpenXTable<string, string>          ("config");
+        Integrity = Engine.OpenXTable<long,   IntegrityRecord> ("integrity");
+    }
+
+    /// <summary>
+    /// Creates a fork that shares all counters/log/CTS with this context
+    /// but uses <paramref name="engine"/> (its own TCP connection) for all I/O.
+    /// Callers must dispose the returned context when done.
+    /// </summary>
+    public StressContext Fork(IStorageEngine engine) => new(_s, engine);
+
+    // ── Methods ────────────────────────────────────────────────────────────
+
     public void Commit()
     {
         Engine.Commit();
-        Interlocked.Increment(ref TotalCommits);
+        Interlocked.Increment(ref _s.TotalCommits);
     }
 
-    public void Stop() => _cts.Cancel();
+    public void Stop() => _s.Cts.Cancel();
 
-    public void RecordError(string svc, string msg, Exception? ex = null)
-    {
-        Interlocked.Increment(ref TotalErrors);
-        var shortMsg = msg.Length > 100 ? msg[..100] : msg;
-        RecentErrors.Enqueue((DateTime.Now, svc, shortMsg));
-        while (RecentErrors.Count > 8)
-            RecentErrors.TryDequeue(out _);
-
-        // Write full details to the log file
-        lock (_errorLog)
-        {
-            _errorLog.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [{svc}] {msg}");
-            if (ex != null)
-            {
-                _errorLog.WriteLine($"  Type   : {ex.GetType().FullName}");
-                _errorLog.WriteLine($"  Stack  :");
-                foreach (var line in (ex.StackTrace ?? "").Split('\n'))
-                    _errorLog.WriteLine($"    {line.TrimEnd()}");
-                if (ex.InnerException != null)
-                {
-                    _errorLog.WriteLine($"  InnerException: {ex.InnerException.GetType().FullName}: {ex.InnerException.Message}");
-                    foreach (var line in (ex.InnerException.StackTrace ?? "").Split('\n'))
-                        _errorLog.WriteLine($"    {line.TrimEnd()}");
-                }
-            }
-            _errorLog.WriteLine();
-        }
-    }
+    public void RecordError(string svc, string msg, Exception? ex = null) =>
+        _s.RecordError(svc, msg, ex);
 
     public void Dispose()
     {
         Engine.Dispose();
-        _cts.Dispose();
-        _errorLog.Flush();
-        _errorLog.Dispose();
+        if (_ownsShared) _s.Dispose();
     }
 }
 

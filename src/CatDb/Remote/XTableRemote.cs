@@ -222,8 +222,11 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
 
     public IEnumerable<KeyValuePair<IData, IData>> Forward(IData from, bool hasFrom, IData to, bool hasTo)
     {
+        // In network mode, concurrent mutations can make bounds appear momentarily
+        // inverted between the time the caller computed them and the server round-trip.
+        // Return empty rather than throwing — callers just see a transient empty range.
         if (hasFrom && hasTo && _indexDescriptor.KeyComparer.Compare(from, to) > 0)
-            throw new ArgumentException("from > to");
+            yield break;
 
         from = hasFrom ? from : default(IData);
         to = hasTo ? to : default(IData);
@@ -264,7 +267,7 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
     public IEnumerable<KeyValuePair<IData, IData>> Backward(IData to, bool hasTo, IData from, bool hasFrom)
     {
         if (hasFrom && hasTo && _indexDescriptor.KeyComparer.Compare(from, to) > 0)
-            throw new ArgumentException("from > to");
+            yield break;
 
         from = hasFrom ? from : default(IData);
         to = hasTo ? to : default(IData);

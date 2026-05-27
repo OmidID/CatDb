@@ -6,7 +6,7 @@ public static class AdminUserEndpoints
 {
     public static IEndpointRouteBuilder MapAdminUserEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/admin/users");
+        var group = app.MapGroup("/api/v1/admin/users");
 
         group.MapGet("/", (
             HttpContext http,

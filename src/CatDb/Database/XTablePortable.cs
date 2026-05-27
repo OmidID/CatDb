@@ -193,7 +193,6 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
-                Task task = null;
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
@@ -205,9 +204,6 @@ public class XTablePortable : ITable<IData, IData>
                             break;
                     }
                     finally { records.Lock.ExitRead(); }
-
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key, Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
                 }
 
                 records.Lock.EnterRead();
@@ -218,7 +214,10 @@ public class XTablePortable : ITable<IData, IData>
                 }
                 finally { records.Lock.ExitRead(); }
 
-                task?.Wait();
+                // Sequential fetch of the next page — no background prefetch / Task.Wait.
+                if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key, Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
+
                 records = recs;
             }
         }
@@ -255,7 +254,6 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
-                Task task = null;
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey)
@@ -265,9 +263,6 @@ public class XTablePortable : ITable<IData, IData>
                     try { shouldStop = hasFrom && records.Count > 0 && keyComparer.Compare(records.Last.Key, from) < 0; }
                     finally { records.Lock.ExitRead(); }
                     if (shouldStop) break;
-
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key, Direction.Backward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
                 }
 
                 bool guardFailed = false;
@@ -292,7 +287,9 @@ public class XTablePortable : ITable<IData, IData>
                 }
                 finally { records.Lock.ExitRead(); }
 
-                task?.Wait();
+                // Sequential fetch of the next page — no background prefetch / Task.Wait.
+                if (hasNearFullKey)
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key, Direction.Backward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
 
                 if (guardFailed) break;
                 if (recs is null) break;

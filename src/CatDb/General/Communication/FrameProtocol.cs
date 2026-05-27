@@ -43,4 +43,33 @@ internal static class FrameProtocol
 
         return (id, new MemoryStream(body));
     }
+
+    // ── Blocking variants (true sync — no Task/await anywhere) ───────────────
+
+    public static void WriteSync(NetworkStream stream, long id, MemoryStream payload)
+    {
+        var size   = (int)payload.Length;
+        var header = new byte[HeaderSize];
+
+        BinaryPrimitives.WriteInt64LittleEndian(header.AsSpan(0), id);
+        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(8), size);
+
+        stream.Write(header, 0, HeaderSize);
+        stream.Write(payload.GetBuffer(), 0, size);
+        stream.Flush();
+    }
+
+    public static (long Id, MemoryStream Data) ReadSync(NetworkStream stream)
+    {
+        var header = new byte[HeaderSize];
+        stream.ReadExactly(header, 0, HeaderSize);
+
+        var id   = BinaryPrimitives.ReadInt64LittleEndian(header.AsSpan(0));
+        var size = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(8));
+
+        var body = new byte[size];
+        stream.ReadExactly(body, 0, size);
+
+        return (id, new MemoryStream(body));
+    }
 }
