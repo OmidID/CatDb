@@ -6,7 +6,9 @@ using CatDb.Database;
 using Database = CatDb.Database;
 
 // ── Switch between local file and remote server ───────────────────────────────
-const bool   USE_SERVER  = false;          // true = connect to CatDb.Server
+const bool   USE_SERVER  = true;          // true = connect to CatDb.Server
+const string SERVER_USERNAME = "admin";
+const string SERVER_PASSWORD = "admin";
 const string SERVER_HOST = "localhost";
 const int    SERVER_PORT = 7182;
 const string FILE_NAME   = "test.CatDb";
@@ -18,7 +20,12 @@ IStorageEngine OpenEngine(bool fresh = false)
     if (USE_SERVER)
     {
         Console.WriteLine($"Connecting to server {SERVER_HOST}:{SERVER_PORT}...");
-        return Database.CatDb.FromNetwork(SERVER_HOST, SERVER_PORT);
+        return Database.CatDb.FromNetwork(
+	        SERVER_HOST,
+	        SERVER_PORT,
+	        Path.GetFileNameWithoutExtension(FILE_NAME),
+	        SERVER_USERNAME,
+	        SERVER_PASSWORD);
     }
     if (fresh) File.Delete(FILE_NAME);
     return Database.CatDb.FromFile(FILE_NAME);

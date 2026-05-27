@@ -5,5 +5,6 @@ public sealed class ServerState
 {
     public bool   IsRunning { get; set; }
     public int    Port      { get; set; }
-    public string FileName  { get; set; } = string.Empty;
+    public string DatabaseDirectory { get; set; } = string.Empty;
+    public string DefaultDatabaseName { get; set; } = string.Empty;
 }

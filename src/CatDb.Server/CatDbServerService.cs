@@ -1,38 +1,45 @@
 using System.Diagnostics;
-using CatDb.Database;
 using CatDb.General.Communication;
 using CatDb.Remote;
+using CatDb.Server.Services;
 
 namespace CatDb.Server;
 
 public sealed class CatDbServerService(
     IConfiguration config,
     ILogger<CatDbServerService> logger,
-    ServerState state) : BackgroundService
+    ServerState state,
+    SystemCatalogService systemCatalog,
+    DatabaseHostService databaseHostService,
+    EngineAccessPolicy accessPolicy) : BackgroundService
 {
     private static readonly ActivitySource ActivitySource = new("CatDb.Server");
 
-    private IStorageEngine? _engine;
     private StorageEngineServer? _server;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var fileName = config["CatDb:FileName"] ?? "catdb.db";
+        var defaultDatabase = config["CatDb:DefaultDatabase"] ?? "default";
         var port     = config.GetValue<int>("CatDb:Port", 7182);
 
         using var activity = ActivitySource.StartActivity("CatDbServer.Start");
 
-        logger.LogInformation("Opening database file {File}", fileName);
-        _engine = Database.CatDb.FromFile(fileName);
+        systemCatalog.EnsureInitialized();
+
+        if (!systemCatalog.DatabaseExists(defaultDatabase))
+            databaseHostService.CreateDatabase(defaultDatabase);
+
+        var defaultEngine = databaseHostService.GetOrOpenDatabase(defaultDatabase);
 
         logger.LogInformation("Starting TCP listener on port {Port}", port);
         var tcpServer = new TcpServer(port);
-        _server = new StorageEngineServer(_engine, tcpServer);
+        _server = new StorageEngineServer(defaultEngine, tcpServer, accessPolicy);
         await _server.StartAsync(stoppingToken).ConfigureAwait(false);
 
         state.IsRunning = true;
         state.Port      = port;
-        state.FileName  = fileName;
+        state.DatabaseDirectory = databaseHostService.DatabaseDirectory;
+        state.DefaultDatabaseName = defaultDatabase;
 
         logger.LogInformation("CatDb server is ready on port {Port}", port);
 
@@ -46,7 +53,6 @@ public sealed class CatDbServerService(
         state.IsRunning = false;
 
         if (_server is not null) await _server.StopAsync().ConfigureAwait(false);
-        _engine?.Close();
 
         await base.StopAsync(cancellationToken);
 

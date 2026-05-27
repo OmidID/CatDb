@@ -6,7 +6,7 @@ using CatDb.Remote.Commands;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Remote;
-public class XTableRemote : ITable<IData, IData>
+public class XTableRemote : ITable<IData, IData>, IDisposable
 {
     private readonly int _pageCapacity = 100000;
     private readonly CommandCollection _commands;
@@ -38,7 +38,19 @@ public class XTableRemote : ITable<IData, IData>
 
     ~XTableRemote()
     {
-        Flush();
+        // Best-effort flush: the connection may already be torn down during GC
+        // finalization, so swallow everything — callers must Dispose() for a
+        // guaranteed flush.
+        try { FlushCoreUnsafe(); } catch { }
+    }
+
+    public void Dispose()
+    {
+        lock (_lock)
+        {
+            FlushCore();
+            GC.SuppressFinalize(this);
+        }
     }
 
     private void InternalExecute(ICommand command)
@@ -80,6 +92,13 @@ public class XTableRemote : ITable<IData, IData>
 
     // Must be called with _lock held.
     private void FlushCore()
+    {
+        FlushCoreUnsafe();
+    }
+
+    // Inner flush — does NOT acquire the lock; caller is responsible.
+    // May be called from the finalizer without a lock (single-threaded GC context).
+    private void FlushCoreUnsafe()
     {
         if (_commands.Count == 0)
         {

@@ -1,0 +1,16 @@
+meta {
+  name: Delete Database
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{baseUrl}}/api/admin/databases/{{databaseName}}
+  body: none
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}

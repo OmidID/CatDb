@@ -1,0 +1,21 @@
+meta {
+  name: List Databases
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/admin/databases
+  body: none
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}
+
+params:query {
+  page: 1
+  pageSize: 20
+}

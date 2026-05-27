@@ -22,6 +22,9 @@ namespace CatDb.Remote;
 /// </summary>
 public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
 {
+    private readonly string _databaseName;
+    private readonly string? _userName;
+    private readonly string? _password;
     private int _cacheSize;
     private readonly ConcurrentDictionary<string, XTableRemote> _indexes = new();
     private readonly Dictionary<TransformerCacheKey, object> _transformerCache = new();
@@ -40,8 +43,11 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
     /// Safe to call from any context — uses <c>Task.Run</c> to avoid
     /// SynchronizationContext deadlocks.
     /// </summary>
-    public StorageEngineClient(string host = "localhost", int port = 7182)
+    public StorageEngineClient(string host = "localhost", int port = 7182, string databaseName = "default", string? userName = null, string? password = null)
     {
+        _databaseName = databaseName;
+        _userName = userName;
+        _password = password;
         _connection = new ClientConnection(host, port);
         // Safe sync connect: Task.Run strips SynchronizationContext
         Task.Run(() => _connection.StartAsync(CancellationToken.None)).GetAwaiter().GetResult();
@@ -52,14 +58,17 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
     /// Creates the client without connecting.
     /// Call <see cref="ConnectAsync"/> before using.
     /// </summary>
-    public static StorageEngineClient CreateUnconnected(string host = "localhost", int port = 7182)
+    public static StorageEngineClient CreateUnconnected(string host = "localhost", int port = 7182, string databaseName = "default", string? userName = null, string? password = null)
     {
-        var c = new StorageEngineClient(host, port, deferConnect: true);
+        var c = new StorageEngineClient(host, port, deferConnect: true, databaseName, userName, password);
         return c;
     }
 
-    private StorageEngineClient(string host, int port, bool deferConnect)
+    private StorageEngineClient(string host, int port, bool deferConnect, string databaseName, string? userName, string? password)
     {
+        _databaseName = databaseName;
+        _userName = userName;
+        _password = password;
         _connection = new ClientConnection(host, port);
         Heap = new RemoteHeap(this);
     }
@@ -79,12 +88,12 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
         CancellationToken ct = default)
     {
         var ms = new MemoryStream();
-        new Message(descriptor, commands).Serialize(new BinaryWriter(ms));
+        new Message(descriptor, commands, _databaseName, _userName, _password).Serialize(new BinaryWriter(ms));
         ms.Position = 0;
 
         var responseMs = await _connection.SendAsync(new Packet(ms), ct).ConfigureAwait(false);
 
-        var message = Message.Deserialize(new BinaryReader(responseMs), _ => descriptor);
+        var message = Message.Deserialize(new BinaryReader(responseMs), (_, _, _, _) => descriptor);
         return message.Commands;
     }
 

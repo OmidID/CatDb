@@ -37,14 +37,24 @@ public static class CatDb
         return new StorageEngine(heap, options);
     }
 
-    public static IStorageEngine FromNetwork(string host, int port = 7182) =>
-        new StorageEngineClient(host, port);
+    public static IStorageEngine FromNetwork(
+        string host,
+        int port = 7182,
+        string databaseName = "default",
+        string? userName = null,
+        string? password = null) =>
+        new StorageEngineClient(host, port, databaseName, userName, password);
 
     /// <summary>Fully async version of <see cref="FromNetwork"/>.</summary>
     public static async Task<IStorageEngine> FromNetworkAsync(
-        string host, int port = 7182, CancellationToken ct = default)
+        string host,
+        int port = 7182,
+        string databaseName = "default",
+        string? userName = null,
+        string? password = null,
+        CancellationToken ct = default)
     {
-        var client = StorageEngineClient.CreateUnconnected(host, port);
+        var client = StorageEngineClient.CreateUnconnected(host, port, databaseName, userName, password);
         await client.ConnectAsync(ct).ConfigureAwait(false);
         return client;
     }
