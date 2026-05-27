@@ -10,7 +10,10 @@ namespace CatDb.Database;
 public class StorageEngine : WTree, IStorageEngine
 {
     private readonly Dictionary<string, Item1> _map = new();
+    private readonly Dictionary<TransformerCacheKey, object> _transformerCache = new();
     private readonly ReentrantLock _syncRoot = new();
+
+    private readonly record struct TransformerCacheKey(Type ObjectType, Type DataType);
 
     public StorageEngine(IHeap heap, DatabaseOptions? options = null) : base(heap, options)
     {
@@ -81,10 +84,23 @@ public class StorageEngine : WTree, IStorageEngine
         try
         {
             var item = Obtain(name, StructureType.XTABLE, keyDataType, recordDataType, null, null);
+            keyTransformer ??= GetOrCreateTransformer<TKey>(item.Locator.KeyType!);
+            recordTransformer ??= GetOrCreateTransformer<TRecord>(item.Locator.RecordType!);
             item.Portable ??= new XTablePortable<TKey, TRecord>(item.Table, keyTransformer, recordTransformer);
             return (ITable<TKey, TRecord>)item.Portable;
         }
         finally { _syncRoot.Exit(); }
+    }
+
+    private ITransformer<T, IData> GetOrCreateTransformer<T>(Type dataType)
+    {
+        var key = new TransformerCacheKey(typeof(T), dataType);
+        if (_transformerCache.TryGetValue(key, out var cached))
+            return (ITransformer<T, IData>)cached;
+
+        var transformer = new DataTransformer<T>(dataType);
+        _transformerCache[key] = transformer;
+        return transformer;
     }
 
     public ITable<TKey, TRecord> OpenXTablePortable<TKey, TRecord>(string name)

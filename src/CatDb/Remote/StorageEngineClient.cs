@@ -24,11 +24,14 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
 {
     private int _cacheSize;
     private readonly ConcurrentDictionary<string, XTableRemote> _indexes = new();
+    private readonly Dictionary<TransformerCacheKey, object> _transformerCache = new();
 
     private static readonly Descriptor StorageEngineDescriptor =
         new(-1, "", DataType.Boolean, DataType.Boolean);
 
     private readonly ClientConnection _connection;
+
+    private readonly record struct TransformerCacheKey(Type ObjectType, Type DataType);
 
     // ── Construction ──────────────────────────────────────────────────────────
 
@@ -99,7 +102,23 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
         ITransformer<TKey, IData> keyTransformer, ITransformer<TRecord, IData> recordTransformer)
     {
         var index = OpenXTablePortable(name, keyDataType, recordDataType);
+        keyTransformer ??= GetOrCreateTransformer<TKey>(index.Descriptor.KeyType!);
+        recordTransformer ??= GetOrCreateTransformer<TRecord>(index.Descriptor.RecordType!);
         return new XTablePortable<TKey, TRecord>(index, keyTransformer, recordTransformer);
+    }
+
+    private ITransformer<T, IData> GetOrCreateTransformer<T>(Type dataType)
+    {
+        var key = new TransformerCacheKey(typeof(T), dataType);
+        lock (_transformerCache)
+        {
+            if (_transformerCache.TryGetValue(key, out var cached))
+                return (ITransformer<T, IData>)cached;
+
+            var transformer = new DataTransformer<T>(dataType);
+            _transformerCache[key] = transformer;
+            return transformer;
+        }
     }
 
     public ITable<IData, IData> OpenXTablePortable(string name, DataType keyType, DataType recordType)
@@ -116,8 +135,6 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
     {
         var keyDataType    = DataTypeUtils.BuildDataType(typeof(TKey));
         var recordDataType = DataTypeUtils.BuildDataType(typeof(TRecord));
-        new DataTransformer<TKey>(typeof(TKey));
-        new DataTransformer<TRecord>(typeof(TRecord));
         return OpenXTablePortable<TKey, TRecord>(name, keyDataType, recordDataType, null!, null!);
     }
 
