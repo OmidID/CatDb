@@ -445,6 +445,10 @@ public partial class CommandPersist
             cmd.RecordType.Serialize(writer);
 
             writer.Write(cmd.Name);
+
+            // Member maps (name → slot index) — allows server to persist field names.
+            WriteMemberMap(writer, cmd.KeyMembers);
+            WriteMemberMap(writer, cmd.RecordMembers);
         }
     }
 
@@ -459,10 +463,47 @@ public partial class CommandPersist
 
             var name = reader.ReadString();
 
-            return new StorageEngineOpenXIndexCommand(name, keyType, recordType);
+            // Read optional member maps (backward-compatible: new clients always write them).
+            var keyMembers = ReadMemberMap(reader);
+            var recordMembers = ReadMemberMap(reader);
+
+            return new StorageEngineOpenXIndexCommand(name, keyType, recordType, keyMembers, recordMembers);
         }
 
         return new StorageEngineOpenXIndexCommand(id);
+    }
+
+    private static void WriteMemberMap(BinaryWriter writer, Dictionary<string, int>? members)
+    {
+        if (members == null || members.Count == 0)
+        {
+            writer.Write((byte)0);
+            return;
+        }
+
+        writer.Write((byte)1);
+        writer.Write((ushort)members.Count);
+        foreach (var kv in members)
+        {
+            writer.Write(kv.Key);
+            writer.Write((ushort)kv.Value);
+        }
+    }
+
+    private static Dictionary<string, int>? ReadMemberMap(BinaryReader reader)
+    {
+        var marker = reader.ReadByte();
+        if (marker == 0) return null;
+
+        var count = reader.ReadUInt16();
+        var map = new Dictionary<string, int>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var key = reader.ReadString();
+            var value = reader.ReadUInt16();
+            map[key] = value;
+        }
+        return map;
     }
 
     private void WriteStorageEngineOpenXFileCommand(BinaryWriter writer, ICommand command)

@@ -1,3 +1,4 @@
+using CatDb.Server.Auth;
 using CatDb.Server.Services;
 
 namespace CatDb.Server.Apis.Admin;
@@ -6,19 +7,14 @@ public static class AdminDatabaseEndpoints
 {
     public static IEndpointRouteBuilder MapAdminDatabaseEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/v1/admin/databases");
+        var group = app.MapGroup("/api/v1/admin/databases")
+            .RequireAuthorization(PolicyNames.ListDatabases);
 
         group.MapGet("/", (
-            HttpContext http,
-            SystemCatalogService catalog,
             DatabaseHostService host,
             int page = 1,
             int pageSize = 20) =>
         {
-            var authResult = Authorize(http, catalog, GlobalPermission.ListDatabases);
-            if (authResult.Result != null)
-                return authResult.Result;
-
             page = Math.Max(1, page);
             pageSize = Math.Clamp(pageSize, 1, 200);
 
@@ -33,15 +29,9 @@ public static class AdminDatabaseEndpoints
         });
 
         group.MapPost("/{databaseName}", (
-            HttpContext http,
-            SystemCatalogService catalog,
             DatabaseHostService host,
             string databaseName) =>
         {
-            var authResult = Authorize(http, catalog, GlobalPermission.ManageDatabases);
-            if (authResult.Result != null)
-                return authResult.Result;
-
             if (string.IsNullOrWhiteSpace(databaseName))
                 return Results.BadRequest(new { error = "databaseName is required." });
 
@@ -54,18 +44,12 @@ public static class AdminDatabaseEndpoints
             {
                 return Results.BadRequest(new { error = ex.Message });
             }
-        });
+        }).RequireAuthorization(PolicyNames.ManageDatabases);
 
         group.MapDelete("/{databaseName}", (
-            HttpContext http,
-            SystemCatalogService catalog,
             DatabaseHostService host,
             string databaseName) =>
         {
-            var authResult = Authorize(http, catalog, GlobalPermission.ManageDatabases);
-            if (authResult.Result != null)
-                return authResult.Result;
-
             if (string.IsNullOrWhiteSpace(databaseName))
                 return Results.BadRequest(new { error = "databaseName is required." });
 
@@ -78,26 +62,8 @@ public static class AdminDatabaseEndpoints
             {
                 return Results.BadRequest(new { error = ex.Message });
             }
-        });
+        }).RequireAuthorization(PolicyNames.ManageDatabases);
 
         return app;
-    }
-
-    private static (IResult? Result, AuthenticatedUser? User) Authorize(
-        HttpContext http,
-        SystemCatalogService catalog,
-        GlobalPermission requiredPermission)
-    {
-        if (!BasicAuthHelpers.TryReadCredentials(http, out var userName, out var password))
-            return (Results.Unauthorized(), null);
-
-        var user = catalog.Authenticate(userName, password);
-        if (user == null)
-            return (Results.Unauthorized(), null);
-
-        if (!user.HasGlobal(requiredPermission))
-            return (Results.StatusCode(StatusCodes.Status403Forbidden), null);
-
-        return (null, user);
     }
 }

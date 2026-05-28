@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>CatDb.Server</RootNamespace>
     <AssemblyName>CatDb.Server</AssemblyName>
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

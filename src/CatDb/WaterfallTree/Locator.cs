@@ -632,5 +632,81 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             }
         }
 
+        public IReadOnlyDictionary<string, int>? KeyMembers
+        {
+            get
+            {
+                lock (_syncRoot)
+                    return _keyMembers;
+            }
+        }
+
+        public IReadOnlyDictionary<string, int>? RecordMembers
+        {
+            get
+            {
+                lock (_syncRoot)
+                    return _recordMembers;
+            }
+        }
+
+        /// <summary>
+        /// Captures the public member names from a concrete (non-anonymous) type
+        /// and stores them as the key/record member map.  This is persisted with
+        /// the locator so any future opener (including the HTTP API) can map
+        /// slot indices → human-readable field names.
+        /// </summary>
+        internal void CaptureMembers(Type? keyType, Type? recordType)
+        {
+            lock (_syncRoot)
+            {
+                if (_keyMembers == null && keyType != null && !DataTypeUtils.IsAnonymousType(keyType))
+                {
+                    _keyMembers = BuildMemberMap(keyType);
+                    _serializationData = null;
+                }
+
+                if (_recordMembers == null && recordType != null && !DataTypeUtils.IsAnonymousType(recordType))
+                {
+                    _recordMembers = BuildMemberMap(recordType);
+                    _serializationData = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stores explicitly provided member maps (sent by a remote client that
+        /// knows the real field names).  Only sets if not already populated.
+        /// </summary>
+        internal void SetMembers(Dictionary<string, int>? keyMembers, Dictionary<string, int>? recordMembers)
+        {
+            lock (_syncRoot)
+            {
+                if (_keyMembers == null && keyMembers != null && keyMembers.Count > 0)
+                {
+                    _keyMembers = keyMembers;
+                    _serializationData = null;
+                }
+
+                if (_recordMembers == null && recordMembers != null && recordMembers.Count > 0)
+                {
+                    _recordMembers = recordMembers;
+                    _serializationData = null;
+                }
+            }
+        }
+
+        private static Dictionary<string, int> BuildMemberMap(Type type)
+        {
+            if (DataType.IsPrimitiveType(type))
+                return new Dictionary<string, int> { [type.Name] = 0 };
+
+            var members = DataTypeUtils.GetPublicMembers(type).ToArray();
+            var map = new Dictionary<string, int>(members.Length);
+            for (var i = 0; i < members.Length; i++)
+                map[members[i].Name] = i;
+            return map;
+        }
+
         #endregion
     }

@@ -66,6 +66,10 @@ public class StorageEngine : WTree, IStorageEngine
         if (!item.Locator.IsReady)
             item.Locator.Prepare();
 
+        // Capture member names the first time a typed (non-anonymous) table is opened.
+        // This persists slot-index → name mapping so the HTTP API can produce named JSON.
+        item.Locator.CaptureMembers(item.Locator.KeyType, item.Locator.RecordType);
+
         item.Table ??= new XTablePortable(this, item.Locator);
 
         return item;

@@ -156,8 +156,39 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
         return OpenXTablePortable<TKey, TRecord>(name, keyDataType, recordDataType, null!, null!);
     }
 
-    public ITable<TKey, TRecord> OpenXTable<TKey, TRecord>(string name) =>
-        OpenXTablePortable<TKey, TRecord>(name);
+    public ITable<TKey, TRecord> OpenXTable<TKey, TRecord>(string name)
+    {
+        var keyDataType    = DataTypeUtils.BuildDataType(typeof(TKey));
+        var recordDataType = DataTypeUtils.BuildDataType(typeof(TRecord));
+
+        // Compute member names from the concrete types so the server can persist them.
+        var keyMembers    = BuildMemberMap(typeof(TKey));
+        var recordMembers = BuildMemberMap(typeof(TRecord));
+
+        var cmd = new StorageEngineOpenXIndexCommand(name, keyDataType, recordDataType, keyMembers, recordMembers);
+        InternalExecute(cmd);
+        var descriptor = new Descriptor(cmd.Id, name, keyDataType, recordDataType);
+        var index = new XTableRemote(this, descriptor);
+        _indexes.TryAdd(name, index);
+
+        var keyTransformer    = GetOrCreateTransformer<TKey>(descriptor.KeyType!);
+        var recordTransformer = GetOrCreateTransformer<TRecord>(descriptor.RecordType!);
+        return new XTablePortable<TKey, TRecord>(index, keyTransformer, recordTransformer);
+    }
+
+    private static Dictionary<string, int>? BuildMemberMap(Type type)
+    {
+        if (DataType.IsPrimitiveType(type) || DataTypeUtils.IsAnonymousType(type))
+            return null;
+
+        var members = DataTypeUtils.GetPublicMembers(type).ToArray();
+        if (members.Length == 0) return null;
+
+        var map = new Dictionary<string, int>(members.Length);
+        for (var i = 0; i < members.Length; i++)
+            map[members[i].Name] = i;
+        return map;
+    }
 
     public XFile OpenXFile(string name) => throw new NotSupportedException();
 

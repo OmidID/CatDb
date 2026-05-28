@@ -385,6 +385,11 @@ public sealed class StorageEngineServer
         var cmd = (StorageEngineOpenXIndexCommand)command;
         storageEngine.OpenXTablePortable(cmd.Name, cmd.KeyType, cmd.RecordType);
         var loc = storageEngine[cmd.Name];
+
+        // If the client sent member names, store them in the locator so they persist.
+        if (loc is Locator locator && (cmd.KeyMembers != null || cmd.RecordMembers != null))
+            locator.SetMembers(cmd.KeyMembers, cmd.RecordMembers);
+
         return new StorageEngineOpenXIndexCommand(loc.Id);
     }
 
