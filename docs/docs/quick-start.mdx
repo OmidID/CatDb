@@ -3,13 +3,18 @@ id: quick-start
 title: Quick Start
 ---
 
+import CurrentVersion from '@site/src/components/CurrentVersion';
+import PackageInstall from '@site/src/components/PackageInstall';
+
 # Quick start
 
-CatDb is a .NET library. Add the package, open an engine, open a table, write records, and call `Commit()` when those writes must survive process exit.
+CatDb is a .NET library. The current documented release is **v<CurrentVersion />**.
 
-```bash
-dotnet add package CatDb
-```
+Add the package with the same version:
+
+<PackageInstall />
+
+Then open an engine, open a table, write records, and call `Commit()` when those writes must survive process exit.
 
 ```csharp
 using CatDb.Database;

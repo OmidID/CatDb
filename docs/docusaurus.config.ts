@@ -1,11 +1,30 @@
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import fs from 'node:fs';
+import path from 'node:path';
+
+function readVersionPrefix(): string {
+  const propsPath = path.resolve(__dirname, '../src/Directory.Build.props');
+  const props = fs.readFileSync(propsPath, 'utf8');
+  const match = props.match(/<VersionPrefix>([^<]+)<\/VersionPrefix>/);
+
+  if (!match) {
+    throw new Error(`VersionPrefix was not found in ${propsPath}`);
+  }
+
+  return match[1].trim();
+}
+
+const catdbVersion = readVersionPrefix();
 
 const config: Config = {
   title: 'CatDb',
-  tagline: 'Embedded ordered key-value storage for .NET',
+  tagline: `Embedded ordered key-value storage for .NET - v${catdbVersion}`,
   favicon: 'img/catdb-icon.svg',
+  customFields: {
+    catdbVersion,
+  },
 
   future: {
     v4: true,
@@ -68,6 +87,11 @@ const config: Config = {
           href: 'https://github.com/OmidID/CatDb',
           label: 'GitHub',
           position: 'right',
+        },
+        {
+          label: `v${catdbVersion}`,
+          position: 'right',
+          to: '/docs/quick-start',
         },
       ],
     },

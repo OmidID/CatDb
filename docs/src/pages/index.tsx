@@ -1,5 +1,6 @@
 import type {ReactNode} from 'react';
 import Link from '@docusaurus/Link';
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import styles from './index.module.css';
@@ -20,6 +21,9 @@ const features = [
 ];
 
 export default function Home(): ReactNode {
+  const {siteConfig} = useDocusaurusContext();
+  const version = String(siteConfig.customFields?.catdbVersion ?? 'unknown');
+
   return (
     <Layout
       title="CatDb documentation"
@@ -36,6 +40,7 @@ export default function Home(): ReactNode {
                   A high-performance embedded ordered key-value database for .NET,
                   powered by a write-optimized Waterfall Tree.
                 </p>
+                <p className={styles.version}>Current release: v{version}</p>
                 <div className={styles.actions}>
                   <Link className="button button--primary button--lg" to="/docs/quick-start">
                     Quick start
@@ -47,7 +52,9 @@ export default function Home(): ReactNode {
               </div>
               <div className={styles.terminal} aria-label="CatDb code sample">
                 <pre>
-                  <code>{`using var engine = CatDb.Database.CatDb.FromFile("app.catdb");
+                  <code>{`dotnet add package CatDb --version ${version}
+
+using var engine = CatDb.Database.CatDb.FromFile("app.catdb");
 
 var table = engine.OpenXTable<long, Tick>("ticks");
 table[1] = new Tick("MSFT", DateTime.UtcNow, 410.5);

@@ -42,4 +42,4 @@ You can use CatDb in three shapes:
 | `src/CatDb.GettingStarted` | Runnable examples for inserts, reads, range queries, and paging. |
 | `src/CatDb.StressTest` | Long-running concurrent stress harness. |
 
-Start with [Quick start](./quick-start.md), then read [Database Engine](./database-engine.md) when you want to understand how the WTree and heap fit together.
+Start with [Quick start](./quick-start), then read [Database Engine](./database-engine) when you want to understand how the WTree and heap fit together.

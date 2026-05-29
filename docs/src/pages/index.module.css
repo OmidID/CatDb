@@ -25,6 +25,12 @@
   max-width: 680px;
 }
 
+.version {
+  color: var(--ifm-color-primary-darkest);
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
