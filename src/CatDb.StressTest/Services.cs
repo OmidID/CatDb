@@ -1,4 +1,5 @@
 using CatDb.Database;
+using CatDb.Database.Indexing;
 using CatDb.Extensions;
 
 namespace CatDb.StressTest;
@@ -1639,6 +1640,132 @@ public sealed class HighStressKeySearchService : BackgroundService
                 Hit($"narrow.LtBwd({pivot}) cnt={cnt:N0} scan={n:N0}");
                 break;
             }
+        }
+    }
+}
+
+// ─── Index Stress ──────────────────────────────────────────────────────────
+// Creates a table with unique + non-unique indexes and exercises concurrent
+// inserts, updates, deletes, and index lookups at speed.
+
+public sealed class IndexStressService : BackgroundService
+{
+    private static readonly string[] Categories =
+        ["Electronics", "Books", "Clothing", "Home", "Sports", "Toys", "Food", "Auto"];
+    private static readonly string[] Brands =
+        ["Acme", "BrandX", "Omega", "Zeta", "Nova", "Prime", "Ultra", "Core"];
+
+    private readonly StressContext _ctx;
+    private readonly Random _rng;
+    private readonly ITable<long, IndexedProduct> _products;
+    private long _nextId;
+    private bool _indexesCreated;
+
+    public IndexStressService(string name, StressContext ctx) : base(name)
+    {
+        _ctx = ctx;
+        _rng = new Random(name.GetHashCode() ^ unchecked((int)0xFACEFEED));
+        _products = ctx.Engine.OpenXTable<long, IndexedProduct>("idx_products");
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        // Create indexes on first iteration
+        if (!_indexesCreated)
+        {
+            _products.CreateIndex("Sku", p => p.Sku, IndexType.Unique);
+            _products.CreateIndex("Category", p => p.Category, IndexType.NonUnique);
+            _products.CreateIndex("Brand", p => p.Brand, IndexType.NonUnique);
+            _indexesCreated = true;
+        }
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                int op = _rng.Next(100);
+
+                if (op < 40)
+                {
+                    // ── Insert new product ──
+                    var id = Interlocked.Increment(ref _nextId);
+                    var sku = $"SKU-{id:D8}";
+                    _products.Replace(id, new IndexedProduct
+                    {
+                        Sku = sku,
+                        Category = Categories[_rng.Next(Categories.Length)],
+                        Price = Math.Round(1.0 + _rng.NextDouble() * 999.0, 2),
+                        Stock = _rng.Next(0, 10_000),
+                        Brand = Brands[_rng.Next(Brands.Length)],
+                    });
+                    Hit($"insert id={id}");
+                }
+                else if (op < 60)
+                {
+                    // ── Update existing product (change category/brand) ──
+                    var maxId = Volatile.Read(ref _nextId);
+                    if (maxId > 0)
+                    {
+                        var id = 1 + (long)(_rng.NextDouble() * maxId);
+                        if (_products.TryGet(id, out var existing))
+                        {
+                            existing.Category = Categories[_rng.Next(Categories.Length)];
+                            existing.Brand = Brands[_rng.Next(Brands.Length)];
+                            existing.Price = Math.Round(1.0 + _rng.NextDouble() * 999.0, 2);
+                            _products.Replace(id, existing);
+                            Hit($"update id={id}");
+                        }
+                    }
+                }
+                else if (op < 70)
+                {
+                    // ── Delete product ──
+                    var maxId = Volatile.Read(ref _nextId);
+                    if (maxId > 0)
+                    {
+                        var id = 1 + (long)(_rng.NextDouble() * maxId);
+                        _products.Delete(id);
+                        Hit($"delete id={id}");
+                    }
+                }
+                else if (op < 85)
+                {
+                    // ── Lookup by SKU (unique index) ──
+                    var maxId = Volatile.Read(ref _nextId);
+                    if (maxId > 0)
+                    {
+                        var id = 1 + (long)(_rng.NextDouble() * maxId);
+                        var sku = $"SKU-{id:D8}";
+                        var results = _products.Query(p => p.Sku).Equals(sku).ToList();
+                        Hit($"find.sku={sku} cnt={results.Count}");
+                    }
+                }
+                else if (op < 95)
+                {
+                    // ── Lookup by Category (non-unique index) ──
+                    var cat = Categories[_rng.Next(Categories.Length)];
+                    var count = _products.Query(p => p.Category).Equals(cat).Count();
+                    Hit($"count.cat={cat} cnt={count}");
+                }
+                else
+                {
+                    // ── Lookup by Brand (non-unique index) ──
+                    var brand = Brands[_rng.Next(Brands.Length)];
+                    var count = _products.Query(p => p.Brand).Equals(brand).Count();
+                    Hit($"count.brand={brand} cnt={count}");
+                }
+            }
+            catch (UniqueIndexViolationException)
+            {
+                // Expected during concurrent stress — SKU collision from re-insert after delete
+                Hit("sku-collision (expected)");
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                Fail(ex, _ctx);
+            }
+
+            await Task.Yield();
         }
     }
 }

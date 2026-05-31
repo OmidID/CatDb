@@ -113,3 +113,14 @@ public class AuditEntry
     public DateTime Timestamp   { get; set; }
     public bool     Success     { get; set; }
 }
+
+// ─── Indexed product (for IndexStressService) ──────────────────────────────
+
+public class IndexedProduct
+{
+    public string Sku      { get; set; } = "";
+    public string Category { get; set; } = "";
+    public double Price    { get; set; }
+    public int    Stock    { get; set; }
+    public string Brand    { get; set; } = "";
+}

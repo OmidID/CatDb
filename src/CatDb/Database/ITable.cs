@@ -1,9 +1,17 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using CatDb.Database.Indexing;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Database;
 
-public interface ITable { }
+public interface ITable
+{
+    /// <summary>
+    /// Provides secondary index management for this table.
+    /// Available on all table types (local, remote, typed, portable).
+    /// </summary>
+    ITableIndexManager Indexes { get; }
+}
 
 public interface ITable<TKey, TRecord> : ITable, IEnumerable<KeyValuePair<TKey, TRecord>>
 {

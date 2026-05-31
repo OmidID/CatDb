@@ -23,7 +23,7 @@ Console.Clear();
 Console.CursorVisible = false;
 
 // ── Switch between local file and remote server ───────────────────────────
-const bool   USE_SERVER  = true;         // true = connect to CatDb.Server
+const bool   USE_SERVER  = false;         // true = connect to CatDb.Server
 const string SERVER_USERNAME = "admin";
 const string SERVER_PASSWORD = "admin";
 const string SERVER_HOST = "localhost";
@@ -97,6 +97,7 @@ var services = new List<BackgroundService>
     new DataIntegrityService  ("DataIntegrity", SvcCtx()),
     new HighStressKeySearchService("HighSearch-A", SvcCtx(), wideMode: true),
     new HighStressKeySearchService("HighSearch-B", SvcCtx(), wideMode: false),
+    new IndexStressService        ("IndexStress",  SvcCtx()),
 };
 
 // ─── Ctrl+C → graceful shutdown ───────────────────────────────────────────

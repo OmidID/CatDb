@@ -362,7 +362,7 @@ public partial class WTree : IDisposable
 
     private Locator MinLocator => Locator.Min;
 
-    protected Locator CreateLocator(string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType)
+    protected internal Locator CreateLocator(string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType)
     {
         return _scheme.Create(name, structureType, keyDataType, recordDataType, keyType, recordType);
     }
@@ -372,7 +372,7 @@ public partial class WTree : IDisposable
         return _scheme[id];
     }
 
-    protected IEnumerable<Locator> GetAllLocators()
+    protected internal IEnumerable<Locator> GetAllLocators()
     {
         return _scheme.Select(kv => kv.Value);
     }

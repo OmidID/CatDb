@@ -2,6 +2,7 @@
 ﻿using System.Collections;
 using CatDb.Data;
 using CatDb.Database;
+using CatDb.Database.Indexing;
 using CatDb.Remote.Commands;
 using CatDb.WaterfallTree;
 
@@ -17,6 +18,17 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
 
     private Descriptor _indexDescriptor;
     private readonly StorageEngineClient _storageEngine;
+    private RemoteTableIndexManager? _indexManager;
+
+    public ITableIndexManager Indexes
+    {
+        get
+        {
+            if (_indexManager == null)
+                _indexManager = new RemoteTableIndexManager(this, _storageEngine);
+            return _indexManager;
+        }
+    }
 
     internal XTableRemote(StorageEngineClient storageEngine, Descriptor descriptor)
     {

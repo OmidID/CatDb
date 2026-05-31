@@ -6,7 +6,7 @@ using CatDb.Database;
 using Database = CatDb.Database;
 
 // ── Switch between local file and remote server ───────────────────────────────
-const bool   USE_SERVER  = true;          // true = connect to CatDb.Server
+const bool   USE_SERVER  = false;          // true = connect to CatDb.Server
 const string SERVER_USERNAME = "admin";
 const string SERVER_PASSWORD = "admin";
 const string SERVER_HOST = "localhost";
@@ -46,6 +46,9 @@ var demos = new List<Demo>
 
     new("KeyQuery — cursor (keyset) paging demo",
         () => KeyQueryPagingDemo.Run(OpenEngine)),
+
+    new("Secondary indexes — unique & non-unique",
+        () => SecondaryIndexDemo.Run(OpenEngine)),
 };
 
 // ── Menu loop ─────────────────────────────────────────────────────────────────

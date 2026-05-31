@@ -1,6 +1,7 @@
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections;
 using CatDb.Data;
+using CatDb.Database.Indexing;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Database;
@@ -8,6 +9,8 @@ namespace CatDb.Database;
 public class XTable<TKey, TRecord>(ITable<IData, IData> table) : ITable<TKey, TRecord>
 {
     public ITable<IData, IData> Table { get; } = table ?? throw new ArgumentNullException(nameof(table));
+
+    public ITableIndexManager Indexes => Table.Indexes;
 
     private static IData K(TKey key)       => new Data<TKey>(key);
     private static IData R(TRecord record) => new Data<TRecord>(record);

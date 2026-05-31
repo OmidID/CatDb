@@ -2,6 +2,7 @@
 using System.Collections;
 using CatDb.General.Threading;
 using CatDb.Data;
+using CatDb.Database.Indexing;
 using CatDb.Database.Operations;
 using CatDb.General.Collections;
 using CatDb.WaterfallTree;
@@ -11,6 +12,7 @@ namespace CatDb.Database;
 public class XTablePortable : ITable<IData, IData>
 {
     private IOperationCollection _operations;
+    private TableIndexManager? _indexManager;
 
     public readonly WTree    Tree;
     public readonly Locator  Locator;
@@ -24,6 +26,19 @@ public class XTablePortable : ITable<IData, IData>
         // Larger default queue lowers Execute/Flush frequency under heavy write load.
         // 1024 still fits comfortably under root sink threshold (default 4096).
         _operations = locator.OperationCollectionFactory.Create(1024);
+    }
+
+    /// <summary>
+    /// Secondary index manager. Lazily created on first access.
+    /// </summary>
+    public ITableIndexManager Indexes
+    {
+        get
+        {
+            if (_indexManager == null)
+                _indexManager = new TableIndexManager(this);
+            return _indexManager;
+        }
     }
 
     private void Execute(IOperation operation)
@@ -71,12 +86,128 @@ public class XTablePortable : ITable<IData, IData>
         set => Replace(key, value);
     }
 
-    public void Replace(IData key, IData record)        => Execute(new ReplaceOperation(key, record));
-    public void InsertOrIgnore(IData key, IData record) => Execute(new InsertOrIgnoreOperation(key, record));
-    public void Delete(IData key)                       => Execute(new DeleteOperation(key));
-    public void Delete(IData fromKey, IData toKey)      => Execute(new DeleteRangeOperation(fromKey, toKey));
-    public void Clear()                                 => Execute(new ClearOperation());
+    public void Replace(IData key, IData record)
+    {
+        if (_indexManager is { HasIndexes: true })
+        {
+            SyncRoot.Enter();
+            try
+            {
+                Flush();
+                IData? oldRecord = null;
+                TryGetInternal(key, out oldRecord);
+                Execute(new ReplaceOperation(key, record));
+                _indexManager.OnReplace(key, record, oldRecord);
+            }
+            finally { SyncRoot.Exit(); }
+        }
+        else
+        {
+            Execute(new ReplaceOperation(key, record));
+        }
+    }
+
+    public void InsertOrIgnore(IData key, IData record)
+    {
+        if (_indexManager is { HasIndexes: true })
+        {
+            SyncRoot.Enter();
+            try
+            {
+                Flush();
+                if (TryGetInternal(key, out _))
+                    return; // Key exists — no-op
+                Execute(new InsertOrIgnoreOperation(key, record));
+                _indexManager.OnReplace(key, record, null);
+            }
+            finally { SyncRoot.Exit(); }
+        }
+        else
+        {
+            Execute(new InsertOrIgnoreOperation(key, record));
+        }
+    }
+
+    public void Delete(IData key)
+    {
+        if (_indexManager is { HasIndexes: true })
+        {
+            SyncRoot.Enter();
+            try
+            {
+                Flush();
+                if (TryGetInternal(key, out var oldRecord))
+                {
+                    Execute(new DeleteOperation(key));
+                    _indexManager.OnDelete(key, oldRecord);
+                }
+                else
+                {
+                    Execute(new DeleteOperation(key));
+                }
+            }
+            finally { SyncRoot.Exit(); }
+        }
+        else
+        {
+            Execute(new DeleteOperation(key));
+        }
+    }
+
+    public void Delete(IData fromKey, IData toKey)
+    {
+        if (_indexManager is { HasIndexes: true })
+        {
+            SyncRoot.Enter();
+            try
+            {
+                Flush();
+                // Materialize affected records before deleting
+                var affected = Forward(fromKey, true, toKey, true).ToList();
+                Execute(new DeleteRangeOperation(fromKey, toKey));
+                foreach (var kv in affected)
+                    _indexManager.OnDelete(kv.Key, kv.Value);
+            }
+            finally { SyncRoot.Exit(); }
+        }
+        else
+        {
+            Execute(new DeleteRangeOperation(fromKey, toKey));
+        }
+    }
+
+    public void Clear()
+    {
+        if (_indexManager is { HasIndexes: true })
+        {
+            Execute(new ClearOperation());
+            _indexManager.OnClear();
+        }
+        else
+        {
+            Execute(new ClearOperation());
+        }
+    }
     public bool Exists(IData key)                       => TryGet(key, out _);
+
+    /// <summary>
+    /// Internal TryGet that does NOT acquire SyncRoot (caller must hold it).
+    /// Used by index maintenance to read old records without deadlock.
+    /// </summary>
+    private bool TryGetInternal(IData key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IData? record)
+    {
+        var lastVisitedFullKey = default(WTree.FullKey);
+        var records = Tree.FindData(Locator, Locator, key, Direction.Forward, out _, out _, ref lastVisitedFullKey);
+        if (records is null)
+        {
+            record = default;
+            return false;
+        }
+
+        records.Lock.EnterRead();
+        try { return records.TryGetValue(key, out record); }
+        finally { records.Lock.ExitRead(); }
+    }
 
     public bool TryGet(IData key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IData? record)
     {

@@ -69,17 +69,78 @@ KeyValuePair<TKey, TRecord>? LastRow { get; }
 
 ## Query extensions
 
-Import `CatDb.Extensions`.
+Import `CatDb.Extensions`. All queries are lazy — execution defers until enumeration.
+
+### Primary key builder
 
 ```csharp
-table.Query(query);
-table.QueryTake(query, take);
-table.QueryBackward(query);
-table.QueryBackwardTake(query, take);
-table.Count(query);
-table.Page(query, skip, take);
-table.PageAfter(query, take);
-table.PageAfter(query, afterKey, take);
+// Start a primary-key range query
+TableQuery<TKey, TRecord> q = table.Query();
+
+// Chain bounds
+q.AtLeast(from)
+q.GreaterThan(from)
+q.AtMost(to)
+q.LessThan(to)
+q.Between(from, to)
+q.Between(from, to, fromInclusive: false, toInclusive: false)
+
+// Modifiers
+q.Backward()           // descending scan
+q.Take(n)              // limit
+q.Skip(n)              // offset (prefer cursor paging for deep pages)
+q.Where(predicate)     // post-scan key filter
+q.After(key)           // cursor — exclusive lower bound for next page
+
+// Terminals
+q.Count()              // count without materializing records
+q.ToList()             // enumerate
+
+// String-key extension
+q.StartsWith(prefix)
+```
+
+### Secondary index builder
+
+```csharp
+// Start an index query via lambda (index name resolved automatically)
+IndexQuery<TKey, TRecord, TField> iq = table.Query(c => c.Email);
+
+// Start via explicit index name
+IndexQuery<TKey, TRecord, TField> iq = table.Query<TKey, TRecord, string>("Email");
+
+// Criteria
+iq.Equals(value)
+iq.AtLeast(from)
+iq.GreaterThan(from)
+iq.AtMost(to)
+iq.LessThan(to)
+iq.Between(from, to)
+
+// Modifiers
+iq.Take(n)
+
+// Terminals
+iq.Count()
+iq.Exists()
+iq.ToList()
+
+// String-field extension
+iq.StartsWith(prefix)
+```
+
+### Backward-compatible helpers
+
+The following extension methods still exist and delegate to the builder:
+
+```csharp
+table.QueryTake(keyQuery, take);
+table.QueryBackward(keyQuery);
+table.QueryBackwardTake(keyQuery, take);
+table.Count(keyQuery);
+table.Page(keyQuery, skip, take);
+table.PageAfter(keyQuery, take);
+table.PageAfter(keyQuery, afterKey, take);
 ```
 
 ## Async extensions

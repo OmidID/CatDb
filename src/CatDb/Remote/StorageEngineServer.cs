@@ -1,5 +1,6 @@
 using CatDb.Data;
 using CatDb.Database;
+using CatDb.Database.Indexing;
 using CatDb.General.Communication;
 using CatDb.Remote.Commands;
 using CatDb.WaterfallTree;
@@ -47,6 +48,14 @@ public sealed class StorageEngineServer
         _tableHandlers[CommandCode.COUNT]                  = Count;
         _tableHandlers[CommandCode.XTABLE_DESCRIPTOR_GET]  = GetXIndexDescriptor;
         _tableHandlers[CommandCode.XTABLE_DESCRIPTOR_SET]  = SetXIndexDescriptor;
+        _tableHandlers[CommandCode.INDEX_CREATE]           = IndexCreate;
+        _tableHandlers[CommandCode.INDEX_DROP]             = IndexDrop;
+        _tableHandlers[CommandCode.INDEX_FIND]             = IndexFind;
+        _tableHandlers[CommandCode.INDEX_FIND_RANGE]       = IndexFindRange;
+        _tableHandlers[CommandCode.INDEX_EXISTS]           = IndexExists;
+        _tableHandlers[CommandCode.INDEX_COUNT]            = IndexCount;
+        _tableHandlers[CommandCode.INDEX_REBUILD]          = IndexRebuild;
+        _tableHandlers[CommandCode.INDEX_LIST]             = IndexList;
 
         _engineHandlers = new Func<IStorageEngine, ICommand, ICommand>[CommandCode.MAX];
         _engineHandlers[CommandCode.STORAGE_ENGINE_COMMIT]          = StorageEngineCommit;
@@ -325,6 +334,71 @@ public sealed class StorageEngineServer
 
     private ICommand Count(XTablePortable table, ICommand command) =>
         new CountCommand(table.Count());
+
+    #endregion
+
+    #region Index handlers
+
+    private ICommand IndexCreate(XTablePortable table, ICommand command)
+    {
+        var cmd = (IndexCreateCommand)command;
+        if (cmd.SlotIndices.Length > 0)
+            table.Indexes.CreateIndex(cmd.IndexName, cmd.SlotIndices, cmd.IndexType);
+        else
+            table.Indexes.CreateIndex(cmd.IndexName, cmd.MemberNames, cmd.IndexType);
+        return new IndexCreateCommand(cmd.IndexName, cmd.SlotIndices, cmd.MemberNames, cmd.IndexType);
+    }
+
+    private ICommand IndexDrop(XTablePortable table, ICommand command)
+    {
+        var cmd = (IndexDropCommand)command;
+        table.Indexes.DropIndex(cmd.IndexName);
+        return new IndexDropCommand(cmd.IndexName);
+    }
+
+    private ICommand IndexFind(XTablePortable table, ICommand command)
+    {
+        var cmd = (IndexFindCommand)command;
+        var results = table.Indexes.FindByIndex(cmd.IndexName, cmd.FieldValue).ToList();
+        return new IndexFindCommand(cmd.IndexName, cmd.FieldValue) { Results = results };
+    }
+
+    private ICommand IndexFindRange(XTablePortable table, ICommand command)
+    {
+        var cmd = (IndexFindRangeCommand)command;
+        var results = table.Indexes.FindByIndexRange(cmd.IndexName, cmd.From, cmd.HasFrom, cmd.To, cmd.HasTo).ToList();
+        return new IndexFindRangeCommand(cmd.IndexName, cmd.From, cmd.HasFrom, cmd.To, cmd.HasTo) { Results = results };
+    }
+
+    private ICommand IndexExists(XTablePortable table, ICommand command)
+    {
+        var cmd = (IndexExistsCommand)command;
+        var result = table.Indexes.ExistsInIndex(cmd.IndexName, cmd.FieldValue);
+        return new IndexExistsCommand(cmd.IndexName, cmd.FieldValue) { Result = result };
+    }
+
+    private ICommand IndexCount(XTablePortable table, ICommand command)
+    {
+        var cmd = (IndexCountCommand)command;
+        var result = table.Indexes.CountByIndex(cmd.IndexName, cmd.FieldValue);
+        return new IndexCountCommand(cmd.IndexName, cmd.FieldValue) { Result = result };
+    }
+
+    private ICommand IndexRebuild(XTablePortable table, ICommand command)
+    {
+        var cmd = (IndexRebuildCommand)command;
+        if (cmd.IndexName != null)
+            table.Indexes.RebuildIndex(cmd.IndexName);
+        else
+            table.Indexes.RebuildAllIndexes();
+        return new IndexRebuildCommand(cmd.IndexName);
+    }
+
+    private ICommand IndexList(XTablePortable table, ICommand command)
+    {
+        var results = table.Indexes.ListIndexes().ToList();
+        return new IndexListCommand { Results = results };
+    }
 
     #endregion
 

@@ -1,6 +1,7 @@
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections;
 using CatDb.Data;
+using CatDb.Database.Indexing;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Database;
@@ -10,6 +11,8 @@ public class XTablePortable<TKey, TRecord> : ITable<TKey, TRecord>
     public ITable<IData, IData>         Table             { get; }
     public ITransformer<TKey,    IData> KeyTransformer    { get; }
     public ITransformer<TRecord, IData> RecordTransformer { get; }
+
+    public ITableIndexManager Indexes => Table.Indexes;
 
     public XTablePortable(
         ITable<IData, IData> table,
