@@ -77,18 +77,20 @@ foreach (var row in table.Backward())
 ```csharp
 using CatDb.Extensions;
 
-var range = KeyQuery<long>.Between(100, 200);
-var rows = table.Query(range);
+var rows = table.Query().Between(100, 200).ToList();
 
-var firstPage = table.PageAfter(range, take: 50).ToList();
-var nextPage = table.PageAfter(range, firstPage.Last().Key, take: 50).ToList();
+var firstPage = table.Query().AtLeast(100).Take(50).ToList();
+var nextPage = table.Query().AtLeast(100)
+    .After(firstPage.Last().Key)
+    .Take(50)
+    .ToList();
 ```
 
 For string keys, prefix search is index-backed:
 
 ```csharp
 var names = engine.OpenXTable<string, long>("name-to-id");
-var matches = names.Query(KeyQuery.StartsWith("ada"));
+var matches = names.Query().StartsWith("ada");
 ```
 
 ## Build and run examples from source
