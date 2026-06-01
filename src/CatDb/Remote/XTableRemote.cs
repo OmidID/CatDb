@@ -17,7 +17,7 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
 
     // Guards _commands and all operations that read/write the shared command buffer.
     // Multiple services can share the same XTableRemote instance through StressContext.
-    private readonly object _lock = new();
+    private readonly CatDb.General.Threading.ReentrantLock _lock = new();
 
     private Descriptor _indexDescriptor;
     private readonly StorageEngineClient _storageEngine;
@@ -61,7 +61,7 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
 
     public void Dispose()
     {
-        lock (_lock)
+        using (_lock.Lock())
         {
             FlushCore();
             GC.SuppressFinalize(this);
@@ -70,7 +70,7 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
 
     private void InternalExecute(ICommand command)
     {
-        lock (_lock)
+        using (_lock.Lock())
         {
             if (_commands.Capacity == 0)
             {
@@ -101,7 +101,7 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
 
     public void Flush()
     {
-        lock (_lock)
+        using (_lock.Lock())
             FlushCore();
     }
 

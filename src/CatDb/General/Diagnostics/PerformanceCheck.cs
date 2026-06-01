@@ -24,7 +24,7 @@ public static class PerformanceCheck
         }
     }
 
-    private static readonly object Sync = new();
+    private static readonly General.Threading.ReentrantLock Sync = new();
     private static readonly Dictionary<string, Aggregate> Window = new(StringComparer.Ordinal);
 
     private static readonly long StartedAt = Stopwatch.GetTimestamp();
@@ -44,7 +44,7 @@ public static class PerformanceCheck
     [Conditional("PERFORMANCE_CHECK")]
     public static void Observe(string key, long value)
     {
-        lock (Sync)
+        using (Sync.Lock())
         {
             if (!Window.TryGetValue(key, out var aggregate))
             {
@@ -112,7 +112,7 @@ public static class PerformanceCheck
         List<System.Collections.Generic.KeyValuePair<string, Aggregate>> snapshot;
         long eventCount;
 
-        lock (Sync)
+        using (Sync.Lock())
         {
             if (Window.Count == 0)
             {

@@ -7,10 +7,6 @@
         <RootNamespace>CatDb.StressTest</RootNamespace>
     </PropertyGroup>
 
-    <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
-      <DefineConstants>TRACE;PERFORMANCE_CHECK</DefineConstants>
-    </PropertyGroup>
-
     <ItemGroup>
         <ProjectReference Include="..\CatDb\CatDb.csproj" />
     </ItemGroup>

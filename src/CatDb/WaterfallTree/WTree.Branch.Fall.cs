@@ -100,7 +100,8 @@ public partial class WTree
 
         public bool Fall(int level, Token token, Params param, TaskCreationOptions taskCreationOptions = TaskCreationOptions.None)
         {
-            lock (this)
+            SyncRoot.Enter();
+            try
             {
                 if (token != null && token.Cancellation.IsCancellationRequested)
                     return false;
@@ -133,6 +134,10 @@ public partial class WTree
 
                 return haveSink;
             }
+            finally
+            {
+                SyncRoot.Exit();
+            }
         }
 
         /// <summary>
@@ -144,20 +149,23 @@ public partial class WTree
 
         public void ApplyToCache(Locator locator, IOperation operation)
         {
-            lock (this)
-                Cache.Apply(locator, operation);
+            SyncRoot.Enter();
+            try { Cache.Apply(locator, operation); }
+            finally { SyncRoot.Exit(); }
         }
 
         public void ApplyToCache(IOperationCollection operations)
         {
-            lock (this)
-                Cache.Apply(operations);
+            SyncRoot.Enter();
+            try { Cache.Apply(operations); }
+            finally { SyncRoot.Exit(); }
         }
 
         public void ApplyToCache(IOperationCollection operations, int startIndex, int count)
         {
-            lock (this)
-                Cache.Apply(operations, startIndex, count);
+            SyncRoot.Enter();
+            try { Cache.Apply(operations, startIndex, count); }
+            finally { SyncRoot.Exit(); }
         }
 
         public void MaintenanceRoot(Token token)

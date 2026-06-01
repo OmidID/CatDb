@@ -42,7 +42,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
 
         private byte[]? _tag;
 
-        private readonly object _syncRoot = new();
+        private readonly General.Threading.ReentrantLock _syncRoot = new();
 
         internal static readonly Locator Min;
 
@@ -131,7 +131,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
 
         private void InternalSerialize(BinaryWriter writer)
         {
-            lock (_syncRoot)
+            using (_syncRoot.Lock())
             {
                 writer.Write(VERSION);
 
@@ -182,7 +182,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
 
         public void Serialize(BinaryWriter writer)
         {
-            lock (_syncRoot)
+            using (_syncRoot.Lock())
             {
                 if (_serializationData == null)
                 {
@@ -355,13 +355,13 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _isDeleted;
             }
 
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     if (value != _isDeleted)
                     {
@@ -381,7 +381,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             get => _name;
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _name = value;
                     _serializationData = null;
@@ -448,12 +448,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             { 
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _keyComparer; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _keyComparer = value;
                     IsReady = false;
@@ -465,12 +465,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             { 
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _keyEqualityComparer; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _keyEqualityComparer = value;
                     IsReady = false;
@@ -482,12 +482,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _keyPersist; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _keyPersist = value;
 
@@ -503,12 +503,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             { 
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _recordPersist; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _recordPersist = value;
 
@@ -524,12 +524,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             { 
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _keyIndexerPersist; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _keyIndexerPersist = value;
                     OrderedSetPersist = null;
@@ -543,12 +543,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _recordIndexerPersist; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _recordIndexerPersist = value;
                     OrderedSetPersist = null;
@@ -562,7 +562,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             if (!IsReady)
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     DoPrepare();
             }
         }
@@ -571,12 +571,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _createTime;
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _createTime = value;
                     _serializationData = null;
@@ -588,12 +588,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _modifiedTime;
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _modifiedTime = value;
                     _serializationData = null;
@@ -605,12 +605,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _accessTime;
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _accessTime = value;
                     _serializationData = null;
@@ -622,12 +622,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             { 
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _tag; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _tag = value;
                     _serializationData = null;
@@ -639,7 +639,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _keyMembers;
             }
         }
@@ -648,7 +648,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _recordMembers;
             }
         }
@@ -661,7 +661,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         /// </summary>
         internal void CaptureMembers(Type? keyType, Type? recordType)
         {
-            lock (_syncRoot)
+            using (_syncRoot.Lock())
             {
                 if (_keyMembers == null && keyType != null && !DataTypeUtils.IsAnonymousType(keyType))
                 {
@@ -683,7 +683,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         /// </summary>
         internal void SetMembers(Dictionary<string, int>? keyMembers, Dictionary<string, int>? recordMembers)
         {
-            lock (_syncRoot)
+            using (_syncRoot.Lock())
             {
                 if (_keyMembers == null && keyMembers != null && keyMembers.Count > 0)
                 {

@@ -51,4 +51,22 @@ public sealed class ReentrantLock
 
     /// <summary>True when the calling thread currently holds this lock.</summary>
     public bool IsHeldByCurrentThread => _owner == Thread.CurrentThread;
+
+    /// <summary>
+    /// Acquires the lock and returns a scope that releases it on Dispose.
+    /// Enables <c>using (x.Lock()) { ... }</c> as a drop-in replacement for
+    /// <c>lock (x) { ... }</c> — including early <c>return</c> inside the block.
+    /// </summary>
+    public Scope Lock()
+    {
+        Enter();
+        return new Scope(this);
+    }
+
+    public readonly struct Scope : IDisposable
+    {
+        private readonly ReentrantLock _lock;
+        internal Scope(ReentrantLock @lock) => _lock = @lock;
+        public void Dispose() => _lock.Exit();
+    }
 }

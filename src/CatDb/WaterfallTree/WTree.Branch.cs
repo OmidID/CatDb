@@ -7,6 +7,15 @@ public partial class WTree
     private partial class Branch
     {
         public readonly WTree Tree;
+
+        /// <summary>
+        /// Per-branch mutual-exclusion lock. Replaces <c>lock(this)</c> / Monitor on the
+        /// Branch object itself: locking on a dedicated private monitor (inside ReentrantLock)
+        /// avoids inflating the sync block of every long-lived Branch instance.
+        /// Reentrant so the root-lock -> Fall -> ApplyToCache nesting on the same thread is safe.
+        /// </summary>
+        public readonly General.Threading.ReentrantLock SyncRoot = new();
+
         public BranchCache Cache = new();
 
         /// <summary>

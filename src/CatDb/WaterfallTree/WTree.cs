@@ -134,7 +134,8 @@ public partial class WTree : IDisposable
         if (_disposed)
             throw new ObjectDisposedException("WTree");
 
-        lock (_rootBranch)
+        _rootBranch.SyncRoot.Enter();
+        try
         {
             if (!_isRootCacheLoaded)
                 LoadRootCache();
@@ -144,6 +145,10 @@ public partial class WTree : IDisposable
             if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
                 Sink();
         }
+        finally
+        {
+            _rootBranch.SyncRoot.Exit();
+        }
     }
 
     public void Execute(Locator locator, IOperation operation)
@@ -151,7 +156,8 @@ public partial class WTree : IDisposable
         if (_disposed)
             throw new ObjectDisposedException("WTree");
 
-        lock (_rootBranch)
+        _rootBranch.SyncRoot.Enter();
+        try
         {
             if (!_isRootCacheLoaded)
                 LoadRootCache();
@@ -160,6 +166,10 @@ public partial class WTree : IDisposable
 
             if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
                 Sink();
+        }
+        finally
+        {
+            _rootBranch.SyncRoot.Exit();
         }
     }
 
@@ -175,8 +185,8 @@ public partial class WTree : IDisposable
         hasNearFullKey = false;
 
         var branch = _rootBranch;
-        Monitor.Enter(branch);
-        // 'heldBranch' always tracks the branch whose Monitor lock we currently own.
+        branch.SyncRoot.Enter();
+        // 'heldBranch' always tracks the branch whose lock we currently own.
         // The try/finally guarantees the lock is released even if an exception escapes.
         var heldBranch = branch;
         try
@@ -208,13 +218,13 @@ public partial class WTree : IDisposable
                     {
                         var newBranch = ((InternalNode)branch.Node).FindBranch(locator, key, direction, ref nearFullKey, ref hasNearFullKey);
 
-                        Monitor.Enter(newBranch.Value);
+                        newBranch.Value.SyncRoot.Enter();
                         var prevBranch = heldBranch;
                         heldBranch = newBranch.Value;
                         branch = newBranch.Value;
                         newBranch.Value.WaitFall();
                         Debug.Assert(!newBranch.Value.Cache.Contains(originalLocator));
-                        Monitor.Exit(prevBranch);
+                        prevBranch.SyncRoot.Exit();
 
                     }
                 }
@@ -249,7 +259,7 @@ public partial class WTree : IDisposable
                             }
                         }
 
-                        Monitor.Enter(newBranch.Value);
+                        newBranch.Value.SyncRoot.Enter();
                         // Update heldBranch immediately after acquiring the new lock so
                         // that the outer finally releases it if anything below throws.
                         var prevBranch = heldBranch;
@@ -261,7 +271,7 @@ public partial class WTree : IDisposable
                             newBranch.Value.Fall(depth + 1, new Token(CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true, originalLocator));
                         }
                         Debug.Assert(!newBranch.Value.Cache.Contains(originalLocator));
-                        Monitor.Exit(prevBranch);
+                        prevBranch.SyncRoot.Exit();
 
                         branch = newBranch.Value;
                     }
@@ -282,7 +292,7 @@ public partial class WTree : IDisposable
 
         var data = ((LeafNode)branch.Node).FindData(originalLocator, direction, ref nearFullKey, ref hasNearFullKey);
 
-        Monitor.Exit(heldBranch);
+        heldBranch.SyncRoot.Exit();
         heldBranch = null; // mark as released so the finally block skips it
 
         return data;
@@ -292,7 +302,7 @@ public partial class WTree : IDisposable
         {
             // Released in the success path above; only needed when an exception escapes.
             if (heldBranch != null)
-                Monitor.Exit(heldBranch);
+                heldBranch.SyncRoot.Exit();
         }
     }
 
@@ -317,7 +327,8 @@ public partial class WTree : IDisposable
             }
         }
 
-        lock (_rootBranch)
+        _rootBranch.SyncRoot.Enter();
+        try
         {
             if (!_isRootCacheLoaded)
                 LoadRootCache();
@@ -351,6 +362,10 @@ public partial class WTree : IDisposable
             EvictCache();
 
             _heap.Commit();
+        }
+        finally
+        {
+            _rootBranch.SyncRoot.Exit();
         }
     }
 

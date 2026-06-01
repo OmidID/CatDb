@@ -27,7 +27,7 @@ public sealed class ClientConnection : IAsyncDisposable, IDisposable
     // ── Sync mode state ─────────────────────────────────────────────────────
     // When the caller uses sync Start()/SendSync()/Stop(), we run blocking
     // socket I/O directly under _syncLock — no Task/async/Channel involved.
-    private readonly object _syncLock = new();
+    private readonly CatDb.General.Threading.ReentrantLock _syncLock = new();
     private bool _syncMode;
 
     public string Host { get; }
@@ -159,7 +159,7 @@ public sealed class ClientConnection : IAsyncDisposable, IDisposable
         if (!_syncMode || _tcpClient is null)
             throw new InvalidOperationException("ClientConnection is not in sync mode. Use Start()+SendSync, or StartAsync+SendAsync.");
 
-        lock (_syncLock)
+        using (_syncLock.Lock())
         {
             packet.Id = Interlocked.Increment(ref _idCounter);
             var stream = _tcpClient.GetStream();
@@ -172,7 +172,7 @@ public sealed class ClientConnection : IAsyncDisposable, IDisposable
     public void Stop()
     {
         if (!_syncMode) return;
-        lock (_syncLock)
+        using (_syncLock.Lock())
         {
             _tcpClient?.Close();
             _tcpClient = null;

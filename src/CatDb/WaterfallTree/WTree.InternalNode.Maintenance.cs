@@ -176,11 +176,16 @@ public partial class WTree
                 var branch = List[index].Value;
 
                 Node rightNode;
-                lock (branch)
+                branch.SyncRoot.Enter();
+                try
                 {
                     var node = branch.Node;
                     rightNode = node.Split();
                     branch.NodeState = node.State;
+                }
+                finally
+                {
+                    branch.SyncRoot.Exit();
                 }
 
                 var rightBranch = rightNode.Branch;
@@ -198,8 +203,9 @@ public partial class WTree
                 var branch = List[List.Count - 1].Value;
                 Debug.Assert(branch.Cache.OperationCount == 0);
 
-                lock (branch)
-                    branch.Node.Merge(node);
+                branch.SyncRoot.Enter();
+                try { branch.Node.Merge(node); }
+                finally { branch.SyncRoot.Exit(); }
                 branch.NodeState = branch.Node.State;
 
                 //release node space

@@ -31,6 +31,7 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
     private int _cacheSize;
     private readonly ConcurrentDictionary<string, XTableRemote> _indexes = new();
     private readonly Dictionary<TransformerCacheKey, object> _transformerCache = new();
+    private readonly CatDb.General.Threading.ReentrantLock _transformerCacheLock = new();
 
     private static readonly Descriptor StorageEngineDescriptor =
         new(-1, "", DataType.Boolean, DataType.Boolean);
@@ -131,7 +132,7 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
     private ITransformer<T, IData> GetOrCreateTransformer<T>(Type dataType)
     {
         var key = new TransformerCacheKey(typeof(T), dataType);
-        lock (_transformerCache)
+        using (_transformerCacheLock.Lock())
         {
             if (_transformerCache.TryGetValue(key, out var cached))
                 return (ITransformer<T, IData>)cached;

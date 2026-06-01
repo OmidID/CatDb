@@ -3,6 +3,8 @@
 Single source of truth for AI agents working in this repository.
 If you change architecture, core behavior, build/test flow, or public query/index API, update this file.
 
+> [CLAUDE.md](CLAUDE.md) imports this file and tracks the active throughput-decay investigation.
+
 ## Project Overview
 
 CatDb is a high-performance embedded database engine in C# targeting .NET 10.
@@ -76,12 +78,8 @@ Guidelines:
 
 Lock strategy:
 
-- Root lock: `lock(_rootBranch)` serializes execute/commit; reads enter root monitor.
-- Branch lock: `lock(this)` on each branch (`Monitor`, reentrant per thread).
-- Traversal: top-down hand-over-hand lock coupling (root -> child -> grandchild).
-- Never acquire locks bottom-up.
-
-Do not reintroduce dual lock systems on branch nodes. `Monitor` is the canonical branch lock.
+- Use only ReentrantLock to avoid any deadlock scenarios.
+- Never use lock() or Monitor.Enter/Exit directly.
 
 ## Critical Invariants
 
@@ -99,10 +97,17 @@ Do not reintroduce dual lock systems on branch nodes. `Monitor` is the canonical
 5. `WalHeap` uses `ConcurrentDictionary<long, byte[]>` for lock-free pending reads.
 6. Fixed `FindRange` lower-bound edge case (`idx < 0 => idx = 0`).
 7. Replaced stale branch ownership assertion in `DoFall` with defensive reassignment.
+8. **Throughput-decay fix (2026-06):** all `lock()`/`Monitor` replaced with `ReentrantLock`. Locking
+   on long-lived `Branch` objects (`lock(this)` / `lock(_rootBranch)`) inflated their CLR sync blocks
+   and caused throughput to fall ~50% after minutes (restored only by restart). Each `Branch` now has a
+   dedicated `ReentrantLock SyncRoot`; ~2x throughput, 190/190 tests pass. Use `using (x.Lock())` for
+   block-scoped acquisition.
 
 ## Debugging Shortcuts
 
 - `IndexOutOfRangeException` in WTree: verify branch/range cache consistency and maintenance rebuilds.
 - "No such handle": check WAL pending write/read ordering and released handle references.
-- Throughput collapse: look for parallelism introduced in locked tree paths.
+- Throughput collapse: look for parallelism introduced in locked tree paths, and for any `lock()`/
+  `Monitor` on shared objects (must be `ReentrantLock` — locking `this`/Branch objects inflates sync
+  blocks and degrades over time).
 - Suspected deadlock: inspect lock acquisition order for strict top-down traversal.

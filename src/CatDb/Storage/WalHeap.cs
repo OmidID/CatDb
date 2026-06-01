@@ -28,7 +28,7 @@ public sealed class WalHeap : IHeap
 {
     private readonly Heap _heap;
     private readonly string _walPath;
-    private readonly object _commitLock = new();
+    private readonly CatDb.General.Threading.ReentrantLock _commitLock = new();
 
     // Buffered writes: ConcurrentDictionary for lock-free Read/Write/Exists
     private readonly ConcurrentDictionary<long, byte[]> _pendingWrites = new();
@@ -105,7 +105,7 @@ public sealed class WalHeap : IHeap
 
     public void Commit()
     {
-        lock (_commitLock)
+        using (_commitLock.Lock())
         {
             if (_pendingWrites.IsEmpty)
             {
@@ -164,7 +164,7 @@ public sealed class WalHeap : IHeap
 
     public void Close()
     {
-        lock (_commitLock)
+        using (_commitLock.Lock())
         {
             _pendingWrites.Clear();
             _heap.Close();
