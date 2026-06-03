@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Diagnostics;
 using CatDb.General.Comparers;
@@ -53,6 +56,9 @@ public partial class WTree
 
         public IEnumerable<KeyValuePair<FullKey, Branch>> Range(int fromIndex, int toIndex)
         {
+            var count = Count;
+            if (toIndex >= count)
+                toIndex = count - 1;
             for (var i = fromIndex; i <= toIndex; i++)
                 yield return this[i];
         }

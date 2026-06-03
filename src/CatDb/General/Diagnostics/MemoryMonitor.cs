@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Diagnostics;
 
@@ -5,7 +8,7 @@ namespace CatDb.General.Diagnostics;
 public class MemoryMonitor
 {
     private readonly Process _process;
-    private Task _worker;
+    private Thread _worker;
     private bool _shutDown;
 
     private long _peakPagedMemorySize64;
@@ -83,7 +86,8 @@ public class MemoryMonitor
 
         DoUpate();
 
-        _worker = Task.Factory.StartNew(DoMonitor, TaskCreationOptions.LongRunning);
+        _worker = new Thread(DoMonitor) { IsBackground = true, Name = "CatDb.MemoryMonitor" };
+        _worker.Start();
     }
 
     public void Stop()
@@ -94,7 +98,7 @@ public class MemoryMonitor
         try
         {
             _shutDown = true;
-            _worker.Wait();
+            _worker.Join();
         }
         finally
         {

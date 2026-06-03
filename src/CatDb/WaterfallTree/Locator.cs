@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Diagnostics;
 using CatDb.Data;
@@ -39,7 +42,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
 
         private byte[]? _tag;
 
-        private readonly object _syncRoot = new();
+        private readonly General.Threading.ReentrantLock _syncRoot = new();
 
         internal static readonly Locator Min;
 
@@ -128,7 +131,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
 
         private void InternalSerialize(BinaryWriter writer)
         {
-            lock (_syncRoot)
+            using (_syncRoot.Lock())
             {
                 writer.Write(VERSION);
 
@@ -179,7 +182,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
 
         public void Serialize(BinaryWriter writer)
         {
-            lock (_syncRoot)
+            using (_syncRoot.Lock())
             {
                 if (_serializationData == null)
                 {
@@ -352,13 +355,13 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _isDeleted;
             }
 
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     if (value != _isDeleted)
                     {
@@ -378,7 +381,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             get => _name;
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _name = value;
                     _serializationData = null;
@@ -445,12 +448,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             { 
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _keyComparer; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _keyComparer = value;
                     IsReady = false;
@@ -462,12 +465,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             { 
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _keyEqualityComparer; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _keyEqualityComparer = value;
                     IsReady = false;
@@ -479,12 +482,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _keyPersist; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _keyPersist = value;
 
@@ -500,12 +503,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             { 
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _recordPersist; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _recordPersist = value;
 
@@ -521,12 +524,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             { 
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _keyIndexerPersist; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _keyIndexerPersist = value;
                     OrderedSetPersist = null;
@@ -540,12 +543,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _recordIndexerPersist; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _recordIndexerPersist = value;
                     OrderedSetPersist = null;
@@ -559,7 +562,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             if (!IsReady)
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     DoPrepare();
             }
         }
@@ -568,12 +571,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _createTime;
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _createTime = value;
                     _serializationData = null;
@@ -585,12 +588,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _modifiedTime;
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _modifiedTime = value;
                     _serializationData = null;
@@ -602,12 +605,12 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _accessTime;
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _accessTime = value;
                     _serializationData = null;
@@ -619,17 +622,93 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             get
             { 
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                     return _tag; 
             }
             set
             {
-                lock (_syncRoot)
+                using (_syncRoot.Lock())
                 {
                     _tag = value;
                     _serializationData = null;
                 }
             }
+        }
+
+        public IReadOnlyDictionary<string, int>? KeyMembers
+        {
+            get
+            {
+                using (_syncRoot.Lock())
+                    return _keyMembers;
+            }
+        }
+
+        public IReadOnlyDictionary<string, int>? RecordMembers
+        {
+            get
+            {
+                using (_syncRoot.Lock())
+                    return _recordMembers;
+            }
+        }
+
+        /// <summary>
+        /// Captures the public member names from a concrete (non-anonymous) type
+        /// and stores them as the key/record member map.  This is persisted with
+        /// the locator so any future opener (including the HTTP API) can map
+        /// slot indices → human-readable field names.
+        /// </summary>
+        internal void CaptureMembers(Type? keyType, Type? recordType)
+        {
+            using (_syncRoot.Lock())
+            {
+                if (_keyMembers == null && keyType != null && !DataTypeUtils.IsAnonymousType(keyType))
+                {
+                    _keyMembers = BuildMemberMap(keyType);
+                    _serializationData = null;
+                }
+
+                if (_recordMembers == null && recordType != null && !DataTypeUtils.IsAnonymousType(recordType))
+                {
+                    _recordMembers = BuildMemberMap(recordType);
+                    _serializationData = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stores explicitly provided member maps (sent by a remote client that
+        /// knows the real field names).  Only sets if not already populated.
+        /// </summary>
+        internal void SetMembers(Dictionary<string, int>? keyMembers, Dictionary<string, int>? recordMembers)
+        {
+            using (_syncRoot.Lock())
+            {
+                if (_keyMembers == null && keyMembers != null && keyMembers.Count > 0)
+                {
+                    _keyMembers = keyMembers;
+                    _serializationData = null;
+                }
+
+                if (_recordMembers == null && recordMembers != null && recordMembers.Count > 0)
+                {
+                    _recordMembers = recordMembers;
+                    _serializationData = null;
+                }
+            }
+        }
+
+        private static Dictionary<string, int> BuildMemberMap(Type type)
+        {
+            if (DataType.IsPrimitiveType(type))
+                return new Dictionary<string, int> { [type.Name] = 0 };
+
+            var members = DataTypeUtils.GetPublicMembers(type).ToArray();
+            var map = new Dictionary<string, int>(members.Length);
+            for (var i = 0; i < members.Length; i++)
+                map[members[i].Name] = i;
+            return map;
         }
 
         #endregion

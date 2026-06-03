@@ -1,16 +1,25 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 ﻿using System.Collections;
 using System.Diagnostics;
 using CatDb.General.Comparers;
 using CatDb.General.Extensions;
+using CatDb.General.Threading;
 
 #pragma warning disable CS8602, CS8604, CS8600, CS8601, CS8603
 namespace CatDb.General.Collections;
 public class OrderedSet<TKey, TValue> : IOrderedSet<TKey, TValue>
     where TKey : notnull
 {
+    public DataRwLock Lock { get; } = new();
     protected List<KeyValuePair<TKey, TValue>>? List;
-    private Dictionary<TKey, TValue>? _dictionary;
-    private SortedSet<KeyValuePair<TKey, TValue>>? _set;
+    // volatile: TransformDictionaryToTree() writes these under EnterRead() (concurrent readers).
+    // On weakly-ordered CPUs (ARM/Apple Silicon) a plain store can become visible out-of-order;
+    // volatile ensures the _set = newSet release-store is seen by any thread whose acquire-load
+    // of _dictionary observes the null sentinel.
+    private volatile Dictionary<TKey, TValue>? _dictionary;
+    private volatile SortedSet<KeyValuePair<TKey, TValue>>? _set;
 
     private readonly IComparer<TKey> _comparer;
     private readonly IEqualityComparer<TKey> _equalityComparer;
@@ -46,23 +55,37 @@ public class OrderedSet<TKey, TValue> : IOrderedSet<TKey, TValue>
 
     protected void TransformListToTree()
     {
-        _set = new SortedSet<KeyValuePair<TKey, TValue>>(KvComparer);
-        _set.ConstructFromSortedArray(List.GetArray(), 0, List.Count);
+        // Use the standard SortedSet(IEnumerable, IComparer) constructor rather than
+        // ConstructFromSortedArray.  The latter requires the input to be SORTED; calling
+        // it on an inverted list produces a structurally invalid red-black tree whose
+        // in-order traversal is also inverted, making every subsequent CopyTo, Split,
+        // and Remove produce corrupted data.  The standard constructor inserts each
+        // element through the normal BST path (O(n log n)) and is correct for any
+        // input order, including lists that may have accumulated inversions.
+        _set = new SortedSet<KeyValuePair<TKey, TValue>>(List, KvComparer);
         List = null;
     }
 
     protected void TransformDictionaryToTree()
     {
-        _set = new SortedSet<KeyValuePair<TKey, TValue>>(_dictionary.Select(s => new KeyValuePair<TKey, TValue>(s.Key, s.Value)), KvComparer);
-        _dictionary = null;
+        // Build the new tree from a snapshot of the current dictionary.
+        var snapshot = _dictionary;
+        if (snapshot == null) return; // another thread already completed the transform
+        var newSet = new SortedSet<KeyValuePair<TKey, TValue>>(snapshot.Select(s => new KeyValuePair<TKey, TValue>(s.Key, s.Value)), KvComparer);
+        // Write _set BEFORE _dictionary = null so that any thread whose volatile acquire-load
+        // of _dictionary sees null is guaranteed to also see the fully-constructed newSet.
+        _set = newSet;        // volatile release-store: publishes all tree-node writes
+        _dictionary = null;   // volatile release-store: sentinel that the transform is done
     }
 
     protected void TransformListToDictionary()
     {
         _dictionary = new Dictionary<TKey, TValue>(List.Capacity, EqualityComparer);
 
+        // Use indexer (not Add) so that duplicate keys in a corrupted list don't throw;
+        // the last-wins behaviour is the correct upsert semantic here.
         foreach (var kv in List)
-            _dictionary.Add(kv.Key, kv.Value);
+            _dictionary[kv.Key] = kv.Value;
 
         List = null;
     }
@@ -124,8 +147,13 @@ public class OrderedSet<TKey, TValue> : IOrderedSet<TKey, TValue>
         }
 
         Debug.Assert(0 <= idxFrom);
-        Debug.Assert(idxFrom <= idxTo);
         Debug.Assert(idxTo <= List.Count - 1);
+
+        // The range [from, to] may fall entirely between two adjacent keys
+        // (e.g. leaf has [10, 20], query is [12, 15]).  Binary search places
+        // idxFrom past idxTo — this is an empty result, not a bug.
+        if (idxFrom > idxTo)
+            return false;
 
         return true;
     }
@@ -160,7 +188,13 @@ public class OrderedSet<TKey, TValue> : IOrderedSet<TKey, TValue>
         if (Count == 0)
         {
             foreach (var x in set) //set.Forward()
-                List.Add(x);
+            {
+                // Defensive: guard against a source list that violates the sorted invariant.
+                if (List.Count > 0 && _comparer.Compare(x.Key, List[List.Count - 1].Key) <= 0)
+                    Add(x.Key, x.Value);
+                else
+                    List.Add(x);
+            }
 
             return;
         }
@@ -169,13 +203,37 @@ public class OrderedSet<TKey, TValue> : IOrderedSet<TKey, TValue>
 
         if (List != null)
         {
-            var idx = KvComparer.Compare(set.Last, List[0]) < 0 ? 0 : List.Count;
-            List.InsertRange(idx, set);
+            if (KvComparer.Compare(set.Last, List[0]) < 0)
+            {
+                // Intended prepend: source reported last < our first.
+                // Can't use InsertRange(0, ...) safely: if the source list has an inversion,
+                // set.Last (=List[Count-1]) may not be the true maximum, making the check
+                // unreliable.  Use per-element Add() which falls back to dict mode on any
+                // out-of-order key, preventing inversion propagation.
+                foreach (var kv in set.InternalEnumerate())
+                    Add(kv.Key, kv.Value);
+            }
+            else if (KvComparer.Compare(set.First, List[List.Count - 1]) > 0)
+            {
+                // Intended append: source reported first > our last.
+                // Iterate via Forward() (sorted for dict/tree sources; list-order for list
+                // sources).  Add() appends directly when the invariant holds and falls back
+                // to dict conversion when a source inversion is detected.
+                foreach (var kv in set)
+                    Add(kv.Key, kv.Value);
+            }
+            else
+            {
+                // Key ranges overlap — precondition violated; fall back to safe per-element Add.
+                foreach (var kv in set.InternalEnumerate())
+                    Add(kv.Key, kv.Value);
+            }
         }
         else if (_dictionary != null)
         {
+            // Use indexer so overlapping keys from the source overwrite rather than throw.
             foreach (var kv in set.InternalEnumerate())
-                _dictionary.Add(kv.Key, kv.Value); //there should be no exceptions
+                _dictionary[kv.Key] = kv.Value;
         }
         else //if (set != null)
         {
@@ -242,6 +300,14 @@ public class OrderedSet<TKey, TValue> : IOrderedSet<TKey, TValue>
         if (_dictionary != null)
         {
             _dictionary[kv.Key] = kv.Value;
+            return;
+        }
+
+        // List mode: caller guarantees monotone-ascending append.
+        // Defensive check: if the invariant is violated fall back to safe Add().
+        if (List.Count > 0 && _comparer.Compare(key, List[List.Count - 1].Key) <= 0)
+        {
+            Add(key, value);
             return;
         }
 

@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 using System.Diagnostics;
 using System.Threading;
 
@@ -76,10 +79,13 @@ public sealed class Dashboard
 
         // Totals
         var corruptions = Volatile.Read(ref _ctx.TotalCorruptions);
+        var searchOps   = Volatile.Read(ref HighStressKeySearchService.TotalSearchOps);
         Col(ConsoleColor.Magenta,
             $"  Commits: {Volatile.Read(ref _ctx.TotalCommits),4}   " +
             $"Total Ops: {totalOps,14:N0}   " +
             $"Total Errors: {totalErrs}");
+        Col(ConsoleColor.Cyan,
+            $"  HighSearch Ops: {searchOps,12:N0}");
         if (corruptions > 0)
             Col(ConsoleColor.Red, $"   *** CORRUPTIONS: {corruptions} ***");
         Console.WriteLine();
@@ -119,7 +125,6 @@ public sealed class Dashboard
         // One last synchronous count refresh
         SyncRefreshCounts();
 
-        Console.Clear();
         var elapsed   = _elapsed.Elapsed;
         var totalOps  = _services.Sum(s => s.TotalOps);
         var totalErrs = _services.Sum(s => s.TotalErrors);

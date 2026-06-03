@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections;
 using System.Diagnostics;
@@ -75,6 +78,14 @@ public partial class WTree
             OperationCount += oprs.Count;
         }
 
+        public void Apply(IOperationCollection oprs, int startIndex, int count)
+        {
+            var operations = Obtain(oprs.Locator);
+
+            operations.AddRange(oprs, startIndex, count);
+            OperationCount += count;
+        }
+
         public void Clear()
         {
             _cache = null;
@@ -136,21 +147,73 @@ public partial class WTree
 
         public IEnumerator<KeyValuePair<Locator, IOperationCollection>> GetEnumerator()
         {
-            IEnumerable<KeyValuePair<Locator, IOperationCollection>> enumerable;
-
             if (Count == 0)
-                enumerable = Enumerable.Empty<KeyValuePair<Locator, IOperationCollection>>();
-            else if (Count == 1)
-                enumerable = new[] { new KeyValuePair<Locator, IOperationCollection>(_operations.Locator, _operations) };
-            else
-                enumerable = _cache.Select(s => new KeyValuePair<Locator, IOperationCollection>(s.Key, s.Value));
+                return EmptyEnumerator.Instance;
 
-            return enumerable.GetEnumerator();
+            if (Count == 1)
+                return new SingleEnumerator(_operations.Locator, _operations);
+
+            return new DictionaryEnumerator(_cache);
         }
 
         IEnumerator IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
+        }
+
+        /// <summary>Zero-allocation empty enumerator (singleton).</summary>
+        private sealed class EmptyEnumerator : IEnumerator<KeyValuePair<Locator, IOperationCollection>>
+        {
+            public static readonly EmptyEnumerator Instance = new();
+            public KeyValuePair<Locator, IOperationCollection> Current => default;
+            object IEnumerator.Current => Current;
+            public bool MoveNext() => false;
+            public void Reset() { }
+            public void Dispose() { }
+        }
+
+        /// <summary>Single-item enumerator — avoids array allocation for the common single-locator case.</summary>
+        private struct SingleEnumerator : IEnumerator<KeyValuePair<Locator, IOperationCollection>>
+        {
+            private readonly KeyValuePair<Locator, IOperationCollection> _item;
+            private bool _moved;
+
+            public SingleEnumerator(Locator locator, IOperationCollection operations)
+            {
+                _item = new KeyValuePair<Locator, IOperationCollection>(locator, operations);
+                _moved = false;
+            }
+
+            public KeyValuePair<Locator, IOperationCollection> Current => _item;
+            object IEnumerator.Current => _item;
+            public bool MoveNext() { if (_moved) return false; _moved = true; return true; }
+            public void Reset() => _moved = false;
+            public void Dispose() { }
+        }
+
+        /// <summary>Wraps Dictionary enumerator, converting System.Collections.Generic.KeyValuePair to CatDb.KeyValuePair.</summary>
+        private struct DictionaryEnumerator : IEnumerator<KeyValuePair<Locator, IOperationCollection>>
+        {
+            private Dictionary<Locator, IOperationCollection>.Enumerator _inner;
+
+            public DictionaryEnumerator(Dictionary<Locator, IOperationCollection> dict)
+            {
+                _inner = dict.GetEnumerator();
+            }
+
+            public KeyValuePair<Locator, IOperationCollection> Current
+            {
+                get
+                {
+                    var c = _inner.Current;
+                    return new KeyValuePair<Locator, IOperationCollection>(c.Key, c.Value);
+                }
+            }
+
+            object IEnumerator.Current => Current;
+            public bool MoveNext() => _inner.MoveNext();
+            public void Reset() { }
+            public void Dispose() => _inner.Dispose();
         }
 
         public void Store(WTree tree, BinaryWriter writer)

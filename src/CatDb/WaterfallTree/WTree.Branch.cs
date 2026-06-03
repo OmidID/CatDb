@@ -1,9 +1,21 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 ﻿namespace CatDb.WaterfallTree;
 public partial class WTree
 {
     private partial class Branch
     {
         public readonly WTree Tree;
+
+        /// <summary>
+        /// Per-branch mutual-exclusion lock. Replaces <c>lock(this)</c> / Monitor on the
+        /// Branch object itself: locking on a dedicated private monitor (inside ReentrantLock)
+        /// avoids inflating the sync block of every long-lived Branch instance.
+        /// Reentrant so the root-lock -> Fall -> ApplyToCache nesting on the same thread is safe.
+        /// </summary>
+        public readonly General.Threading.ReentrantLock SyncRoot = new();
+
         public BranchCache Cache = new();
 
         /// <summary>
@@ -57,12 +69,13 @@ public partial class WTree
 
                 if (_node != null)
                 {
-                    _node.Branch.WaitFall();
+                    // Node is already registered in the cache — just take ownership.
+                    // Do NOT call Packet: it would assert because the key is already present.
                     _node.Branch = this;
-                    Tree.Packet(NodeHandle, _node);
                 }
                 else
                 {
+                    // Load from disk; Node.Create registers it in the cache via Packet.
                     _node = Node.Create(this);
                     _node.Load();
                 }

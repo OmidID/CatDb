@@ -1,23 +1,69 @@
-﻿using System.Text.Json;
-using CatDb.Server;
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
+﻿using CatDb.Server;
+using CatDb.Server.Apis.Admin;
+using CatDb.Server.Apis.Data;
+using CatDb.Server.Auth;
+using CatDb.Server.Models;
+using CatDb.Server.Services;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── CLI overrides: --catdb-port 7183  --catdb-file ~/newdb.catdb ──────────────
+// ── CLI overrides: --catdb-port 7183 ──────────────
 builder.Configuration.AddCommandLine(args, new Dictionary<string, string>
 {
     ["--catdb-port"] = "CatDb:Port",
-    ["--catdb-file"] = "CatDb:FileName",
+    ["--catdb-dir"] = "CatDb:Directory",
+    ["--catdb-default-db"] = "CatDb:DefaultDatabase"
 });
 
 // ── Background service ────────────────────────────────────────────────────────
 builder.Services.AddSingleton<ServerState>();
+builder.Services.AddSingleton<SystemCatalogService>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<SystemCatalogService>>();
+    var directory = config["CatDb:Directory"] ?? AppContext.BaseDirectory;
+    Directory.CreateDirectory(directory);
+    var systemPath = Path.Combine(directory, SystemCatalogService.SystemDatabaseName);
+    return new SystemCatalogService(systemPath, logger);
+});
+builder.Services.AddSingleton<DatabaseHostService>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<DatabaseHostService>>();
+    var catalog = sp.GetRequiredService<SystemCatalogService>();
+    var directory = config["CatDb:Directory"] ?? AppContext.BaseDirectory;
+    return new DatabaseHostService(directory, logger, catalog);
+});
+builder.Services.AddSingleton<EngineAccessPolicy>();
+builder.Services.AddSingleton<DataExplorerService>();
 builder.Services.AddHostedService<CatDbServerService>();
+
+// ── Authentication & Authorization ────────────────────────────────────────────
+builder.Services.AddAuthentication(BasicAuthenticationHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, BasicAuthenticationHandler>(
+        BasicAuthenticationHandler.SchemeName, null);
+
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(PolicyNames.ManageUsers, policy =>
+        policy.AddRequirements(new GlobalPermissionRequirement(GlobalPermission.ManageUsers)))
+    .AddPolicy(PolicyNames.ManageDatabases, policy =>
+        policy.AddRequirements(new GlobalPermissionRequirement(GlobalPermission.ManageDatabases)))
+    .AddPolicy(PolicyNames.ListDatabases, policy =>
+        policy.AddRequirements(new GlobalPermissionRequirement(GlobalPermission.ListDatabases)))
+    .AddPolicy(PolicyNames.DatabaseRead, policy =>
+        policy.AddRequirements(new DatabaseReadRequirement()));
+
+builder.Services.AddSingleton<IAuthorizationHandler, GlobalPermissionHandler>();
+builder.Services.AddSingleton<IAuthorizationHandler, DatabaseReadHandler>();
 
 // ── Health checks ─────────────────────────────────────────────────────────────
 builder.Services.AddHealthChecks()
@@ -46,9 +92,20 @@ builder.Services.AddOpenTelemetry()
 // ── Build ─────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapHealthChecks("/health",       new HealthCheckOptions { ResponseWriter = HealthResponse.WriteJson });
 app.MapHealthChecks("/health/catdb", new HealthCheckOptions { Predicate = r => r.Name == "catdb", ResponseWriter = HealthResponse.WriteJson });
-app.MapGet("/", () => Results.Ok(new { service = "CatDb Server", version = "1.0" }));
+app.MapGet("/", () => Results.Ok(new
+{
+    service = "CatDb Server",
+    version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0",
+}));
+app.MapAdminDatabaseEndpoints();
+app.MapAdminUserEndpoints();
+app.MapDataDatabaseEndpoints();
+app.MapDataTableEndpoints();
 
 await app.RunAsync();
 

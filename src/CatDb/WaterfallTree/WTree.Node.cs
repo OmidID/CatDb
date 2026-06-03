@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 ﻿using System.Diagnostics;
 
 namespace CatDb.WaterfallTree;
@@ -66,8 +69,20 @@ public partial class WTree
 
         public void Store()
         {
+#if PERFORMANCE_CHECK
+            var perfStart = Stopwatch.GetTimestamp();
+#endif
+
             using var stream = new MemoryStream();
             Store(stream);
+
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.Observe("wtree.node.store.bytes", stream.Length);
+            if (Type == NodeType.Internal)
+                CatDb.General.Diagnostics.PerformanceCheck.Increment("wtree.node.store.internal");
+            else
+                CatDb.General.Diagnostics.PerformanceCheck.Increment("wtree.node.store.leaf");
+#endif
 
             //int recordCount = 0;
             //string type = "";
@@ -85,6 +100,10 @@ public partial class WTree
             //Console.WriteLine("{0} {1}, Records {2}, Size {3} MB", type, Branch.NodeHandle, recordCount, sizeInMB);
 
             Branch.Tree._heap.Write(Branch.NodeHandle, stream.GetBuffer(), 0, (int)stream.Length);
+
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.node.store", perfStart);
+#endif
         }
 
         public void Load()

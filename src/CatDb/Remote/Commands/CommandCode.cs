@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 ﻿namespace CatDb.Remote.Commands;
 public static class CommandCode
 {
@@ -24,6 +27,12 @@ public static class CommandCode
     public const int XTABLE_DESCRIPTOR_GET = 16;
     public const int XTABLE_DESCRIPTOR_SET = 17;
 
+    // Index operations (on XTable)
+    public const int INDEX_CREATE = 18;
+    public const int INDEX_DROP = 19;
+    public const int INDEX_FIND = 20;
+    public const int INDEX_EXISTS = 21;
+
     // Storage engine
     public const int STORAGE_ENGINE_COMMIT = 22;
     public const int STORAGE_ENGINE_GET_ENUMERATOR = 23;
@@ -39,6 +48,12 @@ public static class CommandCode
     public const int STORAGE_ENGINE_GET_CACHE_SIZE = 33;
     public const int STORAGE_ENGINE_SET_CACHE_SIZE = 34;
 
+    // Index additional operations
+    public const int INDEX_FIND_RANGE = 35;
+    public const int INDEX_COUNT = 36;
+    public const int INDEX_REBUILD = 37;
+    public const int INDEX_LIST = 38;
+
     //Heap
     public const int HEAP_OBTAIN_NEW_HANDLE = 40;
     public const int HEAP_RELEASE_HANDLE = 41;
@@ -53,5 +68,5 @@ public static class CommandCode
     public const int HEAP_SIZE = 50;
 
     public const int EXCEPTION = 63;
-    public const int MAX = 64;
+    public const int MAX = 80;
 }

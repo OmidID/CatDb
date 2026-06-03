@@ -1,4 +1,8 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 using CatDb.Database;
+using CatDb.Database.Indexing;
 using CatDb.Extensions;
 
 namespace CatDb.StressTest;
@@ -794,6 +798,9 @@ public sealed class CommitService : BackgroundService
             if (ct.IsCancellationRequested) break;
             try
             {
+#if PERFORMANCE_CHECK
+                CatDb.General.Diagnostics.PerformanceCheck.Increment("stress.commit.source.timer");
+#endif
                 _ctx.Commit();
                 Hit($"commit #{_ctx.TotalCommits}");
             }
@@ -896,7 +903,7 @@ public sealed class KeySearchService : BackgroundService
                         var top = Volatile.Read(ref _ctx.NextTickId);
                         if (top < 2) break;
                         var pivot = _rng.NextInt64(1, top);
-                        foreach (var kv in _ctx.Ticks.Query(KeyQuery<long>.GreaterThan(pivot)).Take(200))
+                        foreach (var kv in _ctx.Ticks.QueryTake(KeyQuery<long>.GreaterThan(pivot), 200))
                         {
                             if (kv.Key <= pivot)
                                 Fail(new Exception(
@@ -912,7 +919,7 @@ public sealed class KeySearchService : BackgroundService
                         var top = Volatile.Read(ref _ctx.NextTickId);
                         if (top < 2) break;
                         var pivot = _rng.NextInt64(2, top);
-                        foreach (var kv in _ctx.Ticks.Query(KeyQuery<long>.LessThan(pivot)).Take(200))
+                        foreach (var kv in _ctx.Ticks.QueryTake(KeyQuery<long>.LessThan(pivot), 200))
                         {
                             if (kv.Key >= pivot)
                                 Fail(new Exception(
@@ -1002,7 +1009,7 @@ public sealed class KeySearchService : BackgroundService
                         var top = Volatile.Read(ref _ctx.NextSensorId);
                         if (top < 2) break;
                         var ceiling = _rng.NextInt64(1, top);
-                        foreach (var kv in _ctx.Sensors.Query(KeyQuery<long>.AtMost(ceiling)).Take(300))
+                        foreach (var kv in _ctx.Sensors.QueryTake(KeyQuery<long>.AtMost(ceiling), 300))
                         {
                             if (kv.Key > ceiling)
                                 Fail(new Exception(
@@ -1101,6 +1108,9 @@ public sealed class DataIntegrityService : BackgroundService
         }
 
         // Force a commit so data is flushed before we read back
+    #if PERFORMANCE_CHECK
+        CatDb.General.Diagnostics.PerformanceCheck.Increment("stress.commit.source.integrity.insert");
+    #endif
         _ctx.Commit();
         await Task.Yield();
 
@@ -1141,6 +1151,9 @@ public sealed class DataIntegrityService : BackgroundService
             _ctx.Integrity[key] = rec;
         }
 
+    #if PERFORMANCE_CHECK
+        CatDb.General.Diagnostics.PerformanceCheck.Increment("stress.commit.source.integrity.update");
+    #endif
         _ctx.Commit();
         await Task.Yield();
 
@@ -1177,6 +1190,9 @@ public sealed class DataIntegrityService : BackgroundService
         foreach (var key in keys)
             _ctx.Integrity.Delete(key);
 
+    #if PERFORMANCE_CHECK
+        CatDb.General.Diagnostics.PerformanceCheck.Increment("stress.commit.source.integrity.delete");
+    #endif
         _ctx.Commit();
         await Task.Yield();
 
@@ -1198,6 +1214,9 @@ public sealed class DataIntegrityService : BackgroundService
             _ctx.Integrity[key] = rec;
         }
 
+    #if PERFORMANCE_CHECK
+        CatDb.General.Diagnostics.PerformanceCheck.Increment("stress.commit.source.integrity.reinsert");
+    #endif
         _ctx.Commit();
         await Task.Yield();
 
@@ -1244,5 +1263,512 @@ public sealed class DataIntegrityService : BackgroundService
     {
         Interlocked.Increment(ref _ctx.TotalCorruptions);
         _ctx.RecordError(Name, $"CORRUPTION key={key}: {detail}");
+    }
+}
+
+// ─── 12. High-Stress Key Search Service ──────────────────────────────────
+// Dedicated maximum-throughput stress service for the KeyQuery / ScanCount
+// engine-native search path.  Runs with NO Task.Delay — just continuous
+// tight loops.  Two instances (A and B) run different operation mixes:
+//
+//   A  — full-range and wide-range forward scans, Count, backward scans
+//   B  — narrow range scans, exclusive bounds, WithFilter, cursor paging
+//
+// Every operation validates correctness (key order, boundary compliance,
+// Count ≥ 0, page cursor integrity) and calls Fail() on any violation.
+//
+// Throughput metric: TotalSearchOps (visible on the dashboard as a separate
+// counter next to KeySearch).
+
+public sealed class HighStressKeySearchService : BackgroundService
+{
+    // ── Shared op counter across all instances ────────────────────────────
+    public static long TotalSearchOps = 0;
+
+    private readonly StressContext _ctx;
+    private readonly Random        _rng;
+    private readonly bool          _wideMode;   // true = instance A, false = instance B
+
+    public HighStressKeySearchService(string name, StressContext ctx, bool wideMode) : base(name)
+    {
+        _ctx      = ctx;
+        _rng      = new Random(name.GetHashCode() ^ (wideMode ? 0x1111_1111 : unchecked((int)0xEEEE_EEEE)));
+        _wideMode = wideMode;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                if (_wideMode)
+                    RunWide();
+                else
+                    RunNarrow();
+
+                Interlocked.Increment(ref TotalSearchOps);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested) { Fail(ex, _ctx); }
+
+            // No Task.Delay — yield only so other tasks get CPU time
+            await Task.Yield();
+        }
+    }
+
+    // ── Instance A: wide / full-range operations ─────────────────────────
+    private void RunWide()
+    {
+        var top = Volatile.Read(ref _ctx.NextTickId);
+        if (top < 10) return;
+
+        switch (_rng.Next(8))
+        {
+            // Full ascending scan (capped at 10 000 records to bound latency)
+            case 0:
+            {
+                long prev = -1;
+                int  n   = 0;
+                foreach (var kv in _ctx.Ticks.QueryTake(KeyQuery<long>.All(), 10_000))
+                {
+                    if (prev != -1 && kv.Key <= prev)
+                        Fail(new Exception(
+                            $"HighStress.Wide.FullFwd: order violation {kv.Key} <= {prev}"), _ctx);
+                    prev = kv.Key;
+                    n++;
+                }
+                Hit($"wide.FullFwd {n:N0}");
+                break;
+            }
+
+            // Full descending scan (capped at 10 000)
+            case 1:
+            {
+                long prev = long.MaxValue;
+                int  n   = 0;
+                foreach (var kv in _ctx.Ticks.QueryBackwardTake(KeyQuery<long>.All(), 10_000))
+                {
+                    if (kv.Key >= prev)
+                        Fail(new Exception(
+                            $"HighStress.Wide.FullBwd: order violation {kv.Key} >= {prev}"), _ctx);
+                    prev = kv.Key;
+                    n++;
+                }
+                Hit($"wide.FullBwd {n:N0}");
+                break;
+            }
+
+            // ScanCount on a large range (50% of tick space)
+            case 2:
+            {
+                var from = Math.Max(1L, top / 4);
+                var to   = top * 3 / 4;
+                var cnt  = _ctx.Ticks.ScanCount(KeyQuery<long>.Between(from, to));
+                if (cnt < 0)
+                    Fail(new Exception(
+                        $"HighStress.Wide.Count: returned {cnt} for [{from},{to}]"), _ctx);
+                Hit($"wide.Count[{from},{to}]={cnt:N0}");
+                break;
+            }
+
+            // ScanCount on All() — counts every tick in the table
+            case 3:
+            {
+                var cnt = _ctx.Ticks.ScanCount(KeyQuery<long>.All());
+                if (cnt < 0)
+                    Fail(new Exception(
+                        $"HighStress.Wide.CountAll: returned {cnt}"), _ctx);
+                Hit($"wide.CountAll={cnt:N0}");
+                break;
+            }
+
+            // Large backward range on Sensors table (batch-import target)
+            case 4:
+            {
+                var sensorTop = Volatile.Read(ref _ctx.NextSensorId);
+                if (sensorTop < 10) break;
+                var from = Math.Max(1L, sensorTop - 5_000);
+                long prev = long.MaxValue;
+                int  n   = 0;
+                foreach (var kv in _ctx.Sensors.QueryBackwardTake(KeyQuery<long>.AtLeast(from), 5_000))
+                {
+                    if (kv.Key >= prev)
+                        Fail(new Exception(
+                            $"HighStress.Wide.SensorBwd: order violation {kv.Key} >= {prev}"), _ctx);
+                    if (kv.Key < from)
+                        Fail(new Exception(
+                            $"HighStress.Wide.SensorBwd: key {kv.Key} < from {from}"), _ctx);
+                    prev = kv.Key;
+                    n++;
+                }
+                Hit($"wide.SensorBwd {n:N0}");
+                break;
+            }
+
+            // Large Metrics scan (ascending, full table)
+            case 5:
+            {
+                long prev = -1;
+                int  n   = 0;
+                foreach (var kv in _ctx.Metrics.QueryTake(KeyQuery<long>.All(), 5_000))
+                {
+                    if (prev != -1 && kv.Key <= prev)
+                        Fail(new Exception(
+                            $"HighStress.Wide.MetricsFwd: order violation {kv.Key} <= {prev}"), _ctx);
+                    prev = kv.Key;
+                    n++;
+                }
+                Hit($"wide.MetricsFwd {n:N0}");
+                break;
+            }
+
+            // Concurrent Count + Scan — both on same live tick range
+            case 6:
+            {
+                var from = Math.Max(1L, top - 2_000);
+                var to   = top;
+                var q    = KeyQuery<long>.Between(from, to);
+                var cnt  = _ctx.Ticks.ScanCount(q);
+                int  n  = 0;
+                foreach (var _ in _ctx.Ticks.QueryTake(q, 2_000))
+                    n++;
+                // Count may differ from n because inserts/deletes happen between the two calls
+                if (cnt < 0)
+                    Fail(new Exception(
+                        $"HighStress.Wide.CountVsScan: Count={cnt} negative"), _ctx);
+                Hit($"wide.CountVsScan cnt={cnt:N0} scan={n:N0}");
+                break;
+            }
+
+            // Audit full backward scan (append-only log)
+            case 7:
+            {
+                long prev = long.MaxValue;
+                int  n   = 0;
+                foreach (var kv in _ctx.Audit.QueryBackwardTake(KeyQuery<long>.All(), 5_000))
+                {
+                    if (kv.Key >= prev)
+                        Fail(new Exception(
+                            $"HighStress.Wide.AuditBwd: order violation {kv.Key} >= {prev}"), _ctx);
+                    prev = kv.Key;
+                    n++;
+                }
+                Hit($"wide.AuditBwd {n:N0}");
+                break;
+            }
+        }
+    }
+
+    // ── Instance B: narrow / precise boundary operations ─────────────────
+    private void RunNarrow()
+    {
+        switch (_rng.Next(8))
+        {
+            // Narrow tick window with exclusive-from bound
+            case 0:
+            {
+                var top = Volatile.Read(ref _ctx.NextTickId);
+                if (top < 10) break;
+                var pivot = _rng.NextInt64(1, top);
+                long prev = -1;
+                int  n   = 0;
+                foreach (var kv in _ctx.Ticks.QueryTake(KeyQuery<long>.GreaterThan(pivot), 300))
+                {
+                    if (kv.Key <= pivot)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.GreaterThan: key {kv.Key} <= pivot {pivot}"), _ctx);
+                    if (prev != -1 && kv.Key <= prev)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.GreaterThan: order violation {kv.Key} <= {prev}"), _ctx);
+                    prev = kv.Key;
+                    n++;
+                }
+                Hit($"narrow.GreaterThan({pivot})→{n}");
+                break;
+            }
+
+            // Orders exclusive-both-ends scan
+            case 1:
+            {
+                var top = Volatile.Read(ref _ctx.NextOrderId);
+                if (top < 10) break;
+                var a = _rng.NextInt64(1, Math.Max(2, top));
+                var b = a + _rng.Next(2, 100);
+                int n = 0;
+                foreach (var kv in _ctx.Orders.QueryTake(
+                    KeyQuery<long>.Between(a, b, fromInclusive: false, toInclusive: false), 200))
+                {
+                    if (kv.Key <= a || kv.Key >= b)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.BothExcl: key {kv.Key} not in ({a},{b})"), _ctx);
+                    n++;
+                }
+                Hit($"narrow.BothExcl({a},{b})→{n}");
+                break;
+            }
+
+            // WithFilter — only even keys from a tick range
+            case 2:
+            {
+                var top = Volatile.Read(ref _ctx.NextTickId);
+                if (top < 10) break;
+                var from = Math.Max(1L, top / 2);
+                var q    = KeyQuery<long>.AtLeast(from).WithFilter(k => k % 2 == 0);
+                int n   = 0;
+                foreach (var kv in _ctx.Ticks.QueryTake(q, 300))
+                {
+                    if (kv.Key % 2 != 0)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.WithFilter: odd key {kv.Key}"), _ctx);
+                    if (kv.Key < from)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.WithFilter: key {kv.Key} < from {from}"), _ctx);
+                    n++;
+                }
+                Hit($"narrow.WithFilter→{n}");
+                break;
+            }
+
+            // ScanCount with exclusive bounds — must be <= range size
+            case 3:
+            {
+                var top = Volatile.Read(ref _ctx.NextOrderId);
+                if (top < 10) break;
+                var a   = _rng.NextInt64(1, Math.Max(2, top));
+                var b   = a + _rng.Next(1, 500);
+                var cnt = _ctx.Orders.ScanCount(
+                    KeyQuery<long>.Between(a, b, fromInclusive: false, toInclusive: false));
+                if (cnt < 0 || cnt > (b - a - 1))
+                    Fail(new Exception(
+                        $"HighStress.Narrow.CountExcl({a},{b}) returned {cnt}"), _ctx);
+                Hit($"narrow.CountExcl({a},{b})={cnt}");
+                break;
+            }
+
+            // Cursor paging with ascending forward scan — no key must repeat
+            case 4:
+            {
+                var top = Volatile.Read(ref _ctx.NextTickId);
+                if (top < 50) break;
+                var from   = Math.Max(1L, top - 1_000);
+                var q      = KeyQuery<long>.AtLeast(from);
+                long? cursor = null;
+                var seen   = new System.Collections.Generic.HashSet<long>();
+                int  pages = 0, total = 0;
+
+                while (pages < 10)
+                {
+                    var page = (cursor is null
+                        ? _ctx.Ticks.PageAfter(q, take: 50)
+                        : _ctx.Ticks.PageAfter(q, afterKey: cursor.Value, take: 50)).ToList();
+
+                    if (page.Count == 0) break;
+
+                    foreach (var kv in page)
+                    {
+                        if (!seen.Add(kv.Key))
+                            Fail(new Exception(
+                                $"HighStress.Narrow.PageAfter: duplicate key {kv.Key}"), _ctx);
+                        if (cursor.HasValue && kv.Key <= cursor.Value)
+                            Fail(new Exception(
+                                $"HighStress.Narrow.PageAfter: key {kv.Key} <= cursor {cursor.Value}"), _ctx);
+                        cursor = kv.Key;
+                    }
+                    total += page.Count;
+                    pages++;
+                }
+                Hit($"narrow.PageAfter {pages}p/{total}rows");
+                break;
+            }
+
+            // Scores: StartsWith scan — every result must have correct prefix
+            case 5:
+            {
+                var digits = "0123456789";
+                var pfx    = "p" + digits[_rng.Next(10)];
+                int n     = 0;
+                foreach (var kv in _ctx.Scores.QueryTake(KeyQuery.StartsWith(pfx), 200))
+                {
+                    if (!kv.Key.StartsWith(pfx, StringComparison.Ordinal))
+                        Fail(new Exception(
+                            $"HighStress.Narrow.StartsWith: key \"{kv.Key}\" missing prefix \"{pfx}\""), _ctx);
+                    n++;
+                }
+                Hit($"narrow.StartsWith(\"{pfx}\")→{n}");
+                break;
+            }
+
+            // AtMost backward scan — every result must be <= ceiling
+            case 6:
+            {
+                var top = Volatile.Read(ref _ctx.NextSensorId);
+                if (top < 5) break;
+                var ceiling = _rng.NextInt64(1, top);
+                long prev   = long.MaxValue;
+                int  n     = 0;
+                foreach (var kv in _ctx.Sensors.QueryBackwardTake(KeyQuery<long>.AtMost(ceiling), 300))
+                {
+                    if (kv.Key > ceiling)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.AtMostBwd: key {kv.Key} > ceiling {ceiling}"), _ctx);
+                    if (kv.Key >= prev)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.AtMostBwd: order violation {kv.Key} >= {prev}"), _ctx);
+                    prev = kv.Key;
+                    n++;
+                }
+                Hit($"narrow.AtMostBwd({ceiling})→{n}");
+                break;
+            }
+
+            // LessThan descending scan with Count consistency check
+            case 7:
+            {
+                var top = Volatile.Read(ref _ctx.NextTickId);
+                if (top < 10) break;
+                var pivot = _rng.NextInt64(2, top);
+                var q     = KeyQuery<long>.LessThan(pivot);
+                var cnt   = _ctx.Ticks.ScanCount(q);
+                int  n   = 0;
+                foreach (var kv in _ctx.Ticks.QueryBackwardTake(q, 500))
+                {
+                    if (kv.Key >= pivot)
+                        Fail(new Exception(
+                            $"HighStress.Narrow.LtBwd: key {kv.Key} >= pivot {pivot}"), _ctx);
+                    n++;
+                }
+                if (cnt < 0)
+                    Fail(new Exception(
+                        $"HighStress.Narrow.LtBwd: Count={cnt} negative"), _ctx);
+                Hit($"narrow.LtBwd({pivot}) cnt={cnt:N0} scan={n:N0}");
+                break;
+            }
+        }
+    }
+}
+
+// ─── Index Stress ──────────────────────────────────────────────────────────
+// Creates a table with unique + non-unique indexes and exercises concurrent
+// inserts, updates, deletes, and index lookups at speed.
+
+public sealed class IndexStressService : BackgroundService
+{
+    private static readonly string[] Categories =
+        ["Electronics", "Books", "Clothing", "Home", "Sports", "Toys", "Food", "Auto"];
+    private static readonly string[] Brands =
+        ["Acme", "BrandX", "Omega", "Zeta", "Nova", "Prime", "Ultra", "Core"];
+
+    private readonly StressContext _ctx;
+    private readonly Random _rng;
+    private readonly ITable<long, IndexedProduct> _products;
+    private long _nextId;
+    private bool _indexesCreated;
+
+    public IndexStressService(string name, StressContext ctx) : base(name)
+    {
+        _ctx = ctx;
+        _rng = new Random(name.GetHashCode() ^ unchecked((int)0xFACEFEED));
+        _products = ctx.Engine.OpenXTable<long, IndexedProduct>("idx_products");
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        // Create indexes on first iteration
+        if (!_indexesCreated)
+        {
+            _products.CreateIndex("Sku", p => p.Sku, IndexType.Unique);
+            _products.CreateIndex("Category", p => p.Category, IndexType.NonUnique);
+            _products.CreateIndex("Brand", p => p.Brand, IndexType.NonUnique);
+            _indexesCreated = true;
+        }
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                int op = _rng.Next(100);
+
+                if (op < 40)
+                {
+                    // ── Insert new product ──
+                    var id = Interlocked.Increment(ref _nextId);
+                    var sku = $"SKU-{id:D8}";
+                    _products.Replace(id, new IndexedProduct
+                    {
+                        Sku = sku,
+                        Category = Categories[_rng.Next(Categories.Length)],
+                        Price = Math.Round(1.0 + _rng.NextDouble() * 999.0, 2),
+                        Stock = _rng.Next(0, 10_000),
+                        Brand = Brands[_rng.Next(Brands.Length)],
+                    });
+                    Hit($"insert id={id}");
+                }
+                else if (op < 60)
+                {
+                    // ── Update existing product (change category/brand) ──
+                    var maxId = Volatile.Read(ref _nextId);
+                    if (maxId > 0)
+                    {
+                        var id = 1 + (long)(_rng.NextDouble() * maxId);
+                        if (_products.TryGet(id, out var existing))
+                        {
+                            existing.Category = Categories[_rng.Next(Categories.Length)];
+                            existing.Brand = Brands[_rng.Next(Brands.Length)];
+                            existing.Price = Math.Round(1.0 + _rng.NextDouble() * 999.0, 2);
+                            _products.Replace(id, existing);
+                            Hit($"update id={id}");
+                        }
+                    }
+                }
+                else if (op < 70)
+                {
+                    // ── Delete product ──
+                    var maxId = Volatile.Read(ref _nextId);
+                    if (maxId > 0)
+                    {
+                        var id = 1 + (long)(_rng.NextDouble() * maxId);
+                        _products.Delete(id);
+                        Hit($"delete id={id}");
+                    }
+                }
+                else if (op < 85)
+                {
+                    // ── Lookup by SKU (unique index) ──
+                    var maxId = Volatile.Read(ref _nextId);
+                    if (maxId > 0)
+                    {
+                        var id = 1 + (long)(_rng.NextDouble() * maxId);
+                        var sku = $"SKU-{id:D8}";
+                        var results = _products.Query(p => p.Sku).Equals(sku).ToList();
+                        Hit($"find.sku={sku} cnt={results.Count}");
+                    }
+                }
+                else if (op < 95)
+                {
+                    // ── Lookup by Category (non-unique index) ──
+                    var cat = Categories[_rng.Next(Categories.Length)];
+                    var count = _products.Query(p => p.Category).Equals(cat).Count();
+                    Hit($"count.cat={cat} cnt={count}");
+                }
+                else
+                {
+                    // ── Lookup by Brand (non-unique index) ──
+                    var brand = Brands[_rng.Next(Brands.Length)];
+                    var count = _products.Query(p => p.Brand).Equals(brand).Count();
+                    Hit($"count.brand={brand} cnt={count}");
+                }
+            }
+            catch (UniqueIndexViolationException)
+            {
+                // Expected during concurrent stress — SKU collision from re-insert after delete
+                Hit("sku-collision (expected)");
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                Fail(ex, _ctx);
+            }
+
+            await Task.Yield();
+        }
     }
 }

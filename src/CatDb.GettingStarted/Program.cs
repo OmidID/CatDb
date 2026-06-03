@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 using System.Diagnostics;
 using CatDb.Data;
 using CatDb.General.Extensions;
@@ -7,6 +10,8 @@ using Database = CatDb.Database;
 
 // ── Switch between local file and remote server ───────────────────────────────
 const bool   USE_SERVER  = false;          // true = connect to CatDb.Server
+const string SERVER_USERNAME = "admin";
+const string SERVER_PASSWORD = "admin";
 const string SERVER_HOST = "localhost";
 const int    SERVER_PORT = 7182;
 const string FILE_NAME   = "test.CatDb";
@@ -18,7 +23,12 @@ IStorageEngine OpenEngine(bool fresh = false)
     if (USE_SERVER)
     {
         Console.WriteLine($"Connecting to server {SERVER_HOST}:{SERVER_PORT}...");
-        return Database.CatDb.FromNetwork(SERVER_HOST, SERVER_PORT);
+        return Database.CatDb.FromNetwork(
+	        SERVER_HOST,
+	        SERVER_PORT,
+	        Path.GetFileNameWithoutExtension(FILE_NAME),
+	        SERVER_USERNAME,
+	        SERVER_PASSWORD);
     }
     if (fresh) File.Delete(FILE_NAME);
     return Database.CatDb.FromFile(FILE_NAME);
@@ -39,6 +49,9 @@ var demos = new List<Demo>
 
     new("KeyQuery — cursor (keyset) paging demo",
         () => KeyQueryPagingDemo.Run(OpenEngine)),
+
+    new("Secondary indexes — unique & non-unique",
+        () => SecondaryIndexDemo.Run(OpenEngine)),
 };
 
 // ── Menu loop ─────────────────────────────────────────────────────────────────

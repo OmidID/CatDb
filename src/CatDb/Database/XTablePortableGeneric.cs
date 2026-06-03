@@ -1,6 +1,10 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections;
 using CatDb.Data;
+using CatDb.Database.Indexing;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Database;
@@ -10,6 +14,8 @@ public class XTablePortable<TKey, TRecord> : ITable<TKey, TRecord>
     public ITable<IData, IData>         Table             { get; }
     public ITransformer<TKey,    IData> KeyTransformer    { get; }
     public ITransformer<TRecord, IData> RecordTransformer { get; }
+
+    public ITableIndexManager Indexes => Table.Indexes;
 
     public XTablePortable(
         ITable<IData, IData> table,
@@ -121,8 +127,9 @@ public class XTablePortable<TKey, TRecord> : ITable<TKey, TRecord>
         var ifrom  = query.HasFrom ? KeyTransformer.To(query.From) : null;
         var ito    = query.HasTo   ? KeyTransformer.To(query.To)   : null;
         var filter = query.Filter;
+        var useSegmentPath = filter is not null || (query.HasFrom && query.HasTo);
 
-        if (Table is XTablePortable raw)
+        if (Table is XTablePortable raw && useSegmentPath)
         {
             foreach (var seg in raw.ScanSegments(
                          ifrom, query.HasFrom, query.FromExclusive,
@@ -152,13 +159,55 @@ public class XTablePortable<TKey, TRecord> : ITable<TKey, TRecord>
         }
     }
 
+    public IEnumerable<KeyValuePair<TKey, TRecord>> ScanTake(KeyQuery<TKey> query, int take)
+    {
+        if (take <= 0)
+            yield break;
+
+        var ifrom  = query.HasFrom ? KeyTransformer.To(query.From) : null;
+        var ito    = query.HasTo   ? KeyTransformer.To(query.To)   : null;
+        var filter = query.Filter;
+        var useSegmentPath = filter is not null || (query.HasFrom && query.HasTo);
+
+        if (Table is XTablePortable raw && useSegmentPath)
+        {
+            var produced = 0;
+            foreach (var seg in raw.ScanSegments(
+                         ifrom, query.HasFrom, query.FromExclusive,
+                         ito,   query.HasTo,   query.ToExclusive,
+                         take))
+            {
+                var buf = seg.Buffer;
+                var cnt = seg.Count;
+                for (var i = 0; i < cnt; i++)
+                {
+                    var key = KeyTransformer.From(buf[i].Key);
+                    if (filter is not null && !filter(key)) continue;
+                    yield return new KeyValuePair<TKey, TRecord>(key, RecordTransformer.From(buf[i].Value));
+                    if (++produced >= take)
+                        yield break;
+                }
+            }
+            yield break;
+        }
+
+        var n = 0;
+        foreach (var kv in Scan(query))
+        {
+            yield return kv;
+            if (++n >= take)
+                yield break;
+        }
+    }
+
     public IEnumerable<KeyValuePair<TKey, TRecord>> ScanBackward(KeyQuery<TKey> query)
     {
         var ifrom  = query.HasFrom ? KeyTransformer.To(query.From) : null;
         var ito    = query.HasTo   ? KeyTransformer.To(query.To)   : null;
         var filter = query.Filter;
+        var useSegmentPath = filter is not null || (query.HasFrom && query.HasTo);
 
-        if (Table is XTablePortable raw)
+        if (Table is XTablePortable raw && useSegmentPath)
         {
             foreach (var seg in raw.ScanSegmentsBackward(
                          ito,   query.HasTo,   query.ToExclusive,
@@ -185,6 +234,47 @@ public class XTablePortable<TKey, TRecord> : ITable<TKey, TRecord>
             if (query.FromExclusive && query.HasFrom && eq.Equals(key, query.From)) break;
             if (filter is not null && !filter(key)) continue;
             yield return new(key, RecordTransformer.From(kv.Value));
+        }
+    }
+
+    public IEnumerable<KeyValuePair<TKey, TRecord>> ScanBackwardTake(KeyQuery<TKey> query, int take)
+    {
+        if (take <= 0)
+            yield break;
+
+        var ifrom  = query.HasFrom ? KeyTransformer.To(query.From) : null;
+        var ito    = query.HasTo   ? KeyTransformer.To(query.To)   : null;
+        var filter = query.Filter;
+        var useSegmentPath = filter is not null || (query.HasFrom && query.HasTo);
+
+        if (Table is XTablePortable raw && useSegmentPath)
+        {
+            var produced = 0;
+            foreach (var seg in raw.ScanSegmentsBackward(
+                         ito,   query.HasTo,   query.ToExclusive,
+                         ifrom, query.HasFrom, query.FromExclusive,
+                         take))
+            {
+                var buf = seg.Buffer;
+                var cnt = seg.Count;
+                for (var i = 0; i < cnt; i++)
+                {
+                    var key = KeyTransformer.From(buf[i].Key);
+                    if (filter is not null && !filter(key)) continue;
+                    yield return new KeyValuePair<TKey, TRecord>(key, RecordTransformer.From(buf[i].Value));
+                    if (++produced >= take)
+                        yield break;
+                }
+            }
+            yield break;
+        }
+
+        var n = 0;
+        foreach (var kv in ScanBackward(query))
+        {
+            yield return kv;
+            if (++n >= take)
+                yield break;
         }
     }
 

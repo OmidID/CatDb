@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using CatDb.Data;
 using CatDb.Remote.Commands;
@@ -21,17 +24,27 @@ namespace CatDb.Remote;
 ///</summary>    
 public class Message
 {
+    public string? DatabaseName { get; }
+    public string? UserName { get; }
+    public string? Password { get; }
     public IDescriptor Description { get; private set; }
     public CommandCollection Commands { get; private set; }
 
-    public Message(IDescriptor description, CommandCollection commands)
+    public Message(IDescriptor description, CommandCollection commands, string? databaseName = null, string? userName = null, string? password = null)
     {
+        DatabaseName = databaseName;
+        UserName = userName;
+        Password = password;
         Description = description;
         Commands = commands;
     }
 
     public void Serialize(BinaryWriter writer)
     {
+        WriteNullableString(writer, DatabaseName);
+        WriteNullableString(writer, UserName);
+        WriteNullableString(writer, Password);
+
         var id = Description.Id;
 
         writer.Write(id);
@@ -42,8 +55,12 @@ public class Message
         commandsPersist.Write(writer, Commands);
     }
 
-    public static Message Deserialize(BinaryReader reader, Func<long, IDescriptor> find)
+    public static Message Deserialize(BinaryReader reader, Func<string?, string?, string?, long, IDescriptor> find)
     {
+        var databaseName = ReadNullableString(reader);
+        var userName = ReadNullableString(reader);
+        var password = ReadNullableString(reader);
+
         var id = reader.ReadInt64();
 
         IDescriptor description = null;
@@ -53,7 +70,7 @@ public class Message
         {
             try
             {
-                description = find(id);
+                description = find(databaseName, userName, password, id);
                 persist = new CommandPersist(new DataPersist(description.KeyType, null, AllowNull.OnlyMembers), new DataPersist(description.RecordType, null, AllowNull.OnlyMembers));
             }
             catch (Exception)
@@ -65,6 +82,18 @@ public class Message
         var commandsPersist = new CommandCollectionPersist(persist);
         var commands = commandsPersist.Read(reader);
 
-        return new Message(description, commands);
+        return new Message(description, commands, databaseName, userName, password);
+    }
+
+    private static void WriteNullableString(BinaryWriter writer, string? value)
+    {
+        writer.Write(value != null);
+        if (value != null)
+            writer.Write(value);
+    }
+
+    private static string? ReadNullableString(BinaryReader reader)
+    {
+        return reader.ReadBoolean() ? reader.ReadString() : null;
     }
 }

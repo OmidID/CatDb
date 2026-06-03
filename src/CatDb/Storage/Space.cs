@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 ﻿namespace CatDb.Storage;
 /// <summary>
 /// Strategies for free space allocation.
@@ -23,6 +26,8 @@ public class Space
     public AllocationStrategy Strategy;
 
     public long FreeBytes { get; private set; }
+
+    public int FreeChunkCount => _free.Count;
 
     public Space()
     {
@@ -52,26 +57,68 @@ public class Space
 
     public Ptr Alloc(long size)
     {
-        if (_activeChunkIndex < 0 || _activeChunkIndex == _free.Count - 1 || _free[_activeChunkIndex].Size < size)
+#if PERFORMANCE_CHECK
+        var perfStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        var scannedChunks = 0;
+        var usedWrapAround = false;
+#endif
+
+        if (_free.Count == 0)
+            throw new Exception("Not enough space.");
+
+        var needSearch = _activeChunkIndex < 0 ||
+                         _activeChunkIndex >= _free.Count ||
+                         _free[_activeChunkIndex].Size < size;
+
+        if (needSearch)
         {
             var idx = Strategy switch
             {
                 AllocationStrategy.FromTheCurrentBlock => _activeChunkIndex >= 0 &&
-                                                          _activeChunkIndex + 1 < _free.Count - 1
+                                                          _activeChunkIndex + 1 < _free.Count
                     ? _activeChunkIndex + 1
                     : 0,
                 AllocationStrategy.FromTheBeginning => 0,
                 _ => throw new NotSupportedException(Strategy.ToString())
             };
 
+            var found = false;
+
             for (var i = idx; i < _free.Count; i++)
             {
+#if PERFORMANCE_CHECK
+                scannedChunks++;
+#endif
                 if (_free[i].Size >= size)
                 {
                     _activeChunkIndex = i;
+                    found = true;
                     break;
                 }
             }
+
+            if (!found && Strategy == AllocationStrategy.FromTheCurrentBlock && idx > 0)
+            {
+                // Wrap search to the beginning to avoid missing reusable chunks.
+#if PERFORMANCE_CHECK
+                usedWrapAround = true;
+#endif
+                for (var i = 0; i < idx; i++)
+                {
+#if PERFORMANCE_CHECK
+                    scannedChunks++;
+#endif
+                    if (_free[i].Size >= size)
+                    {
+                        _activeChunkIndex = i;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!found)
+                throw new Exception("Not enough space.");
         }
 
         var ptr = _free[_activeChunkIndex];
@@ -93,11 +140,24 @@ public class Space
 
         FreeBytes -= size;
 
+#if PERFORMANCE_CHECK
+        CatDb.General.Diagnostics.PerformanceCheck.Observe("space.alloc.request.bytes", size);
+        CatDb.General.Diagnostics.PerformanceCheck.Observe("space.alloc.scan.chunks", scannedChunks);
+        CatDb.General.Diagnostics.PerformanceCheck.Observe("space.free.chunks", _free.Count);
+        if (usedWrapAround)
+            CatDb.General.Diagnostics.PerformanceCheck.Increment("space.alloc.scan.wraparound");
+        CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("space.alloc", perfStart);
+#endif
+
         return new Ptr(pos, size);
     }
 
     public void Free(Ptr ptr)
     {
+#if PERFORMANCE_CHECK
+        var perfStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
+
         var idx = _free.BinarySearch(ptr);
         if (idx >= 0)
             throw new ArgumentException("Space already freed.");
@@ -143,9 +203,19 @@ public class Space
         }
 
         if (!merged)
+        {
             _free.Insert(idx, ptr);
+            if (_activeChunkIndex >= idx)
+                _activeChunkIndex++;
+        }
 
         FreeBytes += ptr.Size;
+
+    #if PERFORMANCE_CHECK
+        CatDb.General.Diagnostics.PerformanceCheck.Observe("space.free.bytes", ptr.Size);
+        CatDb.General.Diagnostics.PerformanceCheck.Observe("space.free.chunks", _free.Count);
+        CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("space.free", perfStart);
+    #endif
     }
 
     public void Serialize(BinaryWriter writer)

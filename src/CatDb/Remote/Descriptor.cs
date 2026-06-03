@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 ﻿using CatDb.Data;
 using CatDb.General.Compression;
 using CatDb.General.Persist;
@@ -132,6 +135,9 @@ public class Descriptor : IDescriptor
         set => InternalDescriptor.Tag = value;
     }
 
+    public IReadOnlyDictionary<string, int>? KeyMembers => InternalDescriptor.KeyMembers;
+    public IReadOnlyDictionary<string, int>? RecordMembers => InternalDescriptor.RecordMembers;
+
     #endregion
 
     public void Serialize(BinaryWriter writer)
@@ -195,29 +201,8 @@ public class DescriptorStructure : IDescriptor
 
     public byte[]? Tag { get; set; }
 
-    //public byte[] Tag
-    //{
-    //    get
-    //    {
-    //        //if (ForSerialize)
-    //        //    return tag;
-
-    //        IDescriptor descriptor = GetDescriptor(this);
-    //        tag = descriptor.Tag;
-
-    //        return tag;
-    //    }
-    //    set
-    //    {
-    //        //this.ForSerialize = true;
-    //        //this.tag = value;
-
-    //        //IDescriptor descriptor = SetDescriptor(this);
-
-    //        //tag = descriptor.Tag;
-    //        //this.ForSerialize = false;
-    //    }
-    //}
+    public IReadOnlyDictionary<string, int>? KeyMembers { get; set; }
+    public IReadOnlyDictionary<string, int>? RecordMembers { get; set; }
 
     #endregion
 

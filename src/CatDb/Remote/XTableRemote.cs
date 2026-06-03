@@ -1,22 +1,37 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Collections;
 using CatDb.Data;
 using CatDb.Database;
+using CatDb.Database.Indexing;
 using CatDb.Remote.Commands;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Remote;
-public class XTableRemote : ITable<IData, IData>
+public class XTableRemote : ITable<IData, IData>, IDisposable
 {
     private readonly int _pageCapacity = 100000;
     private readonly CommandCollection _commands;
 
     // Guards _commands and all operations that read/write the shared command buffer.
     // Multiple services can share the same XTableRemote instance through StressContext.
-    private readonly object _lock = new();
+    private readonly CatDb.General.Threading.ReentrantLock _lock = new();
 
     private Descriptor _indexDescriptor;
     private readonly StorageEngineClient _storageEngine;
+    private RemoteTableIndexManager? _indexManager;
+
+    public ITableIndexManager Indexes
+    {
+        get
+        {
+            if (_indexManager == null)
+                _indexManager = new RemoteTableIndexManager(this, _storageEngine);
+            return _indexManager;
+        }
+    }
 
     internal XTableRemote(StorageEngineClient storageEngine, Descriptor descriptor)
     {
@@ -38,12 +53,24 @@ public class XTableRemote : ITable<IData, IData>
 
     ~XTableRemote()
     {
-        Flush();
+        // Best-effort flush: the connection may already be torn down during GC
+        // finalization, so swallow everything — callers must Dispose() for a
+        // guaranteed flush.
+        try { FlushCoreUnsafe(); } catch { }
+    }
+
+    public void Dispose()
+    {
+        using (_lock.Lock())
+        {
+            FlushCore();
+            GC.SuppressFinalize(this);
+        }
     }
 
     private void InternalExecute(ICommand command)
     {
-        lock (_lock)
+        using (_lock.Lock())
         {
             if (_commands.Capacity == 0)
             {
@@ -74,12 +101,19 @@ public class XTableRemote : ITable<IData, IData>
 
     public void Flush()
     {
-        lock (_lock)
+        using (_lock.Lock())
             FlushCore();
     }
 
     // Must be called with _lock held.
     private void FlushCore()
+    {
+        FlushCoreUnsafe();
+    }
+
+    // Inner flush — does NOT acquire the lock; caller is responsible.
+    // May be called from the finalizer without a lock (single-threaded GC context).
+    private void FlushCoreUnsafe()
     {
         if (_commands.Count == 0)
         {
@@ -203,8 +237,11 @@ public class XTableRemote : ITable<IData, IData>
 
     public IEnumerable<KeyValuePair<IData, IData>> Forward(IData from, bool hasFrom, IData to, bool hasTo)
     {
+        // In network mode, concurrent mutations can make bounds appear momentarily
+        // inverted between the time the caller computed them and the server round-trip.
+        // Return empty rather than throwing — callers just see a transient empty range.
         if (hasFrom && hasTo && _indexDescriptor.KeyComparer.Compare(from, to) > 0)
-            throw new ArgumentException("from > to");
+            yield break;
 
         from = hasFrom ? from : default(IData);
         to = hasTo ? to : default(IData);
@@ -245,7 +282,7 @@ public class XTableRemote : ITable<IData, IData>
     public IEnumerable<KeyValuePair<IData, IData>> Backward(IData to, bool hasTo, IData from, bool hasFrom)
     {
         if (hasFrom && hasTo && _indexDescriptor.KeyComparer.Compare(from, to) > 0)
-            throw new ArgumentException("from > to");
+            yield break;
 
         from = hasFrom ? from : default(IData);
         to = hasTo ? to : default(IData);

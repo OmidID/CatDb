@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 using CatDb.General.Communication;
 using CatDb.WaterfallTree;
@@ -26,9 +29,6 @@ public sealed class HeapServer
 
     public Task StartAsync(CancellationToken ct = default) => _tcpServer.StartAsync(ct);
     public Task StopAsync()                                => _tcpServer.StopAsync();
-
-    public void Start() => _tcpServer.Start();
-    public void Stop()  => _tcpServer.Stop();
 
     public bool IsRunning    => _tcpServer.IsRunning;
     public int  ClientsCount => _tcpServer.ServerConnections.Count;

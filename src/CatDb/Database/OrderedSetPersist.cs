@@ -1,5 +1,8 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
-﻿using CatDb.Data;
+using CatDb.Data;
 using CatDb.General.Collections;
 using CatDb.General.Compression;
 using CatDb.General.Persist;
@@ -43,7 +46,8 @@ public class OrderedSetPersist : IPersist<IOrderedSet<IData, IData>>
 
     private void WriteRaw(BinaryWriter writer, IOrderedSet<IData, IData> data)
     {
-        lock (data)
+        data.Lock.EnterRead();
+        try
         {
             writer.Write(data.Count);
             writer.Write(data.IsInternallyOrdered);
@@ -54,6 +58,7 @@ public class OrderedSetPersist : IPersist<IOrderedSet<IData, IData>>
                 _recordPersist.Write(writer, kv.Value);
             }
         }
+        finally { data.Lock.ExitRead(); }
     }
 
     private IOrderedSet<IData, IData> ReadRaw(BinaryReader reader)
@@ -78,7 +83,8 @@ public class OrderedSetPersist : IPersist<IOrderedSet<IData, IData>>
     {
         KeyValuePair<IData, IData>[] rows;
 
-        lock (data)
+        data.Lock.EnterRead();
+        try
         {
             rows = new KeyValuePair<IData, IData>[data.Count];
             var index = 0;
@@ -88,6 +94,7 @@ public class OrderedSetPersist : IPersist<IOrderedSet<IData, IData>>
             CountCompression.Serialize(writer, checked((ulong)rows.Length));
             writer.Write(data.IsInternallyOrdered);
         }
+        finally { data.Lock.ExitRead(); }
 
         var streams = new MemoryStream[2];
 
@@ -123,16 +130,11 @@ public class OrderedSetPersist : IPersist<IOrderedSet<IData, IData>>
         for (var i = 0; i < buffers.Length; i++)
             buffers[i] = reader.ReadBytes((int)CountCompression.Deserialize(reader));
 
-        var task = Task.Factory.StartNew(() =>
-        {
-            using var ms = new MemoryStream(buffers[1]);
-            _recordIndexerPersist.Load(new BinaryReader(ms), (idx, value) => array[idx].SetValue(value), count);
-        });
-
         using (var ms = new MemoryStream(buffers[0]))
             _keyIndexerPersist.Load(new BinaryReader(ms), (idx, value) => array[idx].SetKey(value), count);
 
-        task.Wait();
+        using (var ms = new MemoryStream(buffers[1]))
+            _recordIndexerPersist.Load(new BinaryReader(ms), (idx, value) => array[idx].SetValue(value), count);
 
         var data = _orderedSetFactory.Create();
         data.LoadFrom(array, count, isOrdered);

@@ -1,9 +1,20 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 ﻿using System.Diagnostics.CodeAnalysis;
+using CatDb.Database.Indexing;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Database;
 
-public interface ITable { }
+public interface ITable
+{
+    /// <summary>
+    /// Provides secondary index management for this table.
+    /// Available on all table types (local, remote, typed, portable).
+    /// </summary>
+    ITableIndexManager Indexes { get; }
+}
 
 public interface ITable<TKey, TRecord> : ITable, IEnumerable<KeyValuePair<TKey, TRecord>>
 {

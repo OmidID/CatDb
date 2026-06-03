@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -35,7 +38,7 @@ public sealed class TcpServer : IAsyncDisposable
 
     public TcpServer(int port = 7182) => Port = port;
 
-    // ── Start / Stop (async-primary, sync wrappers for compat) ───────────────
+    // ── Start / Stop (async only — no sync bridges) ──────────────────────────
 
     public Task StartAsync(CancellationToken ct = default)
     {
@@ -46,8 +49,6 @@ public sealed class TcpServer : IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    public void Start() => StartAsync().GetAwaiter().GetResult();
-
     public async Task StopAsync()
     {
         _cts?.Cancel();
@@ -57,8 +58,6 @@ public sealed class TcpServer : IAsyncDisposable
         if (_acceptTask is not null)
             await _acceptTask.ConfigureAwait(false);
     }
-
-    public void Stop() => StopAsync().GetAwaiter().GetResult();
 
     // ── Accept loop ───────────────────────────────────────────────────────────
 

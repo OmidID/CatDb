@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 namespace CatDb.StressTest;
 
 // ─── Market / financial ────────────────────────────────────────────────────
@@ -112,4 +115,15 @@ public class AuditEntry
     public string   Detail      { get; set; } = "";
     public DateTime Timestamp   { get; set; }
     public bool     Success     { get; set; }
+}
+
+// ─── Indexed product (for IndexStressService) ──────────────────────────────
+
+public class IndexedProduct
+{
+    public string Sku      { get; set; } = "";
+    public string Category { get; set; } = "";
+    public double Price    { get; set; }
+    public int    Stock    { get; set; }
+    public string Brand    { get; set; } = "";
 }

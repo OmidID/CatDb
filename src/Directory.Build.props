@@ -7,6 +7,12 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnablePerformanceCheck>true</EnablePerformanceCheck>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(EnablePerformanceCheck)' == 'true'">
+    <DefineConstants>$(DefineConstants);PERFORMANCE_CHECK</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -17,12 +23,12 @@
 
     <!-- NuGet package metadata shared by all publishable projects -->
     <Authors>Omid Mafakher</Authors>
-    <Copyright>GNU2.0</Copyright>
+    <Copyright>Copyright (c) 2024-2026 CatDb</Copyright>
     <RepositoryUrl>https://github.com/OmidID/CatDb</RepositoryUrl>
     <PackageProjectUrl>https://github.com/OmidID/CatDb</PackageProjectUrl>
-    <PackageLicenseUrl>https://github.com/OmidID/CatDb/blob/master/LICENSE</PackageLicenseUrl>
-    <PackageTags>Database;Cache;Fast Collection;KeyValue Pair</PackageTags>
-    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>Database;Cache;Fast Collection;KeyValue Pair;Embedded;WaterfallTree</PackageTags>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
   </PropertyGroup>
 
 </Project>

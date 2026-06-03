@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Threading.Channels;
@@ -10,7 +13,7 @@ namespace CatDb.General.Communication;
 /// Callers enqueue a <see cref="Packet"/> via <see cref="SendAsync"/> and
 /// await its <see cref="Packet.WaitAsync"/> — no thread ever blocks on I/O.
 /// </summary>
-public sealed class ClientConnection : IAsyncDisposable
+public sealed class ClientConnection : IAsyncDisposable, IDisposable
 {
     private long _idCounter;
 
@@ -20,6 +23,12 @@ public sealed class ClientConnection : IAsyncDisposable
     private CancellationTokenSource?                _cts;
     private Task?                                   _sendLoop;
     private Task?                                   _receiveLoop;
+
+    // ── Sync mode state ─────────────────────────────────────────────────────
+    // When the caller uses sync Start()/SendSync()/Stop(), we run blocking
+    // socket I/O directly under _syncLock — no Task/async/Channel involved.
+    private readonly CatDb.General.Threading.ReentrantLock _syncLock = new();
+    private bool _syncMode;
 
     public string Host { get; }
     public int    Port { get; }
@@ -130,4 +139,46 @@ public sealed class ClientConnection : IAsyncDisposable
     }
 
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
+
+    // ── True sync transport (NO Task / NO await / NO GetResult) ──────────────
+    // Used by callers that need a synchronous API (e.g. IStorageEngine sync
+    // Execute path). Cannot coexist with async transport on the same instance.
+
+    public void Start()
+    {
+        if (_sendLoop is not null || _syncMode)
+            throw new InvalidOperationException("ClientConnection is already started.");
+
+        _tcpClient = new TcpClient { NoDelay = true };
+        _tcpClient.Connect(Host, Port);
+        _syncMode = true;
+    }
+
+    public MemoryStream SendSync(Packet packet)
+    {
+        if (!_syncMode || _tcpClient is null)
+            throw new InvalidOperationException("ClientConnection is not in sync mode. Use Start()+SendSync, or StartAsync+SendAsync.");
+
+        using (_syncLock.Lock())
+        {
+            packet.Id = Interlocked.Increment(ref _idCounter);
+            var stream = _tcpClient.GetStream();
+            FrameProtocol.WriteSync(stream, packet.Id, packet.Request);
+            var (_, response) = FrameProtocol.ReadSync(stream);
+            return response;
+        }
+    }
+
+    public void Stop()
+    {
+        if (!_syncMode) return;
+        using (_syncLock.Lock())
+        {
+            _tcpClient?.Close();
+            _tcpClient = null;
+            _syncMode = false;
+        }
+    }
+
+    public void Dispose() => Stop();
 }

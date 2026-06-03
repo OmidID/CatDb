@@ -1,6 +1,11 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
-﻿using System.Collections;
+using System.Collections;
+using CatDb.General.Threading;
 using CatDb.Data;
+using CatDb.Database.Indexing;
 using CatDb.Database.Operations;
 using CatDb.General.Collections;
 using CatDb.WaterfallTree;
@@ -10,22 +15,39 @@ namespace CatDb.Database;
 public class XTablePortable : ITable<IData, IData>
 {
     private IOperationCollection _operations;
+    private TableIndexManager? _indexManager;
 
     public readonly WTree    Tree;
     public readonly Locator  Locator;
     public volatile bool     IsModified;
-    public readonly object   SyncRoot = new();
+    public readonly ReentrantLock SyncRoot = new();
 
     internal XTablePortable(WTree tree, Locator locator)
     {
         Tree    = tree;
         Locator = locator;
-        _operations = locator.OperationCollectionFactory.Create(256);
+        // Larger default queue lowers Execute/Flush frequency under heavy write load.
+        // 1024 still fits comfortably under root sink threshold (default 4096).
+        _operations = locator.OperationCollectionFactory.Create(1024);
+    }
+
+    /// <summary>
+    /// Secondary index manager. Lazily created on first access.
+    /// </summary>
+    public ITableIndexManager Indexes
+    {
+        get
+        {
+            if (_indexManager == null)
+                _indexManager = new TableIndexManager(this);
+            return _indexManager;
+        }
     }
 
     private void Execute(IOperation operation)
     {
-        lock (SyncRoot)
+        SyncRoot.Enter();
+        try
         {
             IsModified = true;
 
@@ -39,11 +61,13 @@ public class XTablePortable : ITable<IData, IData>
             if (_operations.Count == _operations.Capacity)
                 Flush();
         }
+        finally { SyncRoot.Exit(); }
     }
 
     public void Flush()
     {
-        lock (SyncRoot)
+        SyncRoot.Enter();
+        try
         {
             if (_operations.Count == 0 || Tree.IsDisposed)
                 return;
@@ -51,6 +75,7 @@ public class XTablePortable : ITable<IData, IData>
             Tree.Execute(_operations);
             _operations.Clear();
         }
+        finally { SyncRoot.Exit(); }
     }
 
     public IData this[IData key]
@@ -64,16 +89,133 @@ public class XTablePortable : ITable<IData, IData>
         set => Replace(key, value);
     }
 
-    public void Replace(IData key, IData record)        => Execute(new ReplaceOperation(key, record));
-    public void InsertOrIgnore(IData key, IData record) => Execute(new InsertOrIgnoreOperation(key, record));
-    public void Delete(IData key)                       => Execute(new DeleteOperation(key));
-    public void Delete(IData fromKey, IData toKey)      => Execute(new DeleteRangeOperation(fromKey, toKey));
-    public void Clear()                                 => Execute(new ClearOperation());
+    public void Replace(IData key, IData record)
+    {
+        if (_indexManager is { HasIndexes: true })
+        {
+            SyncRoot.Enter();
+            try
+            {
+                Flush();
+                IData? oldRecord = null;
+                TryGetInternal(key, out oldRecord);
+                Execute(new ReplaceOperation(key, record));
+                _indexManager.OnReplace(key, record, oldRecord);
+            }
+            finally { SyncRoot.Exit(); }
+        }
+        else
+        {
+            Execute(new ReplaceOperation(key, record));
+        }
+    }
+
+    public void InsertOrIgnore(IData key, IData record)
+    {
+        if (_indexManager is { HasIndexes: true })
+        {
+            SyncRoot.Enter();
+            try
+            {
+                Flush();
+                if (TryGetInternal(key, out _))
+                    return; // Key exists — no-op
+                Execute(new InsertOrIgnoreOperation(key, record));
+                _indexManager.OnReplace(key, record, null);
+            }
+            finally { SyncRoot.Exit(); }
+        }
+        else
+        {
+            Execute(new InsertOrIgnoreOperation(key, record));
+        }
+    }
+
+    public void Delete(IData key)
+    {
+        if (_indexManager is { HasIndexes: true })
+        {
+            SyncRoot.Enter();
+            try
+            {
+                Flush();
+                if (TryGetInternal(key, out var oldRecord))
+                {
+                    Execute(new DeleteOperation(key));
+                    _indexManager.OnDelete(key, oldRecord);
+                }
+                else
+                {
+                    Execute(new DeleteOperation(key));
+                }
+            }
+            finally { SyncRoot.Exit(); }
+        }
+        else
+        {
+            Execute(new DeleteOperation(key));
+        }
+    }
+
+    public void Delete(IData fromKey, IData toKey)
+    {
+        if (_indexManager is { HasIndexes: true })
+        {
+            SyncRoot.Enter();
+            try
+            {
+                Flush();
+                // Materialize affected records before deleting
+                var affected = Forward(fromKey, true, toKey, true).ToList();
+                Execute(new DeleteRangeOperation(fromKey, toKey));
+                foreach (var kv in affected)
+                    _indexManager.OnDelete(kv.Key, kv.Value);
+            }
+            finally { SyncRoot.Exit(); }
+        }
+        else
+        {
+            Execute(new DeleteRangeOperation(fromKey, toKey));
+        }
+    }
+
+    public void Clear()
+    {
+        if (_indexManager is { HasIndexes: true })
+        {
+            Execute(new ClearOperation());
+            _indexManager.OnClear();
+        }
+        else
+        {
+            Execute(new ClearOperation());
+        }
+    }
     public bool Exists(IData key)                       => TryGet(key, out _);
+
+    /// <summary>
+    /// Internal TryGet that does NOT acquire SyncRoot (caller must hold it).
+    /// Used by index maintenance to read old records without deadlock.
+    /// </summary>
+    private bool TryGetInternal(IData key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IData? record)
+    {
+        var lastVisitedFullKey = default(WTree.FullKey);
+        var records = Tree.FindData(Locator, Locator, key, Direction.Forward, out _, out _, ref lastVisitedFullKey);
+        if (records is null)
+        {
+            record = default;
+            return false;
+        }
+
+        records.Lock.EnterRead();
+        try { return records.TryGetValue(key, out record); }
+        finally { records.Lock.ExitRead(); }
+    }
 
     public bool TryGet(IData key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IData? record)
     {
-        lock (SyncRoot)
+        SyncRoot.Enter();
+        try
         {
             Flush();
 
@@ -85,9 +227,11 @@ public class XTablePortable : ITable<IData, IData>
                 return false;
             }
 
-            lock (records)
-                return records.TryGetValue(key, out record);
+            records.Lock.EnterRead();
+            try { return records.TryGetValue(key, out record); }
+            finally { records.Lock.ExitRead(); }
         }
+        finally { SyncRoot.Exit(); }
     }
 
     public IData Find(IData key)
@@ -101,17 +245,20 @@ public class XTablePortable : ITable<IData, IData>
 
     public KeyValuePair<IData, IData>? FindNext(IData key)
     {
-        lock (SyncRoot)
+        SyncRoot.Enter();
+        try
         {
             foreach (var kv in Forward(key, true, default, false))
                 return kv;
             return null;
         }
+        finally { SyncRoot.Exit(); }
     }
 
     public KeyValuePair<IData, IData>? FindAfter(IData key)
     {
-        lock (SyncRoot)
+        SyncRoot.Enter();
+        try
         {
             var comparer = Locator.KeyComparer;
             foreach (var kv in Forward(key, true, default, false))
@@ -121,21 +268,25 @@ public class XTablePortable : ITable<IData, IData>
             }
             return null;
         }
+        finally { SyncRoot.Exit(); }
     }
 
     public KeyValuePair<IData, IData>? FindPrev(IData key)
     {
-        lock (SyncRoot)
+        SyncRoot.Enter();
+        try
         {
             foreach (var kv in Backward(key, true, default, false))
                 return kv;
             return null;
         }
+        finally { SyncRoot.Exit(); }
     }
 
     public KeyValuePair<IData, IData>? FindBefore(IData key)
     {
-        lock (SyncRoot)
+        SyncRoot.Enter();
+        try
         {
             var comparer = Locator.KeyComparer;
             foreach (var kv in Backward(key, true, default, false))
@@ -145,6 +296,7 @@ public class XTablePortable : ITable<IData, IData>
             }
             return null;
         }
+        finally { SyncRoot.Exit(); }
     }
 
     public IEnumerable<KeyValuePair<IData, IData>> Forward() =>
@@ -152,7 +304,8 @@ public class XTablePortable : ITable<IData, IData>
 
     public IEnumerable<KeyValuePair<IData, IData>> Forward(IData from, bool hasFrom, IData to, bool hasTo)
     {
-        lock (SyncRoot)
+        SyncRoot.Enter();
+        try
         {
             var keyComparer = Locator.KeyComparer;
 
@@ -174,31 +327,35 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
-                Task task = null;
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
                 {
-                    lock (records)
+                    records.Lock.EnterRead();
+                    try
                     {
                         if (hasTo && records.Count > 0 && keyComparer.Compare(records.First.Key, to) > 0)
                             break;
                     }
-
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key, Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
+                    finally { records.Lock.ExitRead(); }
                 }
 
-                lock (records)
+                records.Lock.EnterRead();
+                try
                 {
                     foreach (var record in records.Forward(from, hasFrom, to, hasTo))
                         yield return record;
                 }
+                finally { records.Lock.ExitRead(); }
 
-                task?.Wait();
+                // Sequential fetch of the next page — no background prefetch / Task.Wait.
+                if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key, Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
+
                 records = recs;
             }
         }
+        finally { SyncRoot.Exit(); }
     }
 
     public IEnumerable<KeyValuePair<IData, IData>> Backward() =>
@@ -206,7 +363,8 @@ public class XTablePortable : ITable<IData, IData>
 
     public IEnumerable<KeyValuePair<IData, IData>> Backward(IData to, bool hasTo, IData from, bool hasFrom)
     {
-        lock (SyncRoot)
+        SyncRoot.Enter();
+        try
         {
             var keyComparer = Locator.KeyComparer;
 
@@ -221,47 +379,60 @@ public class XTablePortable : ITable<IData, IData>
             if (records is null)
                 yield break;
 
+            // prevFirstKey: minimum key of the most-recently yielded leaf.
+            // The guard (checked under the next leaf's read lock) verifies that
+            // no concurrent insert placed a key >= prevFirstKey into the next leaf
+            // between navigation and iteration.  Check + buffer-fill are atomic
+            // (same EnterRead block) so no write can slip in between.
+            IData prevFirstKey = null;
+
             while (records is not null)
             {
-                Task task = null;
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey)
                 {
-                    lock (records)
+                    bool shouldStop;
+                    records.Lock.EnterRead();
+                    try { shouldStop = hasFrom && records.Count > 0 && keyComparer.Compare(records.Last.Key, from) < 0; }
+                    finally { records.Lock.ExitRead(); }
+                    if (shouldStop) break;
+                }
+
+                bool guardFailed = false;
+                records.Lock.EnterRead();
+                try
+                {
+                    // Guard: checked inside EnterRead so it is atomic with the foreach.
+                    // A concurrent write (EnterWrite) is blocked by our shared lock,
+                    // so no high key can be inserted between the check and the yields.
+                    if (prevFirstKey != null && records.Count > 0 &&
+                        keyComparer.Compare(records.Last.Key, prevFirstKey) >= 0)
                     {
-                        if (hasFrom && records.Count > 0 && keyComparer.Compare(records.Last.Key, from) < 0)
-                            break;
+                        guardFailed = true;
                     }
-
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key, Direction.Backward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
-                }
-
-                lock (records)
-                {
-                    foreach (var record in records.Backward(to, hasTo, from, hasFrom))
-                        yield return record;
-                }
-
-                task?.Wait();
-
-                if (recs is null)
-                    break;
-
-                lock (records)
-                {
-                    lock (recs)
+                    else
                     {
-                        if (recs.Count > 0 && records.Count > 0 &&
-                            keyComparer.Compare(recs.First.Key, records.First.Key) >= 0)
-                            break;
+                        if (records.Count > 0)
+                            prevFirstKey = records.First.Key;
+                        foreach (var record in records.Backward(to, hasTo, from, hasFrom))
+                            yield return record;
                     }
                 }
+                finally { records.Lock.ExitRead(); }
+
+                // Sequential fetch of the next page — no background prefetch / Task.Wait.
+                if (hasNearFullKey)
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key, Direction.Backward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
+
+                if (guardFailed) break;
+                if (recs is null) break;
+                if (ReferenceEquals(recs, records)) break;
 
                 records = recs;
             }
         }
+        finally { SyncRoot.Exit(); }
     }
 
     public KeyValuePair<IData, IData>? FirstRow => Forward().Cast<KeyValuePair<IData, IData>?>().FirstOrDefault();
@@ -274,14 +445,21 @@ public class XTablePortable : ITable<IData, IData>
 
     public int OperationQueueCapacity
     {
-        get { lock (SyncRoot) return _operations.Capacity; }
+        get
+        {
+            SyncRoot.Enter();
+            try { return _operations.Capacity; }
+            finally { SyncRoot.Exit(); }
+        }
         set
         {
-            lock (SyncRoot)
+            SyncRoot.Enter();
+            try
             {
                 Flush();
                 _operations = Locator.OperationCollectionFactory.Create(value);
             }
+            finally { SyncRoot.Exit(); }
         }
     }
 
@@ -303,7 +481,8 @@ public class XTablePortable : ITable<IData, IData>
         IData from, bool hasFrom, bool fromExclusive,
         IData to,   bool hasTo,   bool toExclusive)
     {
-        lock (SyncRoot)
+        SyncRoot.Enter();
+        try
         {
             var keyComparer = Locator.KeyComparer;
 
@@ -335,26 +514,27 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
-                Task task = null;
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
                 {
                     bool shouldStop;
-                    lock (records)
+                    records.Lock.EnterRead();
+                    try
                     {
                         shouldStop = hasTo && records.Count > 0 &&
                             keyComparer.Compare(records.First.Key, to) is var c &&
                             (c > 0 || (toExclusive && c == 0));
                     }
+                    finally { records.Lock.ExitRead(); }
                     if (shouldStop) break;
 
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
-                            Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
+                        Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
                 }
 
-                lock (records)
+                records.Lock.EnterRead();
+                try
                 {
                     // If neither from nor to applies to this leaf, the whole leaf counts.
                     // "from" only constrains the first leaf; "to" constrains the last.
@@ -412,16 +592,17 @@ public class XTablePortable : ITable<IData, IData>
                         }
                     }
                 }
+                finally { records.Lock.ExitRead(); }
 
                 hasFromActive  = false;
                 fromExclActive = false;
 
-                task?.Wait();
                 records = recs;
             }
 
             return total;
         }
+        finally { SyncRoot.Exit(); }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -463,7 +644,8 @@ public class XTablePortable : ITable<IData, IData>
         IData to,   bool hasTo,   bool toExclusive,
         ScanLeafCallback callback)
     {
-        lock (SyncRoot)
+        SyncRoot.Enter();
+        try
         {
             var keyComparer = Locator.KeyComparer;
 
@@ -493,27 +675,28 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
-                Task task = null;
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
                 {
                     bool shouldStop;
-                    lock (records)
+                    records.Lock.EnterRead();
+                    try
                     {
                         shouldStop = hasTo && records.Count > 0 &&
                             keyComparer.Compare(records.First.Key, to) is var c &&
                             (c > 0 || (toExclusive && c == 0));
                     }
+                    finally { records.Lock.ExitRead(); }
                     if (shouldStop) break;
 
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
-                            Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
+                        Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
                 }
 
                 bool continueScanning;
-                lock (records)
+                records.Lock.EnterRead();
+                try
                 {
                     if (records.TryGetSortedRange(
                             from, hasFromActive, fromExclActive,
@@ -538,16 +721,17 @@ public class XTablePortable : ITable<IData, IData>
                         continueScanning = true;
                     }
                 }
+                finally { records.Lock.ExitRead(); }
 
                 if (!continueScanning) break;
 
                 hasFromActive  = false;
                 fromExclActive = false;
 
-                task?.Wait();
                 records = recs;
             }
         }
+        finally { SyncRoot.Exit(); }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -594,9 +778,18 @@ public class XTablePortable : ITable<IData, IData>
     /// </summary>
     internal IEnumerable<ScanSegment> ScanSegments(
         IData from, bool hasFrom, bool fromExclusive,
-        IData to,   bool hasTo,   bool toExclusive)
+        IData to,   bool hasTo,   bool toExclusive,
+        int maxRows = int.MaxValue)
     {
-        lock (SyncRoot)
+#if PERFORMANCE_CHECK
+        var perfStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        long leafCount = 0;
+        long segmentCount = 0;
+        long rowCount = 0;
+#endif
+
+        SyncRoot.Enter();
+        try
         {
             var keyComparer = Locator.KeyComparer;
 
@@ -608,6 +801,11 @@ public class XTablePortable : ITable<IData, IData>
             }
 
             Flush();
+
+            if (maxRows <= 0)
+                yield break;
+
+            var remaining = maxRows;
 
             var buffer = Array.Empty<KeyValuePair<IData, IData>>();
 
@@ -629,27 +827,34 @@ public class XTablePortable : ITable<IData, IData>
 
             while (records is not null)
             {
-                Task task = null;
+#if PERFORMANCE_CHECK
+                leafCount++;
+#endif
+                if (remaining <= 0)
+                    break;
+
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
                 {
                     bool shouldStop;
-                    lock (records)
+                    records.Lock.EnterRead();
+                    try
                     {
                         shouldStop = hasTo && records.Count > 0 &&
                             keyComparer.Compare(records.First.Key, to) is var c &&
                             (c > 0 || (toExclusive && c == 0));
                     }
+                    finally { records.Lock.ExitRead(); }
                     if (shouldStop) break;
 
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
-                            Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
+                        Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
                 }
 
                 int segCount = 0;
-                lock (records)
+                records.Lock.EnterRead();
+                try
                 {
                     // ── Fast path: direct list access + Array.Copy ────────────────
                     if (records.TryGetSortedRange(
@@ -658,6 +863,8 @@ public class XTablePortable : ITable<IData, IData>
                             out var si, out var ei))
                     {
                         segCount = ei - si + 1;
+                        if (segCount > remaining)
+                            segCount = remaining;
                         if (buffer.Length < segCount)
                             buffer = new KeyValuePair<IData, IData>[Math.Max(segCount, 4096)];
                         records.InternalList!.CopyTo(si, buffer, 0, segCount);
@@ -669,7 +876,11 @@ public class XTablePortable : ITable<IData, IData>
                         foreach (var kv in records.ForwardExclusive(
                                      fromActive, hasFromActive, fromExclActive,
                                      to, hasTo, toExclusive))
+                        {
                             temp.Add(kv);
+                            if (temp.Count >= remaining)
+                                break;
+                        }
 
                         segCount = temp.Count;
                         if (segCount > 0)
@@ -680,16 +891,33 @@ public class XTablePortable : ITable<IData, IData>
                         }
                     }
                 }
+                finally { records.Lock.ExitRead(); }
 
                 if (segCount > 0)
+                {
+#if PERFORMANCE_CHECK
+                    segmentCount++;
+                    rowCount += segCount;
+#endif
+                    remaining -= segCount;
                     yield return new ScanSegment(buffer, segCount);
+                }
 
                 hasFromActive  = false;
                 fromExclActive = false;
 
-                task?.Wait();
                 records = recs;
             }
+        }
+        finally
+        {
+            SyncRoot.Exit();
+#if PERFORMANCE_CHECK
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.forward.leaves", leafCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.forward.segments", segmentCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.forward.rows", rowCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("xtable.scan.forward", perfStart);
+#endif
         }
     }
 
@@ -702,9 +930,18 @@ public class XTablePortable : ITable<IData, IData>
     /// </summary>
     internal IEnumerable<ScanSegment> ScanSegmentsBackward(
         IData to,   bool hasTo,   bool toExclusive,
-        IData from, bool hasFrom, bool fromExclusive)
+        IData from, bool hasFrom, bool fromExclusive,
+        int maxRows = int.MaxValue)
     {
-        lock (SyncRoot)
+#if PERFORMANCE_CHECK
+        var perfStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        long leafCount = 0;
+        long segmentCount = 0;
+        long rowCount = 0;
+#endif
+
+        SyncRoot.Enter();
+        try
         {
             var keyComparer = Locator.KeyComparer;
 
@@ -716,6 +953,11 @@ public class XTablePortable : ITable<IData, IData>
             }
 
             Flush();
+
+            if (maxRows <= 0)
+                yield break;
+
+            var remaining = maxRows;
 
             var buffer = Array.Empty<KeyValuePair<IData, IData>>();
 
@@ -730,84 +972,164 @@ public class XTablePortable : ITable<IData, IData>
             bool toExclActive   = toExclusive;
             IData toActive      = to;
 
+            // prevFirstKey: minimum key of the most-recently yielded leaf.
+            // The guard (checked under the next leaf's read lock) verifies that
+            // no concurrent insert placed a key >= prevFirstKey into the next leaf
+            // between navigation and iteration.  Check + buffer-fill are atomic
+            // (same EnterRead block) so no write can slip in between.
+            IData prevFirstKey = null;
+
             while (records is not null)
             {
-                Task task = null;
+#if PERFORMANCE_CHECK
+                leafCount++;
+#endif
+                if (remaining <= 0)
+                    break;
+
                 IOrderedSet<IData, IData> recs = null;
 
                 if (hasNearFullKey)
                 {
                     bool shouldStop;
-                    lock (records)
+                    records.Lock.EnterRead();
+                    try
                     {
                         shouldStop = hasFrom && records.Count > 0 &&
                             keyComparer.Compare(records.Last.Key, from) is var c &&
                             (c < 0 || (fromExclusive && c == 0));
                     }
+                    finally { records.Lock.ExitRead(); }
                     if (shouldStop) break;
 
-                    task = Task.Factory.StartNew(() =>
-                        recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
-                            Direction.Backward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey));
+                    recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key,
+                        Direction.Backward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
                 }
 
+                bool guardFailed = false;
+                IData thisFirstKey = null;
                 int segCount = 0;
-                lock (records)
+                records.Lock.EnterRead();
+                try
                 {
-                    // ── Fast path: direct list access, reversed copy ──────────────
-                    if (records.TryGetSortedRange(
-                            from, hasFrom, fromExclusive,
-                            toActive, hasToActive, toExclActive,
-                            out var si, out var ei))
+                    // Guard: checked inside EnterRead so it is atomic with the buffer fill.
+                    // A concurrent write (EnterWrite) is blocked by our shared lock,
+                    // so no high key can be inserted between the check and the copy.
+                    if (prevFirstKey != null && records.Count > 0 &&
+                        keyComparer.Compare(records.Last.Key, prevFirstKey) >= 0)
                     {
-                        segCount = ei - si + 1;
-                        if (buffer.Length < segCount)
-                            buffer = new KeyValuePair<IData, IData>[Math.Max(segCount, 4096)];
-                        var list = records.InternalList!;
-                        for (var i = 0; i < segCount; i++)
-                            buffer[i] = list[ei - i]; // reverse into descending order
+                        guardFailed = true;
                     }
-                    else if (records.InternalList == null && records.Count > 0)
+                    else
                     {
-                        // ── Slow path: SortedSet / dictionary — materialize reversed
-                        var temp = new List<KeyValuePair<IData, IData>>();
-                        foreach (var kv in records.BackwardExclusive(
-                                     toActive, hasToActive, toExclActive,
-                                     from, hasFrom, fromExclusive))
-                            temp.Add(kv);
-
-                        segCount = temp.Count;
-                        if (segCount > 0)
+                        // ── Fast path: direct list access, reversed copy ──────────────
+                        if (records.TryGetSortedRange(
+                                from, hasFrom, fromExclusive,
+                                toActive, hasToActive, toExclActive,
+                                out var si, out var ei))
                         {
+                            segCount = ei - si + 1;
+                            if (segCount > remaining)
+                            {
+                                si = ei - remaining + 1;
+                                segCount = remaining;
+                            }
                             if (buffer.Length < segCount)
                                 buffer = new KeyValuePair<IData, IData>[Math.Max(segCount, 4096)];
-                            temp.CopyTo(buffer);
+                            var list = records.InternalList!;
+                            for (var i = 0; i < segCount; i++)
+                                buffer[i] = list[ei - i]; // reverse into descending order
+
+                            // Defensive: if the source list had any inversion the reversed
+                            // buffer may not be in descending order.  Detect in O(n) and
+                            // sort in O(n log n) only when needed (should be rare once all
+                            // inversion-creation paths are fixed, but guards against any
+                            // surviving corruption that reaches here).
+                            if (segCount > 1)
+                            {
+                                bool inverted = false;
+                                for (var k = 1; k < segCount; k++)
+                                {
+                                    if (keyComparer.Compare(buffer[k].Key, buffer[k - 1].Key) > 0)
+                                    {
+                                        inverted = true;
+                                        break;
+                                    }
+                                }
+                                if (inverted)
+                                    Array.Sort(buffer, 0, segCount,
+                                        System.Collections.Generic.Comparer<KeyValuePair<IData, IData>>.Create(
+                                            (a, b) => keyComparer.Compare(b.Key, a.Key)));
+                            }
+
+                            // Use the actual minimum from the sorted buffer as thisFirstKey.
+                            // records.First.Key == List[0] could be a large inversion-head key;
+                            // buffer[segCount-1] is always the true minimum after the sort above.
+                            if (segCount > 0)
+                                thisFirstKey = buffer[segCount - 1].Key;
+                        }
+                        else if (records.InternalList == null && records.Count > 0)
+                        {
+                            // ── Slow path: SortedSet / dictionary — materialize reversed
+                            var temp = new List<KeyValuePair<IData, IData>>();
+                            foreach (var kv in records.BackwardExclusive(
+                                         toActive, hasToActive, toExclActive,
+                                         from, hasFrom, fromExclusive))
+                            {
+                                temp.Add(kv);
+                                if (temp.Count >= remaining)
+                                    break;
+                            }
+
+                            segCount = temp.Count;
+                            if (segCount > 0)
+                            {
+                                if (buffer.Length < segCount)
+                                    buffer = new KeyValuePair<IData, IData>[Math.Max(segCount, 4096)];
+                                temp.CopyTo(buffer);
+                                thisFirstKey = buffer[segCount - 1].Key;
+                            }
                         }
                     }
                 }
+                finally { records.Lock.ExitRead(); }
+
+                if (guardFailed) break;
 
                 if (segCount > 0)
+                {
+#if PERFORMANCE_CHECK
+                    segmentCount++;
+                    rowCount += segCount;
+#endif
+                    remaining -= segCount;
                     yield return new ScanSegment(buffer, segCount);
+                }
 
+                // Only update prevFirstKey when this leaf had actual data.
+                // An empty leaf (after range-delete) sets thisFirstKey = null; preserving
+                // the previous value keeps the guard active across empty leaves so that
+                // a subsequent wrong-direction leaf is still caught.
+                if (thisFirstKey != null)
+                    prevFirstKey = thisFirstKey;
                 hasToActive  = false;
                 toExclActive = false;
 
-                task?.Wait();
-
                 if (recs is null) break;
-
-                lock (records)
-                {
-                    lock (recs)
-                    {
-                        if (recs.Count > 0 && records.Count > 0 &&
-                            keyComparer.Compare(recs.First.Key, records.First.Key) >= 0)
-                            break;
-                    }
-                }
+                if (ReferenceEquals(recs, records)) break;
 
                 records = recs;
             }
+        }
+        finally
+        {
+            SyncRoot.Exit();
+#if PERFORMANCE_CHECK
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.backward.leaves", leafCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.backward.segments", segmentCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.Observe("xtable.scan.backward.rows", rowCount);
+            global::CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("xtable.scan.backward", perfStart);
+#endif
         }
     }
 

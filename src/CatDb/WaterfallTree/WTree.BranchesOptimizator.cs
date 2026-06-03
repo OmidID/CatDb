@@ -1,6 +1,8 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
-﻿using System.Collections.Concurrent;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using CatDb.Data;
 
 namespace CatDb.WaterfallTree;
@@ -9,7 +11,7 @@ public partial class WTree
     private class BranchesOptimizator
     {
         private const int MAP_CAPACITY = 131072;
-        private ConcurrentDictionary<Locator, Range> _map = new();
+        private Dictionary<Locator, Range> _map = new();
         private BranchCollection _branches;
 
         public void Rebuild(BranchCollection branches)
@@ -18,15 +20,22 @@ public partial class WTree
             _map = BuildRanges();
         }
 
-        private ConcurrentDictionary<Locator, Range> BuildRanges()
+        private Dictionary<Locator, Range> BuildRanges()
         {
-            var map = new ConcurrentDictionary<Locator, Range>();
+            var map = new Dictionary<Locator, Range>();
+            var count = _branches.Count;
+            if (count == 0)
+                return map;
+
             var locator = _branches[0].Key.Locator;
             var range = new Range(0, true);
             map[locator] = range;
 
-            for (var i = 1; i < _branches.Count; i++)
+            for (var i = 1; i < count; i++)
             {
+                if (i >= _branches.Count)
+                    break;
+
                 var newLocator = _branches[i].Key.Locator;
 
                 if (newLocator.Equals(locator))
@@ -44,18 +53,20 @@ public partial class WTree
 
         public Range FindRange(Locator locator)
         {
-            if (_map.TryGetValue(locator, out var range))
+            ref var range = ref System.Runtime.InteropServices.CollectionsMarshal.GetValueRefOrAddDefault(_map, locator, out var exists);
+            if (exists)
                 return range;
 
             var idx = _branches.BinarySearch(new FullKey(locator, null));
             Debug.Assert(idx < 0);
             idx = ~idx - 1;
-            Debug.Assert(idx >= 0);
+            if (idx < 0)
+                idx = 0;
 
-            _map[locator] = range = new Range(idx, false);
+            range = new Range(idx, false);
 
             if (_map.Count > MAP_CAPACITY)
-                _map = BuildRanges(); //TODO: background rebuild
+                _map = BuildRanges();
 
             return range;
         }

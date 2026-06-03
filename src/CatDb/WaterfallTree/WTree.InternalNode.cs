@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Diagnostics;
 using CatDb.Data;
@@ -32,6 +35,9 @@ public partial class WTree
         private void SequentialApply(IOperationCollection operations)
         {
             var locator = operations.Locator;
+
+            if (Branches.Count == 0)
+                return;
 
             var last = Branches[Branches.Count - 1];
             if (ReferenceEquals(last.Key.Locator, locator) && locator.KeyComparer.Compare(last.Key.Key, operations[0].FromKey) <= 0)
@@ -70,10 +76,13 @@ public partial class WTree
                 var count = idx - index + 1;
                 if (count > 0)
                 {
-                    var oprs = count < operations.Count ? operations.Midlle(index, count) : operations;
-                    var branch = Branches[i - 1].Value;
+                    var branchIndex = Math.Max(0, i - 1);
+                    var branch = Branches[branchIndex].Value;
 
-                    branch.ApplyToCache(oprs);
+                    if (count < operations.Count)
+                        branch.ApplyToCache(operations, index, count);
+                    else
+                        branch.ApplyToCache(operations);
                     if (branch.NodeState != NodeState.None)
                         HaveChildrenForMaintenance = true;
 
@@ -83,13 +92,16 @@ public partial class WTree
 
             if (operations.Count - index > 0)
             {
-                var oprs = index > 0 ? operations.Midlle(index, operations.Count - index) : operations;
                 var branch = Branches[range.LastIndex].Value;
+                var remainCount = operations.Count - index;
 
-                Debug.Assert(Branches[range.LastIndex].Key.Locator.Equals(oprs.Locator));
-                Debug.Assert(oprs.Locator.KeyComparer.Compare(Branches[range.LastIndex].Key.Key, oprs[0].FromKey) <= 0);
+                Debug.Assert(Branches[range.LastIndex].Key.Locator.Equals(operations.Locator));
+                Debug.Assert(operations.Locator.KeyComparer.Compare(Branches[range.LastIndex].Key.Key, operations[index].FromKey) <= 0);
 
-                branch.ApplyToCache(oprs);
+                if (index > 0)
+                    branch.ApplyToCache(operations, index, remainCount);
+                else
+                    branch.ApplyToCache(operations);
                 if (branch.NodeState != NodeState.None)
                     HaveChildrenForMaintenance = true;
             }
@@ -227,34 +239,54 @@ public partial class WTree
                 }
             }
 
-            IEnumerable<KeyValuePair<FullKey, Branch>> branches = param.WalkMethod switch
+            // Defensive: clamp indices to valid bounds
+            var branchCount = Branches.Count;
+            if (branchCount == 0)
+                return;
+            if (firstIndex >= branchCount)
+                firstIndex = branchCount - 1;
+            if (lastIndex >= branchCount)
+                lastIndex = branchCount - 1;
+            if (firstIndex < 0)
+                firstIndex = 0;
+
+            // Resolve actual iteration range based on walk method (no allocation)
+            int iterFirst, iterLast;
+            switch (param.WalkMethod)
             {
-                WalkMethod.CascadeFirst => Branches.Range(firstIndex, firstIndex),
-                WalkMethod.CascadeLast => Branches.Range(lastIndex, lastIndex),
-                WalkMethod.Cascade => Branches.Range(firstIndex, lastIndex),
-                WalkMethod.CascadeButOnlyLoaded => Branches.Range(firstIndex, lastIndex),
-                _ => throw new NotSupportedException(param.WalkMethod.ToString())
-            };
+                case WalkMethod.CascadeFirst:
+                    iterFirst = iterLast = firstIndex;
+                    break;
+                case WalkMethod.CascadeLast:
+                    iterFirst = iterLast = lastIndex;
+                    break;
+                case WalkMethod.Cascade:
+                case WalkMethod.CascadeButOnlyLoaded:
+                    iterFirst = firstIndex;
+                    iterLast = lastIndex;
+                    break;
+                default:
+                    throw new NotSupportedException(param.WalkMethod.ToString());
+            }
 
-            var taskCreationOptions = TaskCreationOptions.None;
-            //if ((param.WalkAction & WalkAction.Store) == WTree<TPath>.WalkAction.Store)
-              //  taskCreationOptions = TaskCreationOptions.AttachedToParent;
+            // Clamp to valid bounds after resolution
+            if (iterLast >= branchCount)
+                iterLast = branchCount - 1;
 
-            Parallel.ForEach(branches, branch =>
+            // Falls are synchronous — direct indexed loop, zero allocation.
+            for (var i = iterFirst; i <= iterLast; i++)
+            {
+                var branch = Branches[i].Value;
+
+                if (param.WalkMethod == WalkMethod.CascadeButOnlyLoaded)
                 {
-                    if (param.WalkMethod == WalkMethod.CascadeButOnlyLoaded)
-                    {
-                        branch.Value.WaitFall();
-                        if (!branch.Value.IsNodeLoaded)
-                            return;
-                    }
+                    if (!branch.IsNodeLoaded)
+                        continue;
+                }
 
-                    if (branch.Value.Fall(level, token, param, taskCreationOptions))
-                        IsModified = true;
-
-                    //if ((param.WalkAction & WalkAction.Store) == WTree<TPath>.WalkAction.Store)
-                    //    branch.Value.WaitFall();
-                });
+                if (branch.Fall(level, token, param))
+                    IsModified = true;
+            }
         }
 
         public override bool IsOverflow => Branches.Count > Branch.Tree._internalNodeMaxBranches;

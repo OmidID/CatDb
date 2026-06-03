@@ -1,7 +1,11 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 ﻿#pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using CatDb.Data;
+using CatDb.Database;
 using CatDb.General.Collections;
 using CatDb.General.Threading;
 
@@ -9,12 +13,12 @@ namespace CatDb.WaterfallTree;
 public partial class WTree : IDisposable
 {
     private int _internalNodeMinBranches = 2; //default values
-    private int _internalNodeMaxBranches = 5;
-    private int _internalNodeMaxOperationsInRoot = 8 * 1024;
-    private int _internalNodeMinOperations = 32 * 1024;
-    private int _internalNodeMaxOperations = 64 * 1024;
-    private int _leafNodeMinRecords = 8 * 1024;
-    private int _leafNodeMaxRecords = 64 * 1024;
+    private int _internalNodeMaxBranches = 64;
+    private int _internalNodeMaxOperationsInRoot = 4 * 1024;
+    private int _internalNodeMinOperations = 4 * 1024;
+    private int _internalNodeMaxOperations = 8 * 1024;
+    private int _leafNodeMinRecords = 4 * 1024;
+    private int _leafNodeMaxRecords = 8 * 1024;
 
     //reserved handles
     private const long HANDLE_SETTINGS = 0;
@@ -28,7 +32,6 @@ public partial class WTree : IDisposable
 
     private volatile bool _disposed;
     public bool IsDisposed => _disposed;
-    private CancellationTokenSource _shutdownCts = new();
     private int _depth = 1;
 
     private long _globalVersion;
@@ -42,12 +45,25 @@ public partial class WTree : IDisposable
     private readonly Scheme _scheme;
     private readonly IHeap _heap;
 
-    public WTree(IHeap heap)
+    public WTree(IHeap heap, DatabaseOptions? options = null)
     {
         if (heap == null)
             throw new NullReferenceException("heap");
 
         _heap = heap;
+
+        // Apply options for NEW databases (existing DBs load settings from header)
+        if (options != null && !heap.Exists(HANDLE_SETTINGS))
+        {
+            _internalNodeMaxBranches = options.MaxBranchesPerNode;
+            _internalNodeMinBranches = Math.Max(2, options.MaxBranchesPerNode / 32);
+            _internalNodeMaxOperationsInRoot = options.MaxOperationsInRoot;
+            _internalNodeMinOperations = options.MinOperationsPerNode;
+            _internalNodeMaxOperations = options.MaxOperationsPerNode;
+            _leafNodeMinRecords = options.MinRecordsPerLeaf;
+            _leafNodeMaxRecords = options.MaxRecordsPerLeaf;
+            _cacheSize = options.CacheSize;
+        }
 
         if (heap.Exists(HANDLE_SETTINGS))
         {
@@ -91,8 +107,6 @@ public partial class WTree : IDisposable
 
             _isRootCacheLoaded = true;
         }
-
-        _cacheTask = Task.Run(() => DoCache(_shutdownCts.Token));
     }
 
     private void LoadRootCache()
@@ -105,17 +119,14 @@ public partial class WTree : IDisposable
 
     private void Sink()
     {
-        _rootBranch.WaitFall();
-
         if (_rootBranch.NodeState != NodeState.None)
         {
-            var token = new Token(_cacheSemaphore, new CancellationTokenSource().Token);
+            var token = new Token(CancellationToken.None);
             _rootBranch.MaintenanceRoot(token);
             _rootBranch.Node.Touch(_depth + 1);
-            token.CountdownEvent.Wait();
         }
 
-        _rootBranch.Fall(_depth + 1, new Token(_cacheSemaphore, CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true));
+        _rootBranch.Fall(_depth + 1, new Token(CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true));
     }
 
     public void Execute(IOperationCollection operations)
@@ -123,15 +134,20 @@ public partial class WTree : IDisposable
         if (_disposed)
             throw new ObjectDisposedException("WTree");
 
-        lock (_rootBranch)
+        _rootBranch.SyncRoot.Enter();
+        try
         {
             if (!_isRootCacheLoaded)
                 LoadRootCache();
-            
+
             _rootBranch.ApplyToCache(operations);
 
             if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
                 Sink();
+        }
+        finally
+        {
+            _rootBranch.SyncRoot.Exit();
         }
     }
 
@@ -140,15 +156,20 @@ public partial class WTree : IDisposable
         if (_disposed)
             throw new ObjectDisposedException("WTree");
 
-        lock (_rootBranch)
+        _rootBranch.SyncRoot.Enter();
+        try
         {
             if (!_isRootCacheLoaded)
                 LoadRootCache();
-            
+
             _rootBranch.ApplyToCache(locator, operation);
 
             if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
                 Sink();
+        }
+        finally
+        {
+            _rootBranch.SyncRoot.Exit();
         }
     }
 
@@ -164,7 +185,12 @@ public partial class WTree : IDisposable
         hasNearFullKey = false;
 
         var branch = _rootBranch;
-        Monitor.Enter(branch);
+        branch.SyncRoot.Enter();
+        // 'heldBranch' always tracks the branch whose lock we currently own.
+        // The try/finally guarantees the lock is released even if an exception escapes.
+        var heldBranch = branch;
+        try
+        {
 
         if (!_isRootCacheLoaded)
             LoadRootCache();
@@ -182,8 +208,7 @@ public partial class WTree : IDisposable
             };
         }
 
-        branch.Fall(_depth + 1, new Token(_cacheSemaphore, CancellationToken.None), param);
-        branch.WaitFall();
+        branch.Fall(_depth + 1, new Token(CancellationToken.None), param);
 
         switch (direction)
         {
@@ -193,12 +218,14 @@ public partial class WTree : IDisposable
                     {
                         var newBranch = ((InternalNode)branch.Node).FindBranch(locator, key, direction, ref nearFullKey, ref hasNearFullKey);
 
-                        Monitor.Enter(newBranch.Value);
+                        newBranch.Value.SyncRoot.Enter();
+                        var prevBranch = heldBranch;
+                        heldBranch = newBranch.Value;
+                        branch = newBranch.Value;
                         newBranch.Value.WaitFall();
                         Debug.Assert(!newBranch.Value.Cache.Contains(originalLocator));
-                        Monitor.Exit(branch);
+                        prevBranch.SyncRoot.Exit();
 
-                        branch = newBranch.Value;
                     }
                 }
                 break;
@@ -219,10 +246,6 @@ public partial class WTree : IDisposable
                             else
                                 cmp = newBranch.Key.Locator.KeyComparer.Compare(newBranch.Key.Key, lastVisitedFullKey.Key);
                         }
-                        //else
-                        //{
-                        //    Debug.WriteLine("");
-                        //}
 
                         //newBranch.Key.CompareTo(lastVisitedFullKey) >= 0
                         if (cmp >= 0)
@@ -235,17 +258,20 @@ public partial class WTree : IDisposable
                                 nearFullKey = node.Branches[node.Branches.Count - 2].Key;
                             }
                         }
-                        
-                        Monitor.Enter(newBranch.Value);
+
+                        newBranch.Value.SyncRoot.Enter();
+                        // Update heldBranch immediately after acquiring the new lock so
+                        // that the outer finally releases it if anything below throws.
+                        var prevBranch = heldBranch;
+                        heldBranch = newBranch.Value;
                         depth--;
                         newBranch.Value.WaitFall();
                         if (newBranch.Value.Cache.Contains(originalLocator))
                         {
-                            newBranch.Value.Fall(depth + 1, new Token(_cacheSemaphore, CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true, originalLocator));
-                            newBranch.Value.WaitFall();
+                            newBranch.Value.Fall(depth + 1, new Token(CancellationToken.None), new Params(WalkMethod.Current, WalkAction.None, null, true, originalLocator));
                         }
                         Debug.Assert(!newBranch.Value.Cache.Contains(originalLocator));
-                        Monitor.Exit(branch);
+                        prevBranch.SyncRoot.Exit();
 
                         branch = newBranch.Value;
                     }
@@ -266,9 +292,18 @@ public partial class WTree : IDisposable
 
         var data = ((LeafNode)branch.Node).FindData(originalLocator, direction, ref nearFullKey, ref hasNearFullKey);
 
-        Monitor.Exit(branch);
+        heldBranch.SyncRoot.Exit();
+        heldBranch = null; // mark as released so the finally block skips it
 
         return data;
+
+        } // end try
+        finally
+        {
+            // Released in the success path above; only needed when an exception escapes.
+            if (heldBranch != null)
+                heldBranch.SyncRoot.Exit();
+        }
     }
 
     private void Commit(CancellationToken cancellationToken, Locator locator = default(Locator), bool hasLocator = false, IData fromKey = null, IData toKey = null)
@@ -292,16 +327,14 @@ public partial class WTree : IDisposable
             }
         }
 
-        lock (_rootBranch)
+        _rootBranch.SyncRoot.Enter();
+        try
         {
             if (!_isRootCacheLoaded)
                 LoadRootCache();
-            
-            var token = new Token(_cacheSemaphore, cancellationToken);
-            _rootBranch.Fall(_depth + 1, token, param);
 
-            token.CountdownEvent.Signal();
-            token.CountdownEvent.Wait();
+            var token = new Token(cancellationToken);
+            _rootBranch.Fall(_depth + 1, token, param);
 
             //write settings
             using (var ms = new MemoryStream())
@@ -324,7 +357,15 @@ public partial class WTree : IDisposable
                 _heap.Write(HANDLE_ROOT, ms.GetBuffer(), 0, (int)ms.Length);
             }
 
+            // Evict cold nodes AFTER storing — all dirty nodes are now on disk,
+            // so evicted nodes can be safely unloaded without data loss.
+            EvictCache();
+
             _heap.Commit();
+        }
+        finally
+        {
+            _rootBranch.SyncRoot.Exit();
         }
     }
 
@@ -339,7 +380,7 @@ public partial class WTree : IDisposable
 
     private Locator MinLocator => Locator.Min;
 
-    protected Locator CreateLocator(string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType)
+    protected internal Locator CreateLocator(string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType)
     {
         return _scheme.Create(name, structureType, keyDataType, recordDataType, keyType, recordType);
     }
@@ -349,7 +390,7 @@ public partial class WTree : IDisposable
         return _scheme[id];
     }
 
-    protected IEnumerable<Locator> GetAllLocators()
+    protected internal IEnumerable<Locator> GetAllLocators()
     {
         return _scheme.Select(kv => kv.Value);
     }
@@ -384,14 +425,8 @@ public partial class WTree : IDisposable
     /// Branch.NodeID -> node
     /// </summary>
     private readonly ConcurrentDictionary<long, Node> _cache = new();
-    private readonly Task _cacheTask;
 
-    // Signal: pulsed when cache exceeds threshold so DoCache wakes immediately
-    private readonly SemaphoreSlim _cacheSignal = new(0, 1);
-
-    private SemaphoreSlim _cacheSemaphore = new(int.MaxValue, int.MaxValue);
-
-    private int _cacheSize = 32;
+    private int _cacheSize = 4096;
 
     public int CacheSize
     {
@@ -402,12 +437,6 @@ public partial class WTree : IDisposable
                 throw new ArgumentException("Cache size is invalid.");
 
             _cacheSize = value;
-
-            if (_cache.Count > CacheSize * 1.1)
-            {
-                // Signal DoCache to wake up immediately (guard: TOCTOU race between check and Release)
-                try { _cacheSignal.Release(); } catch (SemaphoreFullException) { }
-            }
         }
     }
 
@@ -415,12 +444,6 @@ public partial class WTree : IDisposable
     {
         Debug.Assert(!_cache.ContainsKey(id));
         _cache[id] = node;
-
-        if (_cache.Count > CacheSize * 1.1)
-        {
-            // Signal DoCache to wake up immediately (guard: TOCTOU race between check and Release)
-            try { _cacheSignal.Release(); } catch (SemaphoreFullException) { }
-        }
     }
 
     private Node Retrieve(long id)
@@ -435,49 +458,71 @@ public partial class WTree : IDisposable
         _cache.TryRemove(id, out var node);
         //Debug.Assert(node != null);
 
-        var delta = (int)(CacheSize * 1.1 - _cache.Count);
-        if (delta > 0)
-        {
-            // Capture the current semaphore reference — it may be swapped by DoCache.
-            // If the semaphore is already at MaximumCount (the "unthrottled" initial state),
-            // Release() would throw SemaphoreFullException; suppress it safely.
-            var sem = _cacheSemaphore;
-            try { sem.Release(delta); }
-            catch (SemaphoreFullException) { }
-        }
-
         return node;
     }
 
-    private void DoCache(CancellationToken ct)
+    /// <summary>
+    /// Evicts cold nodes from the cache. Called synchronously during Commit
+    /// (already under root lock) — no background thread, no races.
+    /// </summary>
+    private void EvictCache()
     {
-        while (!ct.IsCancellationRequested)
+        if (_cache.Count <= _cacheSize)
+            return;
+
+        var evictCount = _cache.Count - _cacheSize;
+
+        // O(n) partial select: find the evictCount nodes with lowest TouchId
+        // without sorting the entire collection (avoids LINQ OrderBy allocation storm).
+        var candidates = new (long TouchId, Node Node)[evictCount];
+        var candidateCount = 0;
+        long maxCandidateTouchId = long.MinValue;
+        var maxCandidateIdx = 0;
+
+        foreach (var kv in _cache)
         {
-            while (_cache.Count > CacheSize * 1.1)
+            var node = kv.Value;
+            if (node.IsRoot)
+                continue;
+
+            var touchId = node.TouchId;
+
+            if (candidateCount < evictCount)
             {
-                var kvs = _cache.Select(s => new KeyValuePair<long, Node>(s.Key, s.Value)).ToArray();
-
-                foreach (var kv in kvs.Where(x => !x.Value.IsRoot).OrderBy(x => x.Value.TouchId).Take(_cache.Count - CacheSize))
-                    kv.Value.IsExpiredFromCache = true;
-                //Debug.WriteLine(Cache.Count);
-                Token token;
-                lock (_rootBranch)
+                candidates[candidateCount] = (touchId, node);
+                if (touchId > maxCandidateTouchId)
                 {
-                    token = new Token(_cacheSemaphore, CancellationToken.None);
-                    _cacheSemaphore = new SemaphoreSlim(0, int.MaxValue);
-                    var param = new Params(WalkMethod.CascadeButOnlyLoaded, WalkAction.CacheFlush, null, false);
-                    _rootBranch.Fall(_depth + 1, token, param);
+                    maxCandidateTouchId = touchId;
+                    maxCandidateIdx = candidateCount;
                 }
-
-                token.CountdownEvent.Signal();
-                token.CountdownEvent.Wait();
-                try { _cacheSemaphore.Release(int.MaxValue / 2); }
-                catch (SemaphoreFullException) { }
+                candidateCount++;
             }
+            else if (touchId < maxCandidateTouchId)
+            {
+                // Replace the warmest candidate with this colder node
+                candidates[maxCandidateIdx] = (touchId, node);
 
-            // Wait for a signal (cache over limit) or wake up after 1 ms to re-check
-            _cacheSignal.Wait(1, ct);
+                // Rescan for new max (small array, fits in L1 cache)
+                maxCandidateTouchId = long.MinValue;
+                for (var i = 0; i < evictCount; i++)
+                {
+                    if (candidates[i].TouchId > maxCandidateTouchId)
+                    {
+                        maxCandidateTouchId = candidates[i].TouchId;
+                        maxCandidateIdx = i;
+                    }
+                }
+            }
         }
+
+        for (var i = 0; i < candidateCount; i++)
+            candidates[i].Node.IsExpiredFromCache = true;
+
+        // CacheFlush walk — already under root lock from Commit.
+        // DoFall will Store+Unload each IsExpiredFromCache node.
+        var token = new Token(CancellationToken.None);
+        var param = new Params(WalkMethod.CascadeButOnlyLoaded, WalkAction.CacheFlush, null, false);
+        _rootBranch.Fall(_depth + 1, token, param);
     }
 
     #endregion
@@ -490,9 +535,6 @@ public partial class WTree : IDisposable
         {
             if (disposing)
             {
-                _shutdownCts.Cancel();
-                try { _cacheTask.Wait(); } catch (AggregateException) { }
-
                 _workingFallCount.Wait();
 
                 _heap.Close();
@@ -505,7 +547,7 @@ public partial class WTree : IDisposable
     public void Dispose()
     {
         Dispose(true);
-        
+
         GC.SuppressFinalize(this);
     }
 

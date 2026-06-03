@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 ﻿using CatDb.Data;
 using CatDb.WaterfallTree;
 
@@ -112,12 +115,18 @@ public class StorageEngineOpenXIndexCommand : ICommand
 
     public DateTime CreateTime;
 
+    /// Optional member-name → slot-index maps.
+    /// Sent by the client so the server can persist field names in the locator.
+    public Dictionary<string, int>? KeyMembers;
+    public Dictionary<string, int>? RecordMembers;
+
     public StorageEngineOpenXIndexCommand(long id)
     {
         Id = id;
     }
 
-    public StorageEngineOpenXIndexCommand(string name, DataType keyType, DataType recordType, DateTime createTime)
+    public StorageEngineOpenXIndexCommand(string name, DataType keyType, DataType recordType, DateTime createTime,
+        Dictionary<string, int>? keyMembers = null, Dictionary<string, int>? recordMembers = null)
     {
         Id = -1;
         Name = name;
@@ -126,10 +135,13 @@ public class StorageEngineOpenXIndexCommand : ICommand
         RecordType = recordType;
 
         CreateTime = createTime;
+        KeyMembers = keyMembers;
+        RecordMembers = recordMembers;
     }
 
-    public StorageEngineOpenXIndexCommand(string name, DataType keyType, DataType recordType)
-        : this(name, keyType, recordType, new DateTime())
+    public StorageEngineOpenXIndexCommand(string name, DataType keyType, DataType recordType,
+        Dictionary<string, int>? keyMembers = null, Dictionary<string, int>? recordMembers = null)
+        : this(name, keyType, recordType, new DateTime(), keyMembers, recordMembers)
     {
     }
 

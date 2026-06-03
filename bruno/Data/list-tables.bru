@@ -1,0 +1,16 @@
+meta {
+  name: List Tables
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/data/{{databaseName}}
+  body: none
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}

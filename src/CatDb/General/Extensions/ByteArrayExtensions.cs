@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 #pragma warning disable CS8602, CS8604, CS8625, CS8600, CS8603, CS8601, CS8618, CS8622, CS8629
 ﻿using System.Text;
 using CatDb.General.Comparers;
@@ -7,33 +10,31 @@ public static class ByteArrayExtensions
 {
     private static readonly string[] HexValues = BitConverter.ToString(Enumerable.Range(0, 256).Select(x => (byte)x).ToArray()).Split('-');
 
-    public static int GetHashCodeEx(this byte[] buffer)
+    public static unsafe int GetHashCodeEx(this byte[] buffer)
     {
         const int constant = 17;
         var hashCode = 37;
-
-        var common = new CommonArray
-        {
-            ByteArray = buffer
-        };
-        var array = common.Int32Array;
 
         var length = buffer.Length;
         var remainder = length & 3;
         var len = length >> 2;
 
-        var i = 0;
-
-        while (i < len)
+        fixed (byte* pb = buffer)
         {
-            hashCode = constant * hashCode + array[i];
-            i++;
-        }
+            var array = (int*)pb;
 
-        if (remainder > 0)
-        {
-            var shift = sizeof(uint) - remainder;
-            hashCode = constant * hashCode + ((array[i] << shift) >> shift);
+            var i = 0;
+            while (i < len)
+            {
+                hashCode = constant * hashCode + array[i];
+                i++;
+            }
+
+            if (remainder > 0)
+            {
+                var shift = (sizeof(uint) - remainder) << 3;
+                hashCode = constant * hashCode + ((array[i] << shift) >> shift);
+            }
         }
 
         return hashCode;
@@ -45,7 +46,7 @@ public static class ByteArrayExtensions
     /// <param name="buffer"></param>
     /// <param name="seed"></param>
     /// <returns></returns>
-    public static int MurMurHash3(this byte[] buffer, int seed = 37)
+    public static unsafe int MurMurHash3(this byte[] buffer, int seed = 37)
     {
         const uint c1 = 0xcc9e2d51;
         const uint c2 = 0x1b873593;
@@ -56,48 +57,45 @@ public static class ByteArrayExtensions
 
         var hash = (uint)seed;
 
-        var common = new CommonArray
-        {
-            ByteArray = buffer
-        };
-        var array = common.UInt32Array;
-
         var length = buffer.Length;
         var remainder = length & 3;
         var len = length >> 2;
 
-        var i = 0;
-
-        while (i < len)
+        fixed (byte* pb = buffer)
         {
-            var k = array[i];
+            var array = (uint*)pb;
 
-            k *= c1;
-            k = (k << r1) | (k >> (32 - r1)); //k = rotl32(k, r1);
-            k *= c2;
+            var i = 0;
+            while (i < len)
+            {
+                var k = array[i];
 
-            hash ^= k;
-            hash = (hash << r2) | (hash >> (32 - r2)); //hash = rotl32(hash, r2);
-            hash = hash * m + n;
+                k *= c1;
+                k = (k << r1) | (k >> (32 - r1));
+                k *= c2;
 
-            i++;
-        }
+                hash ^= k;
+                hash = (hash << r2) | (hash >> (32 - r2));
+                hash = hash * m + n;
 
-        if (remainder > 0)
-        {
-            var shift = sizeof(uint) - remainder;
-            var k = (array[i] << shift) >> shift;
+                i++;
+            }
 
-            k *= c1;
-            k = (k << r1) | (k >> (32 - r1)); //k = rotl32(k, r1);
-            k *= c2;
+            if (remainder > 0)
+            {
+                var shift = (sizeof(uint) - remainder) << 3;
+                var k = (array[i] << shift) >> shift;
 
-            hash ^= k;
+                k *= c1;
+                k = (k << r1) | (k >> (32 - r1));
+                k *= c2;
+
+                hash ^= k;
+            }
         }
 
         hash ^= (uint)length;
 
-        //hash = fmix(hash);
         hash ^= hash >> 16;
         hash *= 0x85ebca6b;
         hash ^= hash >> 13;
