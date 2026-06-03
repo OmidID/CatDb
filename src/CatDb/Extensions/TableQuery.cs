@@ -2,6 +2,7 @@
 // Licensed under the MIT License. See LICENSE in the project root for license information.
 
 using System.Collections;
+using System.Linq.Expressions;
 using CatDb.Database;
 
 namespace CatDb.Extensions;
@@ -15,6 +16,7 @@ namespace CatDb.Extensions;
 /// table.Query().GreaterThan(lastKey).Take(20)          // cursor paging
 /// table.Query().Backward().Take(5)                     // last 5
 /// table.Query().StartsWith("abc")                      // string keys
+/// table.Query().AtLeast(100).OrderBy(c => c.Name)      // sort by record field
 /// </code>
 ///
 /// Supports any key type — not limited to primitives.
@@ -32,6 +34,7 @@ public sealed class TableQuery<TKey, TRecord> : IEnumerable<KeyValuePair<TKey, T
     private int _skip;
     private bool _backward;
     private Func<TKey, bool>? _filter;
+    private readonly List<Comparison<KeyValuePair<TKey, TRecord>>> _sortCriteria = new();
 
     internal TableQuery(ITable<TKey, TRecord> table) => _table = table;
 
@@ -115,6 +118,36 @@ public sealed class TableQuery<TKey, TRecord> : IEnumerable<KeyValuePair<TKey, T
         return this;
     }
 
+    // ── Sorting ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sort results ascending by the specified record field.
+    /// Chaining multiple OrderBy calls applies secondary/tertiary sort keys.
+    /// Sorting is applied lazily on enumeration — the scan results are
+    /// materialised, sorted, and then yielded.
+    /// </summary>
+    public TableQuery<TKey, TRecord> OrderBy<TSortField>(
+        Expression<Func<TRecord, TSortField>> selector)
+    {
+        var compiled = selector.Compile();
+        var comparer = System.Collections.Generic.Comparer<TSortField>.Default;
+        _sortCriteria.Add((a, b) => comparer.Compare(compiled(a.Value), compiled(b.Value)));
+        return this;
+    }
+
+    /// <summary>
+    /// Sort results descending by the specified record field.
+    /// Chaining multiple OrderBy calls applies secondary/tertiary sort keys.
+    /// </summary>
+    public TableQuery<TKey, TRecord> OrderByDescending<TSortField>(
+        Expression<Func<TRecord, TSortField>> selector)
+    {
+        var compiled = selector.Compile();
+        var comparer = System.Collections.Generic.Comparer<TSortField>.Default;
+        _sortCriteria.Add((a, b) => comparer.Compare(compiled(b.Value), compiled(a.Value)));
+        return this;
+    }
+
     // ── String-specific: called via extension method ─────────────────────────
 
     internal TableQuery<TKey, TRecord> SetBounds(TKey from, bool hasFrom, bool fromExcl,
@@ -149,33 +182,66 @@ public sealed class TableQuery<TKey, TRecord> : IEnumerable<KeyValuePair<TKey, T
         var q = BuildKeyQuery();
         IEnumerable<KeyValuePair<TKey, TRecord>> source;
 
+        // When sorting is requested, we must scan the full range and materialise
+        // before applying Skip/Take — disable optimised take paths.
+        int takePlusSkip = _take.HasValue ? _take.Value + _skip : 0;
+        bool useOptimizedTake = _take.HasValue && _sortCriteria.Count == 0;
+
         if (_backward)
         {
-            if (_take.HasValue && _table is XTable<TKey, TRecord> xt)
-                source = xt.ScanBackwardTake(q, _take.Value + _skip);
-            else if (_take.HasValue && _table is XTablePortable<TKey, TRecord> xp)
-                source = xp.ScanBackwardTake(q, _take.Value + _skip);
+            if (useOptimizedTake && _table is XTable<TKey, TRecord> xt)
+                source = xt.ScanBackwardTake(q, takePlusSkip);
+            else if (useOptimizedTake && _table is XTablePortable<TKey, TRecord> xp)
+                source = xp.ScanBackwardTake(q, takePlusSkip);
             else
                 source = _table.ScanBackward(q);
         }
         else
         {
-            if (_take.HasValue && _table is XTable<TKey, TRecord> xt)
-                source = xt.ScanTake(q, _take.Value + _skip);
-            else if (_take.HasValue && _table is XTablePortable<TKey, TRecord> xp)
-                source = xp.ScanTake(q, _take.Value + _skip);
+            if (useOptimizedTake && _table is XTable<TKey, TRecord> xt)
+                source = xt.ScanTake(q, takePlusSkip);
+            else if (useOptimizedTake && _table is XTablePortable<TKey, TRecord> xp)
+                source = xp.ScanTake(q, takePlusSkip);
             else
                 source = _table.Scan(q);
         }
 
-        var skipped = 0;
-        var produced = 0;
-        foreach (var kv in source)
+        if (_sortCriteria.Count > 0)
         {
-            if (skipped < _skip) { skipped++; continue; }
-            yield return kv;
-            if (_take.HasValue && ++produced >= _take.Value)
-                yield break;
+            // Sorting requested: materialise, sort, then apply Skip/Take
+            var list = new List<KeyValuePair<TKey, TRecord>>();
+            foreach (var kv in source)
+                list.Add(kv);
+
+            list.Sort((a, b) =>
+            {
+                foreach (var cmp in _sortCriteria)
+                {
+                    var result = cmp(a, b);
+                    if (result != 0) return result;
+                }
+                return 0;
+            });
+
+            var produced = 0;
+            for (int i = _skip; i < list.Count; i++)
+            {
+                yield return list[i];
+                if (_take.HasValue && ++produced >= _take.Value)
+                    yield break;
+            }
+        }
+        else
+        {
+            var skipped = 0;
+            var produced = 0;
+            foreach (var kv in source)
+            {
+                if (skipped < _skip) { skipped++; continue; }
+                yield return kv;
+                if (_take.HasValue && ++produced >= _take.Value)
+                    yield break;
+            }
         }
     }
 

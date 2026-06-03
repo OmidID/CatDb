@@ -4,6 +4,7 @@
 using CatDb.Data;
 using CatDb.Database;
 using CatDb.Database.Indexing;
+using CatDb.Extensions;
 using FluentAssertions;
 
 namespace CatDb.Tests.Database;
@@ -350,5 +351,142 @@ public class SecondaryIndexTests : IDisposable
         table.Count().Should().Be(1000);
         table.TryGet(500, out var rec).Should().BeTrue();
         rec!.Email.Should().Be("u500@t.com");
+    }
+
+    // ── OrderBy / OrderByDescending on IndexQuery ───────────────────────────
+
+    [Fact]
+    public void IndexQuery_OrderBy_SortsAscending()
+    {
+        var table = _engine.OpenXTable<int, Customer>("order_customers");
+        table.CreateIndex("City", c => c.City, IndexType.NonUnique);
+
+        table.Replace(1, new Customer { Email = "a@b.com", City = "NYC", Age = 30, Name = "Charlie" });
+        table.Replace(2, new Customer { Email = "b@b.com", City = "NYC", Age = 25, Name = "Alice" });
+        table.Replace(3, new Customer { Email = "c@b.com", City = "NYC", Age = 35, Name = "Bob" });
+        table.Replace(4, new Customer { Email = "d@b.com", City = "LA",  Age = 20, Name = "Dave" });
+        _engine.Commit();
+
+        var results = table.Query(c => c.City).Equals("NYC").OrderBy(c => c.Name).ToList();
+        results.Select(r => r.Value.Name).Should().Equal("Alice", "Bob", "Charlie");
+    }
+
+    [Fact]
+    public void IndexQuery_OrderByDescending_SortsDescending()
+    {
+        var table = _engine.OpenXTable<int, Customer>("order_desc_customers");
+        table.CreateIndex("City", c => c.City, IndexType.NonUnique);
+
+        table.Replace(1, new Customer { Email = "a@b.com", City = "NYC", Age = 30, Name = "Charlie" });
+        table.Replace(2, new Customer { Email = "b@b.com", City = "NYC", Age = 25, Name = "Alice" });
+        table.Replace(3, new Customer { Email = "c@b.com", City = "NYC", Age = 35, Name = "Bob" });
+        _engine.Commit();
+
+        var results = table.Query(c => c.City).Equals("NYC").OrderByDescending(c => c.Age).ToList();
+        results.Select(r => r.Value.Name).Should().Equal("Bob", "Charlie", "Alice");
+    }
+
+    [Fact]
+    public void IndexQuery_OrderBy_ThenBy_MultipleSortKeys()
+    {
+        var table = _engine.OpenXTable<int, Customer>("multi_sort_customers");
+        table.CreateIndex("City", c => c.City, IndexType.NonUnique);
+
+        table.Replace(1, new Customer { Email = "a@b.com", City = "NYC", Age = 30, Name = "Bob" });
+        table.Replace(2, new Customer { Email = "b@b.com", City = "NYC", Age = 25, Name = "Alice" });
+        table.Replace(3, new Customer { Email = "c@b.com", City = "NYC", Age = 30, Name = "Alice" });
+        table.Replace(4, new Customer { Email = "d@b.com", City = "NYC", Age = 25, Name = "Bob" });
+        _engine.Commit();
+
+        // OrderBy Age ascending, then Name ascending
+        var results = table.Query(c => c.City)
+            .Equals("NYC")
+            .OrderBy(c => c.Age)
+            .OrderBy(c => c.Name)
+            .ToList();
+
+        results.Select(r => new { r.Value.Age, r.Value.Name })
+            .Should().Equal(
+                new { Age = 25, Name = "Alice" },
+                new { Age = 25, Name = "Bob" },
+                new { Age = 30, Name = "Alice" },
+                new { Age = 30, Name = "Bob" }
+            );
+    }
+
+    [Fact]
+    public void IndexQuery_OrderBy_WithTake_LimitsAfterSort()
+    {
+        var table = _engine.OpenXTable<int, Customer>("sort_take_customers");
+        table.CreateIndex("City", c => c.City, IndexType.NonUnique);
+
+        table.Replace(1, new Customer { Email = "a@b.com", City = "NYC", Age = 30, Name = "Charlie" });
+        table.Replace(2, new Customer { Email = "b@b.com", City = "NYC", Age = 25, Name = "Alice" });
+        table.Replace(3, new Customer { Email = "c@b.com", City = "NYC", Age = 35, Name = "Bob" });
+        table.Replace(4, new Customer { Email = "d@b.com", City = "NYC", Age = 20, Name = "Dave" });
+        _engine.Commit();
+
+        var results = table.Query(c => c.City)
+            .Equals("NYC")
+            .OrderBy(c => c.Age)
+            .Take(2)
+            .ToList();
+
+        results.Select(r => r.Value.Name).Should().Equal("Dave", "Alice");
+    }
+
+    [Fact]
+    public void IndexQuery_OrderBy_RangeSearch_SortsFilteredResults()
+    {
+        var table = _engine.OpenXTable<int, Customer>("range_sort_customers");
+        // Use unique index since all ages are unique in this test data
+        table.CreateIndex("Age", c => c.Age, IndexType.Unique);
+
+        table.Replace(1, new Customer { Email = "a@b.com", City = "NYC", Age = 20, Name = "Charlie" });
+        table.Replace(2, new Customer { Email = "b@b.com", City = "NYC", Age = 25, Name = "Alice" });
+        table.Replace(3, new Customer { Email = "c@b.com", City = "NYC", Age = 30, Name = "Bob" });
+        table.Replace(4, new Customer { Email = "d@b.com", City = "NYC", Age = 35, Name = "Dave" });
+        table.Replace(5, new Customer { Email = "e@b.com", City = "NYC", Age = 40, Name = "Eve" });
+        _engine.Commit();
+
+        var results = table.Query(c => c.Age)
+            .AtLeast(25)
+            .AtMost(35)
+            .OrderByDescending(c => c.Name)
+            .ToList();
+
+        results.Select(r => r.Value.Name).Should().Equal("Dave", "Bob", "Alice");
+    }
+
+    [Fact]
+    public void IndexQuery_OrderBy_NoResults_ReturnsEmpty()
+    {
+        var table = _engine.OpenXTable<int, Customer>("empty_sort_customers");
+        table.CreateIndex("City", c => c.City, IndexType.NonUnique);
+
+        table.Replace(1, new Customer { Email = "a@b.com", City = "NYC", Name = "Alice" });
+        _engine.Commit();
+
+        var results = table.Query(c => c.City)
+            .Equals("LA")
+            .OrderBy(c => c.Name)
+            .ToList();
+
+        results.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void IndexQuery_NoSort_StaysLazy()
+    {
+        var table = _engine.OpenXTable<int, Customer>("lazy_customers");
+        table.CreateIndex("City", c => c.City, IndexType.NonUnique);
+
+        table.Replace(1, new Customer { Email = "a@b.com", City = "NYC", Name = "Alice" });
+        table.Replace(2, new Customer { Email = "b@b.com", City = "NYC", Name = "Bob" });
+        _engine.Commit();
+
+        // Without OrderBy, Take should short-circuit during enumeration
+        var results = table.Query(c => c.City).Equals("NYC").Take(1).ToList();
+        results.Should().HaveCount(1);
     }
 }

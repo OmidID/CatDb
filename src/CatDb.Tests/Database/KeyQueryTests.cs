@@ -286,4 +286,118 @@ public class KeyQueryTests : IDisposable
             .Select(kv => kv.Key).ToList();
         keys.Should().Equal(2, 4, 6, 8, 10);
     }
+
+    // ── OrderBy / OrderByDescending on TableQuery ───────────────────────────
+
+    public class NamedRecord
+    {
+        public string Name { get; set; } = "";
+        public int Age { get; set; }
+    }
+
+    [Fact]
+    public void TableQuery_OrderBy_SortsAscending()
+    {
+        var table = _engine.OpenXTable<int, NamedRecord>("order_table");
+        table.Replace(1, new NamedRecord { Name = "Charlie", Age = 30 });
+        table.Replace(2, new NamedRecord { Name = "Alice", Age = 25 });
+        table.Replace(3, new NamedRecord { Name = "Bob", Age = 35 });
+        _engine.Commit();
+
+        var results = table.Query().OrderBy(r => r.Name).ToList();
+        results.Select(r => r.Value.Name).Should().Equal("Alice", "Bob", "Charlie");
+    }
+
+    [Fact]
+    public void TableQuery_OrderByDescending_SortsDescending()
+    {
+        var table = _engine.OpenXTable<int, NamedRecord>("order_desc_table");
+        table.Replace(1, new NamedRecord { Name = "Charlie", Age = 30 });
+        table.Replace(2, new NamedRecord { Name = "Alice", Age = 25 });
+        table.Replace(3, new NamedRecord { Name = "Bob", Age = 35 });
+        _engine.Commit();
+
+        var results = table.Query().OrderByDescending(r => r.Age).ToList();
+        results.Select(r => r.Value.Name).Should().Equal("Bob", "Charlie", "Alice");
+    }
+
+    [Fact]
+    public void TableQuery_OrderBy_WithRange_FiltersThenSorts()
+    {
+        var table = _engine.OpenXTable<int, NamedRecord>("range_sort_table");
+        table.Replace(1, new NamedRecord { Name = "Charlie", Age = 10 });
+        table.Replace(2, new NamedRecord { Name = "Alice", Age = 20 });
+        table.Replace(3, new NamedRecord { Name = "Bob", Age = 30 });
+        table.Replace(4, new NamedRecord { Name = "Dave", Age = 40 });
+        _engine.Commit();
+
+        var results = table.Query()
+            .AtLeast(2)
+            .AtMost(3)
+            .OrderBy(r => r.Name)
+            .ToList();
+
+        results.Select(r => r.Value.Name).Should().Equal("Alice", "Bob");
+    }
+
+    [Fact]
+    public void TableQuery_OrderBy_WithTake_LimitsAfterSort()
+    {
+        var table = _engine.OpenXTable<int, NamedRecord>("sort_take_table");
+        table.Replace(1, new NamedRecord { Name = "Charlie", Age = 30 });
+        table.Replace(2, new NamedRecord { Name = "Alice", Age = 25 });
+        table.Replace(3, new NamedRecord { Name = "Bob", Age = 35 });
+        table.Replace(4, new NamedRecord { Name = "Dave", Age = 20 });
+        _engine.Commit();
+
+        var results = table.Query()
+            .OrderBy(r => r.Age)
+            .Take(2)
+            .ToList();
+
+        results.Select(r => r.Value.Name).Should().Equal("Dave", "Alice");
+    }
+
+    [Fact]
+    public void TableQuery_OrderBy_MultipleSortKeys()
+    {
+        var table = _engine.OpenXTable<int, NamedRecord>("multi_sort_table");
+        table.Replace(1, new NamedRecord { Name = "Bob", Age = 30 });
+        table.Replace(2, new NamedRecord { Name = "Alice", Age = 25 });
+        table.Replace(3, new NamedRecord { Name = "Alice", Age = 30 });
+        table.Replace(4, new NamedRecord { Name = "Bob", Age = 25 });
+        _engine.Commit();
+
+        var results = table.Query()
+            .OrderBy(r => r.Age)
+            .OrderBy(r => r.Name)
+            .ToList();
+
+        results.Select(r => new { r.Value.Age, r.Value.Name })
+            .Should().Equal(
+                new { Age = 25, Name = "Alice" },
+                new { Age = 25, Name = "Bob" },
+                new { Age = 30, Name = "Alice" },
+                new { Age = 30, Name = "Bob" }
+            );
+    }
+
+    [Fact]
+    public void TableQuery_OrderBy_WithSkipAndTake()
+    {
+        var table = _engine.OpenXTable<int, NamedRecord>("sort_skip_take_table");
+        table.Replace(1, new NamedRecord { Name = "D", Age = 10 });
+        table.Replace(2, new NamedRecord { Name = "B", Age = 20 });
+        table.Replace(3, new NamedRecord { Name = "A", Age = 30 });
+        table.Replace(4, new NamedRecord { Name = "C", Age = 40 });
+        _engine.Commit();
+
+        var results = table.Query()
+            .OrderBy(r => r.Name)
+            .Skip(1)
+            .Take(2)
+            .ToList();
+
+        results.Select(r => r.Value.Name).Should().Equal("B", "C");
+    }
 }

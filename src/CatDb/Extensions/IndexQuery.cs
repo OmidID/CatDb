@@ -2,6 +2,7 @@
 // Licensed under the MIT License. See LICENSE in the project root for license information.
 
 using System.Collections;
+using System.Linq.Expressions;
 using CatDb.Data;
 using CatDb.Database;
 using CatDb.Database.Indexing;
@@ -18,6 +19,7 @@ namespace CatDb.Extensions;
 /// table.Query(c => c.City).Equals("NYC").Take(10)
 /// table.Query(c => c.Price).Between(10.0, 50.0)
 /// table.Query("CityAge").Equals(new { City = "NYC", Age = 30 })
+/// table.Query(c => c.City).Equals("NYC").OrderBy(c => c.Name)
 /// </code>
 ///
 /// Supports any field type — not limited to primitives.
@@ -35,6 +37,7 @@ public sealed class IndexQuery<TKey, TRecord, TField> : IEnumerable<KeyValuePair
     private bool _hasTo;
     private bool _toInclusive = true;
     private int? _take;
+    private readonly List<Comparison<KeyValuePair<TKey, TRecord>>> _sortCriteria = new();
 
     internal IndexQuery(ITable<TKey, TRecord> table, string indexName)
     {
@@ -108,6 +111,36 @@ public sealed class IndexQuery<TKey, TRecord, TField> : IEnumerable<KeyValuePair
         return this;
     }
 
+    // ── Sorting ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sort results ascending by the specified record field.
+    /// Chaining multiple OrderBy calls applies secondary/tertiary sort keys.
+    /// Sorting is applied lazily on enumeration — the filtered results are
+    /// materialised, sorted, and then yielded.
+    /// </summary>
+    public IndexQuery<TKey, TRecord, TField> OrderBy<TSortField>(
+        Expression<Func<TRecord, TSortField>> selector)
+    {
+        var compiled = selector.Compile();
+        var comparer = System.Collections.Generic.Comparer<TSortField>.Default;
+        _sortCriteria.Add((a, b) => comparer.Compare(compiled(a.Value), compiled(b.Value)));
+        return this;
+    }
+
+    /// <summary>
+    /// Sort results descending by the specified record field.
+    /// Chaining multiple OrderBy calls applies secondary/tertiary sort keys.
+    /// </summary>
+    public IndexQuery<TKey, TRecord, TField> OrderByDescending<TSortField>(
+        Expression<Func<TRecord, TSortField>> selector)
+    {
+        var compiled = selector.Compile();
+        var comparer = System.Collections.Generic.Comparer<TSortField>.Default;
+        _sortCriteria.Add((a, b) => comparer.Compare(compiled(b.Value), compiled(a.Value)));
+        return this;
+    }
+
     // ── String-specific: called via extension method ─────────────────────────
 
     internal IndexQuery<TKey, TRecord, TField> SetRange(
@@ -168,12 +201,40 @@ public sealed class IndexQuery<TKey, TRecord, TField> : IEnumerable<KeyValuePair
             source = _table.Indexes.FindByIndexRange(_indexName, null, false, null, false);
         }
 
-        var produced = 0;
-        foreach (var kv in source)
+        if (_sortCriteria.Count > 0)
         {
-            yield return ConvertPair(kv);
-            if (_take.HasValue && ++produced >= _take.Value)
-                yield break;
+            // Sorting requested: materialise, sort, then apply Take
+            var list = new List<KeyValuePair<TKey, TRecord>>();
+            foreach (var kv in source)
+                list.Add(ConvertPair(kv));
+
+            list.Sort((a, b) =>
+            {
+                foreach (var cmp in _sortCriteria)
+                {
+                    var result = cmp(a, b);
+                    if (result != 0) return result;
+                }
+                return 0;
+            });
+
+            var produced = 0;
+            foreach (var kv in list)
+            {
+                yield return kv;
+                if (_take.HasValue && ++produced >= _take.Value)
+                    yield break;
+            }
+        }
+        else
+        {
+            var produced = 0;
+            foreach (var kv in source)
+            {
+                yield return ConvertPair(kv);
+                if (_take.HasValue && ++produced >= _take.Value)
+                    yield break;
+            }
         }
     }
 

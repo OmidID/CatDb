@@ -98,6 +98,30 @@ static class SecondaryIndexDemo
             .AtLeast("user10@example.com").AtMost("user19@example.com").ToList();
         Console.WriteLine($"  Found {rangeResults.Count} records");
 
+        // ── Sort by another index field ───────────────────────────────────────
+        Console.WriteLine("\n─── Sort by another field after index filter ───");
+
+        // Filter by City = 'Tokyo', sort by Name ascending
+        var tokyoByName = table.Query(c => c.City)
+            .Equals("Tokyo")
+            .OrderBy(c => c.Name)
+            .Take(5)
+            .ToList();
+        Console.WriteLine("  Tokyo customers sorted by Name (first 5):");
+        foreach (var kv in tokyoByName)
+            Console.WriteLine($"    Key={kv.Key}, Name={kv.Value.Name}, Age={kv.Value.Age}");
+
+        // Filter by City range, sort by Age descending, then Name ascending
+        var citiesRange = table.Query(c => c.City)
+            .Equals("NYC")
+            .OrderByDescending(c => c.Age)
+            .OrderBy(c => c.Name)
+            .Take(5)
+            .ToList();
+        Console.WriteLine("\n  NYC customers sorted by Age desc, then Name (first 5):");
+        foreach (var kv in citiesRange)
+            Console.WriteLine($"    Key={kv.Key}, Name={kv.Value.Name}, Age={kv.Value.Age}");
+
         // ── Delete maintenance ────────────────────────────────────────────────
         Console.WriteLine("\nDeleting customer 42...");
         table.Delete(42);

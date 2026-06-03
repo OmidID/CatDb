@@ -26,6 +26,8 @@ namespace CatDb.Extensions;
 /// table.Query(c => c.City).Equals("NYC").Take(10)
 /// table.Query(c => c.Price).Between(10.0, 50.0)
 /// table.Query(c => c.Price).AtLeast(100.0).Take(5)
+/// table.Query(c => c.City).Equals("NYC").OrderBy(c => c.Name)
+/// table.Query(c => c.City).Equals("NYC").OrderByDescending(c => c.Age).Take(10)
 /// table.Query("MyIndex").Equals(someValue)         // explicit index name
 /// </code>
 ///
