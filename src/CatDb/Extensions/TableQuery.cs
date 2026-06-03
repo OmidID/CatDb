@@ -2,6 +2,7 @@
 // Licensed under the MIT License. See LICENSE in the project root for license information.
 
 using System.Collections;
+using System.Linq.Expressions;
 using CatDb.Database;
 
 namespace CatDb.Extensions;
@@ -114,6 +115,28 @@ public sealed class TableQuery<TKey, TRecord> : IEnumerable<KeyValuePair<TKey, T
         _filter = predicate;
         return this;
     }
+
+    // ── Ordering (sort the filtered result set by any field or the key) ───────
+
+    /// <summary>
+    /// Order the results by a record field, ascending. Returns an
+    /// <see cref="OrderedQuery{TKey,TRecord}"/> on which further
+    /// <c>OrderBy</c>/<c>OrderByDescending</c> calls add secondary sort keys.
+    /// </summary>
+    public OrderedQuery<TKey, TRecord> OrderBy<TOrder>(Expression<Func<TRecord, TOrder>> selector)
+        => new(this, OrderedQuery<TKey, TRecord>.SortStep.ForField(selector, descending: false));
+
+    /// <summary>Order the results by a record field, descending.</summary>
+    public OrderedQuery<TKey, TRecord> OrderByDescending<TOrder>(Expression<Func<TRecord, TOrder>> selector)
+        => new(this, OrderedQuery<TKey, TRecord>.SortStep.ForField(selector, descending: true));
+
+    /// <summary>Order the results by the primary key, ascending.</summary>
+    public OrderedQuery<TKey, TRecord> OrderByKey()
+        => new(this, OrderedQuery<TKey, TRecord>.SortStep.ForKey(descending: false));
+
+    /// <summary>Order the results by the primary key, descending.</summary>
+    public OrderedQuery<TKey, TRecord> OrderByKeyDescending()
+        => new(this, OrderedQuery<TKey, TRecord>.SortStep.ForKey(descending: true));
 
     // ── String-specific: called via extension method ─────────────────────────
 

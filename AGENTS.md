@@ -65,7 +65,14 @@ Preferred style:
 table.Query().AtLeast(10).Take(20);
 table.Query(x => x.Email).StartsWith("ada");
 table.Query(x => x.City).Equals("London").Count();
+table.Query(x => x.Email).AtLeast("a").AtMost("z")        // filter by index/key …
+     .OrderBy(x => x.Name).OrderByDescending(x => x.Age);  // … then sort by any field/key
 ```
+
+Sorting (`OrderBy`/`OrderByDescending`/`OrderByKey[Descending]`; chaining = ThenBy) is a post-scan,
+stable in-memory sort of the filtered result set (`src/CatDb/Extensions/OrderedQuery.cs`). It reads
+the sort field off the already-materialized record, so the field need not be indexed and the
+WTree/index hot paths stay untouched. `Take`/`Skip` on an ordered query apply after the sort.
 
 Guidelines:
 
