@@ -81,36 +81,52 @@ internal sealed class RemoteTableIndexManager : ITableIndexManager
 
     public IEnumerable<KeyValuePair<IData, IData>> FindByIndex(string indexName, IData fieldValue)
     {
-        var cmd = new IndexFindCommand(indexName, fieldValue);
+        var cmd = new IndexFindCommand(indexName, RemoteFieldCodec.Serialize(fieldValue));
         _table.Execute(cmd);
         return cmd.Results ?? [];
     }
 
     public IEnumerable<IData> FindKeysByIndex(string indexName, IData fieldValue)
     {
-        var cmd = new IndexFindCommand(indexName, fieldValue);
+        var cmd = new IndexFindCommand(indexName, RemoteFieldCodec.Serialize(fieldValue));
         _table.Execute(cmd);
         return cmd.Results?.Select(kv => kv.Key) ?? [];
     }
 
     public IEnumerable<KeyValuePair<IData, IData>> FindByIndexRange(
-        string indexName, IData? from, bool hasFrom, IData? to, bool hasTo)
+        string indexName,
+        IData? from, bool hasFrom, bool fromInclusive,
+        IData? to, bool hasTo, bool toInclusive,
+        bool backward)
     {
-        var cmd = new IndexFindRangeCommand(indexName, from, hasFrom, to, hasTo);
+        var cmd = new IndexFindRangeCommand(
+            indexName,
+            hasFrom ? RemoteFieldCodec.Serialize(from!) : null, hasFrom, fromInclusive,
+            hasTo ? RemoteFieldCodec.Serialize(to!) : null, hasTo, toInclusive,
+            backward);
+        _table.Execute(cmd);
+        return cmd.Results ?? [];
+    }
+
+    public IEnumerable<KeyValuePair<IData, IData>> FindByIndexPrefix(
+        string indexName, IData prefixValue, int prefixFieldCount, bool backward)
+    {
+        var cmd = new IndexFindPrefixCommand(
+            indexName, RemoteFieldCodec.Serialize(prefixValue), prefixFieldCount, backward);
         _table.Execute(cmd);
         return cmd.Results ?? [];
     }
 
     public bool ExistsInIndex(string indexName, IData fieldValue)
     {
-        var cmd = new IndexExistsCommand(indexName, fieldValue);
+        var cmd = new IndexExistsCommand(indexName, RemoteFieldCodec.Serialize(fieldValue));
         _table.Execute(cmd);
         return cmd.Result;
     }
 
     public long CountByIndex(string indexName, IData fieldValue)
     {
-        var cmd = new IndexCountCommand(indexName, fieldValue);
+        var cmd = new IndexCountCommand(indexName, RemoteFieldCodec.Serialize(fieldValue));
         _table.Execute(cmd);
         return cmd.Result;
     }

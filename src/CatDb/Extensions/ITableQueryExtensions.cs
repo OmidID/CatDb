@@ -84,7 +84,7 @@ public static class TableQueryExtensions
         Expression<Func<TRecord, TField>> fieldSelector)
     {
         var indexName = ResolveIndexName(table, fieldSelector);
-        return new IndexQuery<TKey, TRecord, TField>(table, indexName);
+        return new IndexQuery<TKey, TRecord, TField>(table, indexName, fieldSelector);
     }
 
     /// <summary>

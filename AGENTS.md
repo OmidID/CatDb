@@ -65,7 +65,66 @@ Preferred style:
 table.Query().AtLeast(10).Take(20);
 table.Query(x => x.Email).StartsWith("ada");
 table.Query(x => x.City).Equals("London").Count();
+table.Query(x => x.Email).AtLeast("a").AtMost("z")        // filter by index/key …
+     .OrderBy(x => x.Name).OrderByDescending(x => x.Age);  // … then sort by any field/key
 ```
+
+Sorting (`OrderedQuery` + `OrderingPlanner`, `src/CatDb/Extensions/`; chaining = ThenBy) picks the
+cheapest plan automatically. Precedence in `GetEnumerator`: **prefix → covering composite → single-
+leading drive → buffered**.
+
+1. **Pre-ordered stream (no buffer)** — the engine already emits the requested order:
+   - `OrderByKey`/`OrderByKeyDescending` on a primary-key query → `Scan`/`ScanBackward`.
+   - `OrderBy`/`OrderByDescending` **on the index query's own field** → the index B-tree is read in
+     order (`backward` = descending). Also `IndexQuery.Backward()`.
+2. **Composite prefix scan (streaming, no residual)** — `WHERE a = v ORDER BY b[,c…]` (same
+   direction) where a composite `(a, b[, c…])` index exists. Scans that index restricted to the
+   `a = v` prefix → rows come out already ordered by the trailing keys, with NO residual and NO
+   per-row heap fetch. `OrderedQuery.TryPrefixDrive` + `TableIndexManager.FindByIndexPrefix`
+   (`SlotAccessor.BuildPrefixSeekKeyBuilder`). This is the canonical real-DB filter+sort plan.
+3. **Drive-from-sort-index (streaming, bounded memory)** — ORDER BY a *different* single-indexed
+   field. Driven from that index, original query re-applied as a **residual** (engine-consistent
+   comparer). Single key → pure stream; multi-key → each **equal-leading-key run** buffered + sorted.
+4. **Covering composite index** — multi-key ORDER BY (a,b,…) where one index's `MemberNames` equals
+   the sort keys. All-same-direction → pure stream (`TryCompositeDrive`); **mixed direction** → drive
+   the composite in the lead direction and run-sort each equal-lead group by the rest.
+5. **Buffered stable sort (RAM-bound)** — leading sort field has no index. Materialize + sort.
+
+**Top-K:** whenever `Take` is present, the buffered and run-sort paths use a **bounded max-heap**
+(`OrderedQuery.OrderIndices`) → O(N·log(Skip+Take)) time, O(Skip+Take) memory, instead of a full
+sort or whole-group buffer. `Take`/`Skip` apply after ordering in every plan.
+
+**Secondary-index scans STREAM via WTree seeks** (`TableIndexManager.BatchedScan` + `Sentinels`):
+equality, range, prefix, forward and backward all page through the index in `ScanBatchSize` (4096)
+chunks. Bounds are **exact composite keys built with min/max sentinels** (`Sentinels.TryGet` +
+`BuildCompositeBound`), so the WTree's Forward/Backward stop at the bound natively — NO scanning-from-
+an-end-and-skipping. Field-level inclusivity is encoded in the trailing primary-key sentinel
+(`field >= from` → `(from, MIN_pk)`, `field > from` → `(from, MAX_pk)`, etc.). This also fixes
+**negative/min primary keys** (the old `(field, default)` lower bound skipped `pk < default`). When a
+trailing slot type has no sentinel (`string` has no max) the code falls back to a filtered scan.
+Composite **prefix** scans (`FindByIndexPrefix`) support multi-column prefixes and mixed-direction
+trailing (drive the lead, run-sort the rest). `GreaterThan`/`LessThan` (exclusive) and `backward`
+(descending) are honored everywhere.
+
+**Remote secondary indexes fully work** (`StorageEngineServer` index handlers + `CommandPersist`
+serializers + `RemoteFieldCodec`). Index field/prefix values cross the wire as raw bytes encoded by a
+`DataPersist` of the field type (the server resolves the type from the index via
+`TableIndexManager.GetFieldType`/`GetPrefixType`); result `(pk, record)` lists use the connection's
+Key/Record persisters. `XTableRemote.SetResult` copies results back. `IndexQuery.ConvertPair`
+transforms portable `Data<Slots>` records to `TRecord` for portable-backed (remote) tables. End-to-end
+covered by `RemoteIndexTests` (in-process TCP server). Find/range/prefix/exists/count + ORDER BY all
+work remotely.
+
+**Deadlock rule (critical):** writes lock main-table SyncRoot → index-table SyncRoot. An index read
+must therefore NEVER hold the index scan open while doing a main-table point lookup (that inverts the
+order → deadlock). `BatchedScan` closes each page's enumerator (releasing the index lock) before any
+record fetch, so only one table lock is held at a time. Don't "optimize" this into a single
+hold-open interleave.
+
+Remaining gaps (small): the string-named `Query("idx")` overload has no member selector → no
+residual/prefix, so it buffers. `string` (and other types lacking a max sentinel) as a trailing index
+slot disables the upper-bound seek for that case (filtered-scan fallback). Mixed-direction multi-key
+sorts still run-buffer the leading group rather than streaming.
 
 Guidelines:
 
@@ -80,6 +139,9 @@ Lock strategy:
 
 - Use only ReentrantLock to avoid any deadlock scenarios.
 - Never use lock() or Monitor.Enter/Exit directly.
+- **Lock order is main-table → index-table** (writes take both during index maintenance). Any code
+  that reads an index and then the main table must release the index scan first — see the
+  `BatchedScan` deadlock rule above. Never hold an index scan open across a main-table read.
 
 ## Critical Invariants
 
@@ -97,7 +159,28 @@ Lock strategy:
 5. `WalHeap` uses `ConcurrentDictionary<long, byte[]>` for lock-free pending reads.
 6. Fixed `FindRange` lower-bound edge case (`idx < 0 => idx = 0`).
 7. Replaced stale branch ownership assertion in `DoFall` with defensive reassignment.
-8. **Throughput-decay fix (2026-06):** all `lock()`/`Monitor` replaced with `ReentrantLock`. Locking
+8. **Streaming index scans + ordered index reads (2026-06):** `TableIndexManager` no longer
+   materializes all matching primary keys into a `List`. `BatchedScan` pages the index (4096/hop),
+   never holding the index scan open across a main-table read (deadlock-safe per the main→index lock
+   order). Added descending (`backward`) and exclusive-bound index range scans; `IndexQuery.Backward()`
+   and `OrderBy[Descending](indexedField)` now stream.
+8b. **Cross-index drive + covering composite (2026-06):** `OrderingPlanner` + `OrderedQuery` drive
+   ORDER BY a different indexed field from that field's index, re-applying the source query as a
+   residual; multi-key sorts run-buffer only equal-leading-key groups, OR — when a single composite
+   index covers all keys with one direction — stream the composite end-to-end (O(1) memory). Demo:
+   `CatDb.GettingStarted/SortDemo.cs`.
+8c. **Composite prefix scan + mixed direction + Top-K (2026-06):** `WHERE a=v ORDER BY b` now scans
+   the composite `(a,b)` index by the `a=v` prefix — one ordered range scan, no residual, no N+1 heap
+   fetch. Mixed-direction covering composites stream the lead + run-sort groups. `Take` everywhere
+   uses a bounded Top-K heap (O(Skip+Take) memory). `SortStressService` heavy reads ~40% faster.
+8d. **WTree-seek bounds + multi-col/mixed prefix + Remote (2026-06):** all index range/prefix/equality
+   bounds are exact composite keys built from min/max **sentinels** (`Sentinels`), so the WTree seeks
+   to the bound instead of scanning-and-skipping (fixes negative-PK loss; descending no longer
+   tail-scans). Prefix scans take multi-column prefixes and mixed-direction trailing. **Remote
+   secondary indexes are fully implemented** (serializers, handlers, `RemoteFieldCodec`, result
+   copy-back, portable-record transform) and validated by an in-process-TCP `RemoteIndexTests`.
+   234/234 tests pass.
+9. **Throughput-decay fix (2026-06):** all `lock()`/`Monitor` replaced with `ReentrantLock`. Locking
    on long-lived `Branch` objects (`lock(this)` / `lock(_rootBranch)`) inflated their CLR sync blocks
    and caused throughput to fall ~50% after minutes (restored only by restart). Each `Branch` now has a
    dedicated `ReentrantLock SyncRoot`; ~2x throughput, 190/190 tests pass. Use `using (x.Lock())` for

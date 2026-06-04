@@ -55,6 +55,7 @@ public sealed class StorageEngineServer
         _tableHandlers[CommandCode.INDEX_DROP]             = IndexDrop;
         _tableHandlers[CommandCode.INDEX_FIND]             = IndexFind;
         _tableHandlers[CommandCode.INDEX_FIND_RANGE]       = IndexFindRange;
+        _tableHandlers[CommandCode.INDEX_FIND_PREFIX]      = IndexFindPrefix;
         _tableHandlers[CommandCode.INDEX_EXISTS]           = IndexExists;
         _tableHandlers[CommandCode.INDEX_COUNT]            = IndexCount;
         _tableHandlers[CommandCode.INDEX_REBUILD]          = IndexRebuild;
@@ -359,32 +360,58 @@ public sealed class StorageEngineServer
         return new IndexDropCommand(cmd.IndexName);
     }
 
+    private static CatDb.Database.Indexing.TableIndexManager Manager(XTablePortable table)
+        => (CatDb.Database.Indexing.TableIndexManager)table.Indexes;
+
     private ICommand IndexFind(XTablePortable table, ICommand command)
     {
         var cmd = (IndexFindCommand)command;
-        var results = table.Indexes.FindByIndex(cmd.IndexName, cmd.FieldValue).ToList();
-        return new IndexFindCommand(cmd.IndexName, cmd.FieldValue) { Results = results };
+        var mgr = Manager(table);
+        var fieldValue = RemoteFieldCodec.Deserialize(cmd.FieldValueRaw, mgr.GetFieldType(cmd.IndexName));
+        var results = mgr.FindByIndex(cmd.IndexName, fieldValue).ToList();
+        return new IndexFindCommand(cmd.IndexName, cmd.FieldValueRaw) { Results = results };
     }
 
     private ICommand IndexFindRange(XTablePortable table, ICommand command)
     {
         var cmd = (IndexFindRangeCommand)command;
-        var results = table.Indexes.FindByIndexRange(cmd.IndexName, cmd.From, cmd.HasFrom, cmd.To, cmd.HasTo).ToList();
-        return new IndexFindRangeCommand(cmd.IndexName, cmd.From, cmd.HasFrom, cmd.To, cmd.HasTo) { Results = results };
+        var mgr = Manager(table);
+        var fieldType = mgr.GetFieldType(cmd.IndexName);
+        var from = cmd.HasFrom ? RemoteFieldCodec.Deserialize(cmd.FromRaw!, fieldType) : null;
+        var to = cmd.HasTo ? RemoteFieldCodec.Deserialize(cmd.ToRaw!, fieldType) : null;
+        var results = mgr.FindByIndexRange(
+            cmd.IndexName, from, cmd.HasFrom, cmd.FromInclusive, to, cmd.HasTo, cmd.ToInclusive, cmd.Backward).ToList();
+        return new IndexFindRangeCommand(
+            cmd.IndexName, cmd.FromRaw, cmd.HasFrom, cmd.FromInclusive, cmd.ToRaw, cmd.HasTo, cmd.ToInclusive, cmd.Backward)
+        { Results = results };
+    }
+
+    private ICommand IndexFindPrefix(XTablePortable table, ICommand command)
+    {
+        var cmd = (IndexFindPrefixCommand)command;
+        var mgr = Manager(table);
+        var prefixType = mgr.GetPrefixType(cmd.IndexName, cmd.PrefixFieldCount);
+        var prefix = RemoteFieldCodec.Deserialize(cmd.PrefixRaw, prefixType);
+        var results = mgr.FindByIndexPrefix(cmd.IndexName, prefix, cmd.PrefixFieldCount, cmd.Backward).ToList();
+        return new IndexFindPrefixCommand(cmd.IndexName, cmd.PrefixRaw, cmd.PrefixFieldCount, cmd.Backward) { Results = results };
     }
 
     private ICommand IndexExists(XTablePortable table, ICommand command)
     {
         var cmd = (IndexExistsCommand)command;
-        var result = table.Indexes.ExistsInIndex(cmd.IndexName, cmd.FieldValue);
-        return new IndexExistsCommand(cmd.IndexName, cmd.FieldValue) { Result = result };
+        var mgr = Manager(table);
+        var fieldValue = RemoteFieldCodec.Deserialize(cmd.FieldValueRaw, mgr.GetFieldType(cmd.IndexName));
+        var result = mgr.ExistsInIndex(cmd.IndexName, fieldValue);
+        return new IndexExistsCommand(cmd.IndexName, cmd.FieldValueRaw) { Result = result };
     }
 
     private ICommand IndexCount(XTablePortable table, ICommand command)
     {
         var cmd = (IndexCountCommand)command;
-        var result = table.Indexes.CountByIndex(cmd.IndexName, cmd.FieldValue);
-        return new IndexCountCommand(cmd.IndexName, cmd.FieldValue) { Result = result };
+        var mgr = Manager(table);
+        var fieldValue = RemoteFieldCodec.Deserialize(cmd.FieldValueRaw, mgr.GetFieldType(cmd.IndexName));
+        var result = mgr.CountByIndex(cmd.IndexName, fieldValue);
+        return new IndexCountCommand(cmd.IndexName, cmd.FieldValueRaw) { Result = result };
     }
 
     private ICommand IndexRebuild(XTablePortable table, ICommand command)

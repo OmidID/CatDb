@@ -109,72 +109,331 @@ internal sealed class TableIndexManager : ITableIndexManager
     }
 
     // ── Search operations ────────────────────────────────────────────────────
+    //
+    // All index reads STREAM. They never hold the index-table scan open while doing a
+    // main-table point lookup: a writer locks main→index, so a reader holding the index
+    // scan open and then reading main would invert the order and deadlock. BatchedScan
+    // re-seeks page-by-page (each page fully closes its enumerator before any record
+    // fetch), so only one table lock is ever held at a time and memory is bounded to one
+    // page — not the whole result set.
+
+    /// <summary>Page size for streaming index scans (rows of index keys buffered per hop).</summary>
+    private const int ScanBatchSize = 4096;
+
+    private IndexEntry GetEntry(string indexName) =>
+        _indexes.TryGetValue(indexName, out var entry)
+            ? entry
+            : throw new KeyNotFoundException($"Index '{indexName}' not found.");
 
     public IEnumerable<KeyValuePair<IData, IData>> FindByIndex(string indexName, IData fieldValue)
     {
-        if (!_indexes.TryGetValue(indexName, out var entry))
-            throw new KeyNotFoundException($"Index '{indexName}' not found.");
-
-        // Must flush the main table to ensure we read fresh data
-        _table.Flush();
-
-        if (entry.Definition.Type == IndexType.Unique)
-            return FindByUniqueIndex(entry, fieldValue);
-        else
-            return FindByNonUniqueIndex(entry, fieldValue);
+        var entry = GetEntry(indexName);
+        _table.Flush(); // ensure index sees committed writes
+        return StreamRecords(FindKeysByIndexCore(entry, fieldValue));
     }
 
     public IEnumerable<IData> FindKeysByIndex(string indexName, IData fieldValue)
     {
-        if (!_indexes.TryGetValue(indexName, out var entry))
-            throw new KeyNotFoundException($"Index '{indexName}' not found.");
-
+        var entry = GetEntry(indexName);
         _table.Flush();
-
-        if (entry.Definition.Type == IndexType.Unique)
-            return FindKeysByUniqueIndex(entry, fieldValue);
-        else
-            return FindKeysByNonUniqueIndex(entry, fieldValue);
+        return FindKeysByIndexCore(entry, fieldValue);
     }
 
+    private IEnumerable<IData> FindKeysByIndexCore(IndexEntry entry, IData fieldValue) =>
+        entry.Definition.Type == IndexType.Unique
+            ? FindKeysByUniqueIndex(entry, fieldValue)
+            : FindKeysByNonUniqueIndex(entry, fieldValue);
+
     public IEnumerable<KeyValuePair<IData, IData>> FindByIndexRange(
-        string indexName, IData? from, bool hasFrom, IData? to, bool hasTo)
+        string indexName,
+        IData? from, bool hasFrom, bool fromInclusive,
+        IData? to, bool hasTo, bool toInclusive,
+        bool backward)
     {
-        if (!_indexes.TryGetValue(indexName, out var entry))
-            throw new KeyNotFoundException($"Index '{indexName}' not found.");
-
+        var entry = GetEntry(indexName);
         _table.Flush();
+        var keys = entry.Definition.Type == IndexType.Unique
+            ? ScanUniqueRangeKeys(entry, from, hasFrom, fromInclusive, to, hasTo, toInclusive, backward)
+            : ScanNonUniqueRangeKeys(entry, from, hasFrom, fromInclusive, to, hasTo, toInclusive, backward);
+        return StreamRecords(keys);
+    }
 
-        if (entry.Definition.Type == IndexType.Unique)
-            return FindRangeUniqueIndex(entry, from, hasFrom, to, hasTo);
+    public IEnumerable<KeyValuePair<IData, IData>> FindByIndexPrefix(
+        string indexName, IData prefixValue, int prefixFieldCount, bool backward)
+    {
+        var entry = GetEntry(indexName);
+        if (entry.CompositeKeyType is null)
+            throw new InvalidOperationException(
+                $"Index '{indexName}' is not a composite index; prefix scan is not applicable.");
+        if (prefixFieldCount < 1 || prefixFieldCount >= entry.Definition.SlotIndices.Length)
+            throw new ArgumentOutOfRangeException(nameof(prefixFieldCount),
+                "Prefix must cover at least one and fewer than all indexed fields.");
+        _table.Flush();
+        return StreamRecords(ScanPrefixKeys(entry, prefixValue, prefixFieldCount, backward));
+    }
+
+    /// <summary>
+    /// Streams primary keys whose composite index entry's leading <paramref name="prefixLen"/>
+    /// field(s) equal <paramref name="prefixValue"/>, ordered by the trailing field(s). The prefix
+    /// block is bracketed by exact sentinel bounds [(prefix, MIN…), (prefix, MAX…)] so BOTH ends are
+    /// WTree seeks (forward and backward), not tail scans. Falls back to a filtered length-1 scan
+    /// only when a trailing slot type lacks a max sentinel (e.g. string).
+    /// </summary>
+    private static IEnumerable<IData> ScanPrefixKeys(IndexEntry entry, IData prefixValue, int prefixLen, bool backward)
+    {
+        entry.IndexTable.Flush();
+        var getPk = entry.PkFromCompositeExtractor!;
+
+        var lo = BuildCompositeBound(entry, prefixValue, prefixLen, fillMax: false);
+        var hi = BuildCompositeBound(entry, prefixValue, prefixLen, fillMax: true);
+        if (lo is not null && hi is not null)
+        {
+            foreach (var kv in BatchedScan(entry.IndexTable, lo, true, hi, true, backward))
+                yield return getPk(kv.Key);
+            yield break;
+        }
+
+        // Fallback: trailing type has no max sentinel (string). Only length-1 prefixes have the
+        // compiled extractor needed for the filtered path.
+        if (prefixLen != 1 || entry.PrefixExtractor is null)
+            throw new NotSupportedException(
+                "Prefix scan requires sentinel-seekable trailing types for multi-field prefixes.");
+
+        var getLead = entry.PrefixExtractor;
+        var leadCmp = entry.PrefixComparer!;
+        if (!backward)
+        {
+            var seek = entry.PrefixSeekBuilder!(prefixValue);
+            foreach (var kv in BatchedScan(entry.IndexTable, seek, true, null, false, backward: false))
+            {
+                var c = leadCmp.Compare(getLead(kv.Key), prefixValue);
+                if (c < 0) continue;
+                if (c > 0) yield break;
+                yield return getPk(kv.Key);
+            }
+        }
         else
-            return FindRangeNonUniqueIndex(entry, from, hasFrom, to, hasTo);
+        {
+            foreach (var kv in BatchedScan(entry.IndexTable, null, false, null, false, backward: true))
+            {
+                var c = leadCmp.Compare(getLead(kv.Key), prefixValue);
+                if (c > 0) continue;
+                if (c < 0) yield break;
+                yield return getPk(kv.Key);
+            }
+        }
     }
 
     public bool ExistsInIndex(string indexName, IData fieldValue)
     {
-        if (!_indexes.TryGetValue(indexName, out var entry))
-            throw new KeyNotFoundException($"Index '{indexName}' not found.");
-
+        var entry = GetEntry(indexName);
         _table.Flush();
-
-        if (entry.Definition.Type == IndexType.Unique)
-            return entry.IndexTable.Exists(fieldValue);
-        else
-            return FindKeysByNonUniqueIndex(entry, fieldValue).Any();
+        return entry.Definition.Type == IndexType.Unique
+            ? entry.IndexTable.Exists(fieldValue)
+            : FindKeysByNonUniqueIndex(entry, fieldValue).Any();
     }
 
     public long CountByIndex(string indexName, IData fieldValue)
     {
-        if (!_indexes.TryGetValue(indexName, out var entry))
-            throw new KeyNotFoundException($"Index '{indexName}' not found.");
-
+        var entry = GetEntry(indexName);
         _table.Flush();
+        return entry.Definition.Type == IndexType.Unique
+            ? entry.IndexTable.Exists(fieldValue) ? 1 : 0
+            : FindKeysByNonUniqueIndex(entry, fieldValue).LongCount();
+    }
 
-        if (entry.Definition.Type == IndexType.Unique)
-            return entry.IndexTable.Exists(fieldValue) ? 1 : 0;
+    /// <summary>
+    /// Streams (primaryKey → record) by point-looking-up each primary key. The
+    /// <paramref name="primaryKeys"/> source must itself be lock-release-between-yields
+    /// (i.e. BatchedScan-backed), so no index lock is held while we read the main table.
+    /// </summary>
+    private IEnumerable<KeyValuePair<IData, IData>> StreamRecords(IEnumerable<IData> primaryKeys)
+    {
+        foreach (var pk in primaryKeys)
+            if (_table.TryGet(pk, out var record))
+                yield return new KeyValuePair<IData, IData>(pk, record);
+    }
+
+    /// <summary>
+    /// Forward/backward streaming scan over an index table that NEVER holds the scan open
+    /// across yields. Each page is materialized then its enumerator disposed (releasing the
+    /// table lock); the next page re-seeks from the last key (inclusive) and drops the one
+    /// duplicate boundary entry. Bounds are inclusive in index-key space.
+    /// </summary>
+    private static IEnumerable<KeyValuePair<IData, IData>> BatchedScan(
+        XTablePortable table, IData? lo, bool hasLo, IData? hi, bool hasHi, bool backward)
+    {
+        var cmp = table.Locator.KeyComparer!;
+        var cursor = backward ? hi : lo;
+        var hasCursor = backward ? hasHi : hasLo;
+        var first = true;
+
+        while (true)
+        {
+            // .Take().ToList() fully drains+disposes the Forward/Backward iterator,
+            // so the index-table lock is released before we return any element.
+            var page = backward
+                ? table.Backward(cursor!, hasCursor, lo!, hasLo).Take(ScanBatchSize).ToList()
+                : table.Forward(cursor!, hasCursor, hi!, hasHi).Take(ScanBatchSize).ToList();
+
+            if (page.Count == 0)
+                yield break;
+
+            var start = 0;
+            if (!first)
+                while (start < page.Count && cmp.Compare(page[start].Key, cursor!) == 0)
+                    start++; // skip the re-seek boundary duplicate (index keys are unique)
+
+            for (var i = start; i < page.Count; i++)
+                yield return page[i];
+
+            if (page.Count < ScanBatchSize)
+                yield break; // last (partial) page
+
+            cursor = page[^1].Key;
+            hasCursor = true;
+            first = false;
+        }
+    }
+
+    private IEnumerable<IData> ScanUniqueRangeKeys(
+        IndexEntry entry,
+        IData? from, bool hasFrom, bool fromInclusive,
+        IData? to, bool hasTo, bool toInclusive,
+        bool backward)
+    {
+        entry.IndexTable.Flush();
+        var eq = entry.FieldEquals;
+
+        // Unique index key IS the field value, so range bounds map directly.
+        foreach (var kv in BatchedScan(entry.IndexTable, from, hasFrom, to, hasTo, backward))
+        {
+            var field = kv.Key;
+            if (hasFrom && !fromInclusive && eq(field, from!)) continue;
+            if (hasTo && !toInclusive && eq(field, to!)) continue;
+            yield return kv.Value; // stored primary key
+        }
+    }
+
+    private IEnumerable<IData> ScanNonUniqueRangeKeys(
+        IndexEntry entry,
+        IData? from, bool hasFrom, bool fromInclusive,
+        IData? to, bool hasTo, bool toInclusive,
+        bool backward)
+    {
+        entry.IndexTable.Flush();
+        var fieldCount = entry.Definition.SlotIndices.Length;
+
+        // Encode field-level inclusivity into the trailing primary-key sentinel so the WHOLE bound
+        // is a single composite key the WTree can seek to:
+        //   field >= from → (from, MIN_pk) ;  field >  from → (from, MAX_pk)
+        //   field <= to   → (to,   MAX_pk) ;  field <  to   → (to,   MIN_pk)
+        var lo = hasFrom ? BuildCompositeBound(entry, from!, fieldCount, fillMax: !fromInclusive) : null;
+        var hi = hasTo ? BuildCompositeBound(entry, to!, fieldCount, fillMax: toInclusive) : null;
+
+        var getPk = entry.PkFromCompositeExtractor!;
+        if ((!hasFrom || lo is not null) && (!hasTo || hi is not null))
+        {
+            // Pure WTree-seek range scan: Forward/Backward stop at the bounds natively — no skipping.
+            foreach (var kv in BatchedScan(entry.IndexTable, lo, hasFrom, hi, hasTo, backward))
+                yield return getPk(kv.Key);
+            yield break;
+        }
+
+        // Fallback (a trailing type has no sentinel, e.g. string primary key): seek the available end
+        // and bracket the other by field comparison.
+        foreach (var pk in ScanNonUniqueRangeKeysFiltered(entry, from, hasFrom, fromInclusive, to, hasTo, toInclusive, backward))
+            yield return pk;
+    }
+
+    private IEnumerable<IData> ScanNonUniqueRangeKeysFiltered(
+        IndexEntry entry,
+        IData? from, bool hasFrom, bool fromInclusive,
+        IData? to, bool hasTo, bool toInclusive,
+        bool backward)
+    {
+        var fcmp = entry.FieldComparer;
+        var getField = entry.FieldFromCompositeExtractor!;
+        var getPk = entry.PkFromCompositeExtractor!;
+
+        if (!backward)
+        {
+            var lo = hasFrom ? entry.ScanFromKeyBuilder!(from!) : null;
+            foreach (var kv in BatchedScan(entry.IndexTable, lo, hasFrom, null, false, backward: false))
+            {
+                var field = getField(kv.Key);
+                if (hasFrom)
+                {
+                    var c = fcmp.Compare(field, from!);
+                    if (c < 0) continue;
+                    if (c == 0 && !fromInclusive) continue;
+                }
+                if (hasTo)
+                {
+                    var c = fcmp.Compare(field, to!);
+                    if (c > 0) yield break;
+                    if (c == 0 && !toInclusive) continue;
+                }
+                yield return getPk(kv.Key);
+            }
+        }
         else
-            return FindKeysByNonUniqueIndex(entry, fieldValue).LongCount();
+        {
+            foreach (var kv in BatchedScan(entry.IndexTable, null, false, null, false, backward: true))
+            {
+                var field = getField(kv.Key);
+                if (hasTo)
+                {
+                    var c = fcmp.Compare(field, to!);
+                    if (c > 0) continue;
+                    if (c == 0 && !toInclusive) continue;
+                }
+                if (hasFrom)
+                {
+                    var c = fcmp.Compare(field, from!);
+                    if (c < 0) yield break;
+                    if (c == 0 && !fromInclusive) continue;
+                }
+                yield return getPk(kv.Key);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Builds a composite index key whose leading <paramref name="leadingCount"/> slots come from
+    /// <paramref name="leading"/> (a Data&lt;field&gt; / Data&lt;Slots&lt;…&gt;&gt;) and whose
+    /// trailing slots are filled with the min (or max) sentinel — the exact lower/upper bound for a
+    /// WTree seek. Returns null if any trailing slot type has no sentinel.
+    /// </summary>
+    private static IData? BuildCompositeBound(IndexEntry entry, IData leading, int leadingCount, bool fillMax)
+    {
+        var compositeType = entry.CompositeKeyType!;
+        var ctor = compositeType.GetConstructors()
+            .OrderByDescending(c => c.GetParameters().Length).First();
+        var ps = ctor.GetParameters();
+        var args = new object?[ps.Length];
+
+        var leadingValue = leading.GetType().GetField("Value")!.GetValue(leading);
+        if (leadingCount == 1)
+        {
+            args[0] = leadingValue;
+        }
+        else
+        {
+            for (var i = 0; i < leadingCount; i++)
+                args[i] = leadingValue!.GetType().GetField($"Slot{i}")!.GetValue(leadingValue);
+        }
+
+        for (var i = leadingCount; i < ps.Length; i++)
+        {
+            var slotType = SlotAccessor.GetSlotType(compositeType, i);
+            if (!Sentinels.TryGet(slotType, fillMax, out var sentinel))
+                return null;
+            args[i] = sentinel;
+        }
+
+        var composite = ctor.Invoke(args);
+        return (IData)Activator.CreateInstance(typeof(Data<>).MakeGenericType(compositeType), composite)!;
     }
 
     // ── Write interception (called by XTablePortable) ────────────────────────
@@ -288,8 +547,9 @@ internal sealed class TableIndexManager : ITableIndexManager
             fieldType = DataTypeUtils.BuildType(fieldDataType);
         }
 
-        // Build field equality comparer
+        // Build field equality + ordering comparers (ordering drives range stop conditions).
         var fieldEquals = SlotAccessor.BuildFieldEqualityComparer(fieldType);
+        var fieldComparer = new DataComparer(fieldType);
 
         XTablePortable indexTable;
         Func<IData, IData, IData>? nonUniqueKeyBuilder = null;
@@ -297,6 +557,10 @@ internal sealed class TableIndexManager : ITableIndexManager
         Func<IData, IData>? fieldFromCompositeExtractor = null;
         Func<IData, IData>? pkFromCompositeExtractor = null;
         Type? compositeKeyType = null;
+        // Prefix (leading single field) tooling — only built for composite indexes (≥2 fields).
+        Func<IData, IData>? prefixExtractor = null;
+        Func<IData, IData>? prefixSeekBuilder = null;
+        IComparer<IData>? prefixComparer = null;
 
         if (def.Type == IndexType.Unique)
         {
@@ -330,13 +594,38 @@ internal sealed class TableIndexManager : ITableIndexManager
                 compositeKeyType, def.SlotIndices.Length);
             pkFromCompositeExtractor = SlotAccessor.BuildPrimaryKeyExtractorFromCompositeKey(
                 compositeKeyType, def.SlotIndices.Length + 1);
+
+            if (def.SlotIndices.Length >= 2)
+            {
+                // Leading-field (prefix length 1) tooling for composite prefix scans.
+                var leadingType = SlotAccessor.GetSlotType(compositeKeyType, 0);
+                prefixExtractor = SlotAccessor.BuildFieldExtractorFromCompositeKey(compositeKeyType, 1);
+                prefixSeekBuilder = SlotAccessor.BuildPrefixSeekKeyBuilder(compositeKeyType, leadingType, 1);
+                prefixComparer = new DataComparer(leadingType);
+            }
         }
 
         return new IndexEntry(
-            def, indexTable, fieldExtractor, fieldEquals,
+            def, indexTable, fieldExtractor, fieldEquals, fieldComparer,
             nonUniqueKeyBuilder, scanFromKeyBuilder,
             fieldFromCompositeExtractor, pkFromCompositeExtractor,
-            compositeKeyType);
+            compositeKeyType, prefixExtractor, prefixSeekBuilder, prefixComparer, fieldType);
+    }
+
+    /// <summary>The .NET type of an index's field value (single-slot scalar or composite Slots).</summary>
+    internal Type GetFieldType(string indexName) => GetEntry(indexName).FieldType;
+
+    /// <summary>The .NET type of the leading <paramref name="prefixLen"/> slots of a composite index.</summary>
+    internal Type GetPrefixType(string indexName, int prefixLen)
+    {
+        var entry = GetEntry(indexName);
+        if (entry.CompositeKeyType is null)
+            throw new InvalidOperationException($"Index '{indexName}' is not composite.");
+        if (prefixLen == 1)
+            return SlotAccessor.GetSlotType(entry.CompositeKeyType, 0);
+        var types = Enumerable.Range(0, prefixLen)
+            .Select(i => SlotAccessor.GetSlotType(entry.CompositeKeyType, i)).ToArray();
+        return SlotsBuilder.BuildType(types);
     }
 
     private void RebuildEntry(IndexEntry entry)
@@ -373,96 +662,39 @@ internal sealed class TableIndexManager : ITableIndexManager
         entry.IndexTable.Flush();
     }
 
-    private IEnumerable<KeyValuePair<IData, IData>> FindByUniqueIndex(IndexEntry entry, IData fieldValue)
+    private static IEnumerable<IData> FindKeysByUniqueIndex(IndexEntry entry, IData fieldValue)
     {
         entry.IndexTable.Flush();
-        if (!entry.IndexTable.TryGet(fieldValue, out var primaryKey))
-            yield break;
-
-        if (_table.TryGet(primaryKey, out var record))
-            yield return new KeyValuePair<IData, IData>(primaryKey, record);
-    }
-
-    private IEnumerable<IData> FindKeysByUniqueIndex(IndexEntry entry, IData fieldValue)
-    {
-        entry.IndexTable.Flush();
+        // O(log N) point lookup — releases the lock before yielding, so StreamRecords is safe.
         if (entry.IndexTable.TryGet(fieldValue, out var primaryKey))
             yield return primaryKey;
     }
 
-    private IEnumerable<KeyValuePair<IData, IData>> FindByNonUniqueIndex(IndexEntry entry, IData fieldValue)
-    {
-        // Materialize keys first to avoid recursive lock
-        var keys = FindKeysByNonUniqueIndex(entry, fieldValue).ToList();
-        foreach (var pk in keys)
-        {
-            if (_table.TryGet(pk, out var record))
-                yield return new KeyValuePair<IData, IData>(pk, record);
-        }
-    }
-
-    private IEnumerable<IData> FindKeysByNonUniqueIndex(IndexEntry entry, IData fieldValue)
+    private static IEnumerable<IData> FindKeysByNonUniqueIndex(IndexEntry entry, IData fieldValue)
     {
         entry.IndexTable.Flush();
+        var fieldCount = entry.Definition.SlotIndices.Length;
+        var getPk = entry.PkFromCompositeExtractor!;
 
+        // Equal-field block = [(field, MIN_pk), (field, MAX_pk)] — a single WTree-seekable range
+        // that includes negative/min primary keys (the old (field, defaultPk) lower bound skipped
+        // any pk < default).
+        var lo = BuildCompositeBound(entry, fieldValue, fieldCount, fillMax: false);
+        var hi = BuildCompositeBound(entry, fieldValue, fieldCount, fillMax: true);
+        if (lo is not null && hi is not null)
+        {
+            foreach (var kv in BatchedScan(entry.IndexTable, lo, true, hi, true, backward: false))
+                yield return getPk(kv.Key);
+            yield break;
+        }
+
+        // Fallback (string primary key — no max sentinel): seek the field block and stop on change.
         var fromKey = entry.ScanFromKeyBuilder!(fieldValue);
-
-        // Materialize to avoid recursive lock (both tables share same WTree)
-        var results = new List<IData>();
-        foreach (var kv in entry.IndexTable.Forward(fromKey, true, default!, false))
+        foreach (var kv in BatchedScan(entry.IndexTable, fromKey, true, null, false, backward: false))
         {
-            var extractedField = entry.FieldFromCompositeExtractor!(kv.Key);
-            if (!entry.FieldEquals(extractedField, fieldValue))
-                break;
-            results.Add(entry.PkFromCompositeExtractor!(kv.Key));
-        }
-        return results;
-    }
-
-    private IEnumerable<KeyValuePair<IData, IData>> FindRangeUniqueIndex(
-        IndexEntry entry, IData? from, bool hasFrom, IData? to, bool hasTo)
-    {
-        entry.IndexTable.Flush();
-
-        // Materialize primary keys first
-        var keys = entry.IndexTable.Forward(from!, hasFrom, to!, hasTo)
-            .Select(kv => kv.Value)
-            .ToList();
-
-        foreach (var pk in keys)
-        {
-            if (_table.TryGet(pk, out var record))
-                yield return new KeyValuePair<IData, IData>(pk, record);
-        }
-    }
-
-    private IEnumerable<KeyValuePair<IData, IData>> FindRangeNonUniqueIndex(
-        IndexEntry entry, IData? from, bool hasFrom, IData? to, bool hasTo)
-    {
-        entry.IndexTable.Flush();
-
-        var fromComposite = hasFrom ? entry.ScanFromKeyBuilder!(from!) : default;
-        var toComposite = hasTo ? entry.ScanFromKeyBuilder!(to!) : default;
-
-        // Materialize keys first
-        var keys = new List<IData>();
-        foreach (var kv in entry.IndexTable.Forward(fromComposite!, hasFrom, toComposite!, hasTo))
-        {
-            // For 'to' bound: stop when field portion > to
-            if (hasTo)
-            {
-                var field = entry.FieldFromCompositeExtractor!(kv.Key);
-                // We compare field > to by checking !(field == to) after we've passed the range
-                // Actually we let the WTree's natural ordering handle most of this,
-                // but composite keys sort by field first so this is correct.
-            }
-            keys.Add(entry.PkFromCompositeExtractor!(kv.Key));
-        }
-
-        foreach (var pk in keys)
-        {
-            if (_table.TryGet(pk, out var record))
-                yield return new KeyValuePair<IData, IData>(pk, record);
+            if (!entry.FieldEquals(entry.FieldFromCompositeExtractor!(kv.Key), fieldValue))
+                yield break;
+            yield return getPk(kv.Key);
         }
     }
 
@@ -526,32 +758,48 @@ internal sealed class TableIndexManager : ITableIndexManager
         public readonly XTablePortable IndexTable;
         public readonly Func<IData, IData> FieldExtractor;
         public readonly Func<IData, IData, bool> FieldEquals;
+        public readonly IComparer<IData> FieldComparer;
         public readonly Func<IData, IData, IData>? NonUniqueKeyBuilder;
         public readonly Func<IData, IData>? ScanFromKeyBuilder;
         public readonly Func<IData, IData>? FieldFromCompositeExtractor;
         public readonly Func<IData, IData>? PkFromCompositeExtractor;
         public readonly Type? CompositeKeyType;
+        // Prefix-length-1 tooling for composite prefix scans (null for unique / single-field).
+        public readonly Func<IData, IData>? PrefixExtractor;
+        public readonly Func<IData, IData>? PrefixSeekBuilder;
+        public readonly IComparer<IData>? PrefixComparer;
+        public readonly Type FieldType;
 
         public IndexEntry(
             IndexDefinition definition,
             XTablePortable indexTable,
             Func<IData, IData> fieldExtractor,
             Func<IData, IData, bool> fieldEquals,
+            IComparer<IData> fieldComparer,
             Func<IData, IData, IData>? nonUniqueKeyBuilder,
             Func<IData, IData>? scanFromKeyBuilder,
             Func<IData, IData>? fieldFromCompositeExtractor,
             Func<IData, IData>? pkFromCompositeExtractor,
-            Type? compositeKeyType)
+            Type? compositeKeyType,
+            Func<IData, IData>? prefixExtractor,
+            Func<IData, IData>? prefixSeekBuilder,
+            IComparer<IData>? prefixComparer,
+            Type fieldType)
         {
             Definition = definition;
             IndexTable = indexTable;
             FieldExtractor = fieldExtractor;
             FieldEquals = fieldEquals;
+            FieldComparer = fieldComparer;
             NonUniqueKeyBuilder = nonUniqueKeyBuilder;
             ScanFromKeyBuilder = scanFromKeyBuilder;
             FieldFromCompositeExtractor = fieldFromCompositeExtractor;
             PkFromCompositeExtractor = pkFromCompositeExtractor;
             CompositeKeyType = compositeKeyType;
+            PrefixExtractor = prefixExtractor;
+            PrefixSeekBuilder = prefixSeekBuilder;
+            PrefixComparer = prefixComparer;
+            FieldType = fieldType;
         }
     }
 }

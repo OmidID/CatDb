@@ -99,11 +99,14 @@ public static class TableIndexExtensions
         this ITable<TKey, TRecord> table,
         string indexName,
         TField from, bool hasFrom,
-        TField to, bool hasTo)
+        TField to, bool hasTo,
+        bool fromInclusive = true, bool toInclusive = true,
+        bool backward = false)
     {
         var fromData = hasFrom ? new Data<TField>(from) : null;
         var toData = hasTo ? new Data<TField>(to) : null;
-        foreach (var kv in table.Indexes.FindByIndexRange(indexName, fromData, hasFrom, toData, hasTo))
+        foreach (var kv in table.Indexes.FindByIndexRange(
+            indexName, fromData, hasFrom, fromInclusive, toData, hasTo, toInclusive, backward))
             yield return ConvertPair<TKey, TRecord>(kv);
     }
 
