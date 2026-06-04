@@ -3,6 +3,7 @@
 
 using System.Collections;
 using System.Linq.Expressions;
+using CatDb.Data;
 using CatDb.Database;
 
 namespace CatDb.Extensions;
@@ -119,24 +120,85 @@ public sealed class TableQuery<TKey, TRecord> : IEnumerable<KeyValuePair<TKey, T
     // ── Ordering (sort the filtered result set by any field or the key) ───────
 
     /// <summary>
-    /// Order the results by a record field, ascending. Returns an
-    /// <see cref="OrderedQuery{TKey,TRecord}"/> on which further
-    /// <c>OrderBy</c>/<c>OrderByDescending</c> calls add secondary sort keys.
+    /// Order the results by a record field, ascending. If that field has its own index, iteration
+    /// is driven from it (streaming sorted, with the key range re-applied as a residual filter);
+    /// otherwise the filtered set is buffered and stable-sorted.
     /// </summary>
     public OrderedQuery<TKey, TRecord> OrderBy<TOrder>(Expression<Func<TRecord, TOrder>> selector)
-        => new(this, OrderedQuery<TKey, TRecord>.SortStep.ForField(selector, descending: false));
+        => BuildOrder(selector, descending: false);
 
-    /// <summary>Order the results by a record field, descending.</summary>
+    /// <summary>Order the results by a record field, descending (same strategy as <see cref="OrderBy{TOrder}"/>).</summary>
     public OrderedQuery<TKey, TRecord> OrderByDescending<TOrder>(Expression<Func<TRecord, TOrder>> selector)
-        => new(this, OrderedQuery<TKey, TRecord>.SortStep.ForField(selector, descending: true));
+        => BuildOrder(selector, descending: true);
 
-    /// <summary>Order the results by the primary key, ascending.</summary>
+    private OrderedQuery<TKey, TRecord> BuildOrder<TOrder>(Expression<Func<TRecord, TOrder>> selector, bool descending)
+    {
+        var residual = BuildKeyResidual();
+        var driver = OrderingPlanner.IndexDriver(_table, selector);
+        // driver != null → single-field index drive; otherwise a covering composite index may still
+        // stream all keys (resolved at enumeration), else buffered sort.
+        return new(_table, this, residual,
+            OrderedQuery<TKey, TRecord>.SortStep.ForField(selector, descending, driver));
+    }
+
+    /// <summary>
+    /// Residual predicate replaying this query's key bounds and <c>Where</c> filter — used to drop
+    /// non-matching rows when ordering is driven from a secondary index rather than the key scan.
+    /// </summary>
+    private Func<KeyValuePair<TKey, TRecord>, bool>? BuildKeyResidual()
+    {
+        if (!_hasFrom && !_hasTo && _filter is null)
+            return null;
+
+        var dc = new DataComparer(typeof(TKey));
+        var cmp = System.Collections.Generic.Comparer<TKey>.Create(
+            (a, b) => dc.Compare(new Data<TKey>(a!), new Data<TKey>(b!)));
+        TKey from = _from, to = _to;
+        bool hasFrom = _hasFrom, hasTo = _hasTo, fromExcl = _fromExclusive, toExcl = _toExclusive;
+        var filter = _filter;
+        return kv =>
+        {
+            var k = kv.Key;
+            if (hasFrom)
+            {
+                var c = cmp.Compare(k, from);
+                if (c < 0 || (c == 0 && fromExcl)) return false;
+            }
+            if (hasTo)
+            {
+                var c = cmp.Compare(k, to);
+                if (c > 0 || (c == 0 && toExcl)) return false;
+            }
+            return filter is null || filter(k);
+        };
+    }
+
+    /// <summary>
+    /// Order the results by the primary key, ascending.
+    /// <para>This is the WTree's natural leaf order, so it is served by a streaming
+    /// engine scan (<see cref="ITable{TKey,TRecord}.Scan"/>) with <b>no buffering</b> —
+    /// O(log N + k), safe on arbitrarily large tables.</para>
+    /// </summary>
     public OrderedQuery<TKey, TRecord> OrderByKey()
-        => new(this, OrderedQuery<TKey, TRecord>.SortStep.ForKey(descending: false));
+        => OrderedQuery<TKey, TRecord>.Streaming(StreamOrdered(descending: false));
 
-    /// <summary>Order the results by the primary key, descending.</summary>
+    /// <summary>
+    /// Order the results by the primary key, descending — served by a streaming
+    /// backward engine scan (<see cref="ITable{TKey,TRecord}.ScanBackward"/>), no buffering.
+    /// </summary>
     public OrderedQuery<TKey, TRecord> OrderByKeyDescending()
-        => new(this, OrderedQuery<TKey, TRecord>.SortStep.ForKey(descending: true));
+        => OrderedQuery<TKey, TRecord>.Streaming(StreamOrdered(descending: true));
+
+    /// <summary>
+    /// Streams the bounded result set in primary-key order using the engine's
+    /// Forward/Backward leaf iteration. No buffering, no Take/Skip pushdown
+    /// (the wrapping <see cref="OrderedQuery{TKey,TRecord}"/> applies those).
+    /// </summary>
+    internal IEnumerable<KeyValuePair<TKey, TRecord>> StreamOrdered(bool descending)
+    {
+        var q = BuildKeyQuery();
+        return descending ? _table.ScanBackward(q) : _table.Scan(q);
+    }
 
     // ── String-specific: called via extension method ─────────────────────────
 

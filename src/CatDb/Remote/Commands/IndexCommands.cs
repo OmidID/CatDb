@@ -38,16 +38,19 @@ public class IndexDropCommand : ICommand
     public bool IsSynchronous => true;
 }
 
+// Field values cross the wire as raw bytes (serialized via DataPersist of the field type), since the
+// index field type differs from the table's key/record types the connection's persisters know.
+
 public class IndexFindCommand : ICommand
 {
     public string IndexName;
-    public IData FieldValue;
+    public byte[] FieldValueRaw;
     public List<KeyValuePair<IData, IData>>? Results;
 
-    public IndexFindCommand(string indexName, IData fieldValue)
+    public IndexFindCommand(string indexName, byte[] fieldValueRaw)
     {
         IndexName = indexName;
-        FieldValue = fieldValue;
+        FieldValueRaw = fieldValueRaw;
     }
 
     public int Code => CommandCode.INDEX_FIND;
@@ -57,35 +60,63 @@ public class IndexFindCommand : ICommand
 public class IndexFindRangeCommand : ICommand
 {
     public string IndexName;
-    public IData? From;
+    public byte[]? FromRaw;
     public bool HasFrom;
-    public IData? To;
+    public bool FromInclusive;
+    public byte[]? ToRaw;
     public bool HasTo;
+    public bool ToInclusive;
+    public bool Backward;
     public List<KeyValuePair<IData, IData>>? Results;
 
-    public IndexFindRangeCommand(string indexName, IData? from, bool hasFrom, IData? to, bool hasTo)
+    public IndexFindRangeCommand(string indexName,
+        byte[]? fromRaw, bool hasFrom, bool fromInclusive,
+        byte[]? toRaw, bool hasTo, bool toInclusive, bool backward)
     {
         IndexName = indexName;
-        From = from;
+        FromRaw = fromRaw;
         HasFrom = hasFrom;
-        To = to;
+        FromInclusive = fromInclusive;
+        ToRaw = toRaw;
         HasTo = hasTo;
+        ToInclusive = toInclusive;
+        Backward = backward;
     }
 
     public int Code => CommandCode.INDEX_FIND_RANGE;
     public bool IsSynchronous => true;
 }
 
+public class IndexFindPrefixCommand : ICommand
+{
+    public string IndexName;
+    public byte[] PrefixRaw;
+    public int PrefixFieldCount;
+    public bool Backward;
+    public List<KeyValuePair<IData, IData>>? Results;
+
+    public IndexFindPrefixCommand(string indexName, byte[] prefixRaw, int prefixFieldCount, bool backward)
+    {
+        IndexName = indexName;
+        PrefixRaw = prefixRaw;
+        PrefixFieldCount = prefixFieldCount;
+        Backward = backward;
+    }
+
+    public int Code => CommandCode.INDEX_FIND_PREFIX;
+    public bool IsSynchronous => true;
+}
+
 public class IndexExistsCommand : ICommand
 {
     public string IndexName;
-    public IData FieldValue;
+    public byte[] FieldValueRaw;
     public bool Result;
 
-    public IndexExistsCommand(string indexName, IData fieldValue)
+    public IndexExistsCommand(string indexName, byte[] fieldValueRaw)
     {
         IndexName = indexName;
-        FieldValue = fieldValue;
+        FieldValueRaw = fieldValueRaw;
     }
 
     public int Code => CommandCode.INDEX_EXISTS;
@@ -95,13 +126,13 @@ public class IndexExistsCommand : ICommand
 public class IndexCountCommand : ICommand
 {
     public string IndexName;
-    public IData FieldValue;
+    public byte[] FieldValueRaw;
     public long Result;
 
-    public IndexCountCommand(string indexName, IData fieldValue)
+    public IndexCountCommand(string indexName, byte[] fieldValueRaw)
     {
         IndexName = indexName;
-        FieldValue = fieldValue;
+        FieldValueRaw = fieldValueRaw;
     }
 
     public int Code => CommandCode.INDEX_COUNT;

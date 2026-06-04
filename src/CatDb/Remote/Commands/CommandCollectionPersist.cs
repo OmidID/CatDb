@@ -193,6 +193,28 @@ public partial class CommandPersist : IPersist<ICommand>
         _reads[CommandCode.HEAP_DATA_SIZE] = ReadHeapDataSizeCommand;
         _reads[CommandCode.HEAP_SIZE] = ReadHeapSizeCommand;
 
+        // Index command writes
+        _writes[CommandCode.INDEX_CREATE] = WriteIndexCreateCommand;
+        _writes[CommandCode.INDEX_DROP] = WriteIndexDropCommand;
+        _writes[CommandCode.INDEX_FIND] = WriteIndexFindCommand;
+        _writes[CommandCode.INDEX_FIND_RANGE] = WriteIndexFindRangeCommand;
+        _writes[CommandCode.INDEX_FIND_PREFIX] = WriteIndexFindPrefixCommand;
+        _writes[CommandCode.INDEX_EXISTS] = WriteIndexExistsCommand;
+        _writes[CommandCode.INDEX_COUNT] = WriteIndexCountCommand;
+        _writes[CommandCode.INDEX_REBUILD] = WriteIndexRebuildCommand;
+        _writes[CommandCode.INDEX_LIST] = WriteIndexListCommand;
+
+        // Index command reads
+        _reads[CommandCode.INDEX_CREATE] = ReadIndexCreateCommand;
+        _reads[CommandCode.INDEX_DROP] = ReadIndexDropCommand;
+        _reads[CommandCode.INDEX_FIND] = ReadIndexFindCommand;
+        _reads[CommandCode.INDEX_FIND_RANGE] = ReadIndexFindRangeCommand;
+        _reads[CommandCode.INDEX_FIND_PREFIX] = ReadIndexFindPrefixCommand;
+        _reads[CommandCode.INDEX_EXISTS] = ReadIndexExistsCommand;
+        _reads[CommandCode.INDEX_COUNT] = ReadIndexCountCommand;
+        _reads[CommandCode.INDEX_REBUILD] = ReadIndexRebuildCommand;
+        _reads[CommandCode.INDEX_LIST] = ReadIndexListCommand;
+
         _writes[CommandCode.EXCEPTION] = WriteExceptionCommand;
         _reads[CommandCode.EXCEPTION] = ReadExceptionCommand;
     }

@@ -52,6 +52,9 @@ var demos = new List<Demo>
 
     new("Secondary indexes — unique & non-unique",
         () => SecondaryIndexDemo.Run(OpenEngine)),
+
+    new("Ordering — filter then sort by another index/key",
+        () => SortDemo.Run(OpenEngine)),
 };
 
 // ── Menu loop ─────────────────────────────────────────────────────────────────

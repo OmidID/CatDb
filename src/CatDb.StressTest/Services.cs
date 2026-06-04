@@ -1772,3 +1772,193 @@ public sealed class IndexStressService : BackgroundService
         }
     }
 }
+
+/// <summary>
+/// Stresses the ordered-query engine under concurrent mutation: cross-index drive, multi-key
+/// run-sort, covering-composite scans, descending scans, and key ordering. Liveness is the main
+/// goal (no deadlock/exception from the streaming index scans). Ordering is asserted only on
+/// <b>immutable</b> fields (Category, Stock) and the primary key, so concurrent updates cannot
+/// produce false corruption reports; Price is mutated and only exercised for liveness.
+/// </summary>
+public sealed class SortStressService : BackgroundService
+{
+    private static readonly string[] Categories =
+        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot"];
+
+    private readonly StressContext _ctx;
+    private readonly Random _rng;
+    private readonly ITable<long, IndexedProduct> _items;
+    private long _nextId;
+    private bool _ready;
+
+    public SortStressService(string name, StressContext ctx) : base(name)
+    {
+        _ctx = ctx;
+        _rng = new Random(name.GetHashCode() ^ unchecked((int)0xC0FFEE));
+        _items = ctx.Engine.OpenXTable<long, IndexedProduct>("sort_items");
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        if (!_ready)
+        {
+            // Idempotent: a persisted DB may already carry these indexes from a prior run.
+            EnsureIndex("Category", () => _items.CreateIndex("Category", p => p.Category, IndexType.NonUnique));
+            EnsureIndex("Stock", () => _items.CreateIndex("Stock", p => p.Stock, IndexType.NonUnique));
+            EnsureIndex("Price", () => _items.CreateIndex("Price", p => p.Price, IndexType.NonUnique));
+            EnsureIndex("CategoryStock", () => _items.CreateIndex("CategoryStock", new[] { "Category", "Stock" }, IndexType.NonUnique));
+
+            _nextId = _items.LastRow?.Key ?? 0; // continue ids past any persisted rows
+            for (int i = 0; i < 3_000; i++)
+                Insert();
+            _ctx.Commit();
+            _ready = true;
+        }
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var op = _rng.Next(100);
+                if (op < 30) Insert();
+                else if (op < 45) UpdatePrice();      // mutates Price only (Category/Stock immutable)
+                else if (op < 52) DeleteOne();
+                else if (op < 66) ReadCrossIndexAscending();
+                else if (op < 76) ReadCrossIndexDescending();
+                else if (op < 86) ReadCompositeCovering();
+                else if (op < 93) ReadMultiKey();
+                else if (op < 97) ReadKeyOrder();
+                else ReadPriceOrdered();              // mutable field — liveness only
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                Fail(ex, _ctx);
+            }
+
+            await Task.Yield();
+        }
+    }
+
+    // ── Writers ───────────────────────────────────────────────────────────────
+
+    private void Insert()
+    {
+        var id = Interlocked.Increment(ref _nextId);
+        _items.Replace(id, new IndexedProduct
+        {
+            Sku = $"S-{id:D8}",
+            Category = Categories[_rng.Next(Categories.Length)], // immutable after insert
+            Stock = _rng.Next(0, 200),                           // immutable after insert
+            Price = Math.Round(1 + _rng.NextDouble() * 999, 2),
+            Brand = "n/a",
+        });
+        Hit($"insert id={id}");
+    }
+
+    private void UpdatePrice()
+    {
+        var max = Volatile.Read(ref _nextId);
+        if (max <= 0) return;
+        var id = 1 + (long)(_rng.NextDouble() * max);
+        if (_items.TryGet(id, out var p))
+        {
+            p.Price = Math.Round(1 + _rng.NextDouble() * 999, 2); // Category/Stock untouched
+            _items.Replace(id, p);
+            Hit($"price id={id}");
+        }
+    }
+
+    private void DeleteOne()
+    {
+        var max = Volatile.Read(ref _nextId);
+        if (max <= 0) return;
+        var id = 1 + (long)(_rng.NextDouble() * max);
+        _items.Delete(id);
+        Hit($"delete id={id}");
+    }
+
+    // ── Ordered readers (with immutable-field ordering assertions) ─────────────
+
+    private void ReadCrossIndexAscending()
+    {
+        var cat = Categories[_rng.Next(Categories.Length)];
+        // Filter by Category index, ORDER BY Stock index (cross-index drive).
+        var rows = _items.Query(p => p.Category).Equals(cat).OrderBy(p => p.Stock).Take(256).ToList();
+        AssertStockNonDecreasing(rows, $"cross-asc cat={cat}");
+        foreach (var r in rows)
+            if (r.Value.Category != cat) Corrupt($"cross-asc residual leak: {r.Value.Category} != {cat}");
+        Hit($"cross-asc cat={cat} n={rows.Count}");
+    }
+
+    private void ReadCrossIndexDescending()
+    {
+        var cat = Categories[_rng.Next(Categories.Length)];
+        var rows = _items.Query(p => p.Category).Equals(cat).OrderByDescending(p => p.Stock).Take(256).ToList();
+        for (int i = 1; i < rows.Count; i++)
+            if (rows[i - 1].Value.Stock < rows[i].Value.Stock)
+                Corrupt($"cross-desc not descending by Stock cat={cat}");
+        Hit($"cross-desc cat={cat} n={rows.Count}");
+    }
+
+    private void ReadCompositeCovering()
+    {
+        var max = Volatile.Read(ref _nextId);
+        if (max <= 0) return;
+        // ORDER BY (Category, Stock) — served by the covering composite index. Both immutable.
+        var rows = _items.Query().AtLeast(1).AtMost(max)
+            .OrderBy(p => p.Category).ThenBy(p => p.Stock).Take(512).ToList();
+        for (int i = 1; i < rows.Count; i++)
+        {
+            var c = string.CompareOrdinal(rows[i - 1].Value.Category, rows[i].Value.Category);
+            if (c > 0 || (c == 0 && rows[i - 1].Value.Stock > rows[i].Value.Stock))
+                Corrupt("composite (Category,Stock) not non-decreasing");
+        }
+        Hit($"composite n={rows.Count}");
+    }
+
+    private void ReadMultiKey()
+    {
+        var cat = Categories[_rng.Next(Categories.Length)];
+        // Leading Stock (immutable) drives; secondary Price desc (mutable) is run-sorted.
+        var rows = _items.Query(p => p.Category).Equals(cat)
+            .OrderBy(p => p.Stock).OrderByDescending(p => p.Price).Take(256).ToList();
+        AssertStockNonDecreasing(rows, $"multikey cat={cat}");
+        Hit($"multikey cat={cat} n={rows.Count}");
+    }
+
+    private void ReadKeyOrder()
+    {
+        var rows = _items.Query().OrderByKeyDescending().Take(64).ToList();
+        for (int i = 1; i < rows.Count; i++)
+            if (rows[i - 1].Key <= rows[i].Key)
+                Corrupt("key order not strictly descending");
+        Hit($"keyorder n={rows.Count}");
+    }
+
+    private void ReadPriceOrdered()
+    {
+        var cat = Categories[_rng.Next(Categories.Length)];
+        // Price is mutated concurrently → ordering can legitimately race; liveness only.
+        var n = _items.Query(p => p.Category).Equals(cat).OrderBy(p => p.Price).Take(128).Count();
+        Hit($"price-order cat={cat} n={n}");
+    }
+
+    private void AssertStockNonDecreasing(List<KeyValuePair<long, IndexedProduct>> rows, string ctx)
+    {
+        for (int i = 1; i < rows.Count; i++)
+            if (rows[i - 1].Value.Stock > rows[i].Value.Stock)
+                Corrupt($"{ctx}: Stock not non-decreasing ({rows[i - 1].Value.Stock} > {rows[i].Value.Stock})");
+    }
+
+    private void Corrupt(string detail)
+    {
+        Interlocked.Increment(ref TotalErrors);
+        _ctx.RecordError(Name, $"SORT-CORRUPTION: {detail}");
+    }
+
+    private void EnsureIndex(string name, Action create)
+    {
+        if (_items.Indexes.GetIndex(name) is null)
+            create();
+    }
+}

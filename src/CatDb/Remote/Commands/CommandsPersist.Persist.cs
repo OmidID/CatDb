@@ -865,6 +865,203 @@ public partial class CommandPersist
         return list;
     }
 
+    // ── Index command serialization ───────────────────────────────────────────
+    // Field/prefix values are opaque raw bytes (RemoteFieldCodec encodes them with the field type);
+    // result lists are (primaryKey, record) pairs encoded with the table's Key/Record persisters.
+
+    private static void WriteBytes(BinaryWriter writer, byte[]? bytes)
+    {
+        writer.Write(bytes != null);
+        if (bytes == null) return;
+        writer.Write(bytes.Length);
+        writer.Write(bytes);
+    }
+
+    private static byte[]? ReadBytes(BinaryReader reader)
+    {
+        if (!reader.ReadBoolean()) return null;
+        var len = reader.ReadInt32();
+        return reader.ReadBytes(len);
+    }
+
+    private void WriteResults(BinaryWriter writer, List<KeyValuePair<IData, IData>>? results)
+    {
+        writer.Write(results != null);
+        if (results != null)
+            SerializeList(writer, results, results.Count);
+    }
+
+    private List<KeyValuePair<IData, IData>>? ReadResults(BinaryReader reader)
+        => reader.ReadBoolean() ? DeserializeList(reader) : null;
+
+    private static void WriteIndexCreateCommand(BinaryWriter writer, ICommand command)
+    {
+        var cmd = (IndexCreateCommand)command;
+        writer.Write(cmd.IndexName);
+        writer.Write(cmd.SlotIndices.Length);
+        foreach (var s in cmd.SlotIndices) writer.Write(s);
+        writer.Write(cmd.MemberNames.Length);
+        foreach (var m in cmd.MemberNames) writer.Write(m);
+        writer.Write((int)cmd.IndexType);
+    }
+
+    private static IndexCreateCommand ReadIndexCreateCommand(BinaryReader reader)
+    {
+        var name = reader.ReadString();
+        var slots = new int[reader.ReadInt32()];
+        for (var i = 0; i < slots.Length; i++) slots[i] = reader.ReadInt32();
+        var members = new string[reader.ReadInt32()];
+        for (var i = 0; i < members.Length; i++) members[i] = reader.ReadString();
+        var type = (CatDb.Database.Indexing.IndexType)reader.ReadInt32();
+        return new IndexCreateCommand(name, slots, members, type);
+    }
+
+    private static void WriteIndexDropCommand(BinaryWriter writer, ICommand command)
+        => writer.Write(((IndexDropCommand)command).IndexName);
+
+    private static IndexDropCommand ReadIndexDropCommand(BinaryReader reader)
+        => new(reader.ReadString());
+
+    private void WriteIndexFindCommand(BinaryWriter writer, ICommand command)
+    {
+        var cmd = (IndexFindCommand)command;
+        writer.Write(cmd.IndexName);
+        WriteBytes(writer, cmd.FieldValueRaw);
+        WriteResults(writer, cmd.Results);
+    }
+
+    private IndexFindCommand ReadIndexFindCommand(BinaryReader reader)
+    {
+        var name = reader.ReadString();
+        var raw = ReadBytes(reader)!;
+        return new IndexFindCommand(name, raw) { Results = ReadResults(reader) };
+    }
+
+    private void WriteIndexFindRangeCommand(BinaryWriter writer, ICommand command)
+    {
+        var cmd = (IndexFindRangeCommand)command;
+        writer.Write(cmd.IndexName);
+        WriteBytes(writer, cmd.FromRaw);
+        writer.Write(cmd.HasFrom);
+        writer.Write(cmd.FromInclusive);
+        WriteBytes(writer, cmd.ToRaw);
+        writer.Write(cmd.HasTo);
+        writer.Write(cmd.ToInclusive);
+        writer.Write(cmd.Backward);
+        WriteResults(writer, cmd.Results);
+    }
+
+    private IndexFindRangeCommand ReadIndexFindRangeCommand(BinaryReader reader)
+    {
+        var name = reader.ReadString();
+        var fromRaw = ReadBytes(reader);
+        var hasFrom = reader.ReadBoolean();
+        var fromIncl = reader.ReadBoolean();
+        var toRaw = ReadBytes(reader);
+        var hasTo = reader.ReadBoolean();
+        var toIncl = reader.ReadBoolean();
+        var backward = reader.ReadBoolean();
+        return new IndexFindRangeCommand(name, fromRaw, hasFrom, fromIncl, toRaw, hasTo, toIncl, backward)
+        {
+            Results = ReadResults(reader)
+        };
+    }
+
+    private void WriteIndexFindPrefixCommand(BinaryWriter writer, ICommand command)
+    {
+        var cmd = (IndexFindPrefixCommand)command;
+        writer.Write(cmd.IndexName);
+        WriteBytes(writer, cmd.PrefixRaw);
+        writer.Write(cmd.PrefixFieldCount);
+        writer.Write(cmd.Backward);
+        WriteResults(writer, cmd.Results);
+    }
+
+    private IndexFindPrefixCommand ReadIndexFindPrefixCommand(BinaryReader reader)
+    {
+        var name = reader.ReadString();
+        var raw = ReadBytes(reader)!;
+        var count = reader.ReadInt32();
+        var backward = reader.ReadBoolean();
+        return new IndexFindPrefixCommand(name, raw, count, backward) { Results = ReadResults(reader) };
+    }
+
+    private static void WriteIndexExistsCommand(BinaryWriter writer, ICommand command)
+    {
+        var cmd = (IndexExistsCommand)command;
+        writer.Write(cmd.IndexName);
+        WriteBytes(writer, cmd.FieldValueRaw);
+        writer.Write(cmd.Result);
+    }
+
+    private static IndexExistsCommand ReadIndexExistsCommand(BinaryReader reader)
+    {
+        var name = reader.ReadString();
+        var raw = ReadBytes(reader)!;
+        return new IndexExistsCommand(name, raw) { Result = reader.ReadBoolean() };
+    }
+
+    private static void WriteIndexCountCommand(BinaryWriter writer, ICommand command)
+    {
+        var cmd = (IndexCountCommand)command;
+        writer.Write(cmd.IndexName);
+        WriteBytes(writer, cmd.FieldValueRaw);
+        writer.Write(cmd.Result);
+    }
+
+    private static IndexCountCommand ReadIndexCountCommand(BinaryReader reader)
+    {
+        var name = reader.ReadString();
+        var raw = ReadBytes(reader)!;
+        return new IndexCountCommand(name, raw) { Result = reader.ReadInt64() };
+    }
+
+    private static void WriteIndexRebuildCommand(BinaryWriter writer, ICommand command)
+    {
+        var cmd = (IndexRebuildCommand)command;
+        writer.Write(cmd.IndexName != null);
+        if (cmd.IndexName != null) writer.Write(cmd.IndexName);
+    }
+
+    private static IndexRebuildCommand ReadIndexRebuildCommand(BinaryReader reader)
+        => new(reader.ReadBoolean() ? reader.ReadString() : null);
+
+    private static void WriteIndexListCommand(BinaryWriter writer, ICommand command)
+    {
+        var cmd = (IndexListCommand)command;
+        writer.Write(cmd.Results != null);
+        if (cmd.Results == null) return;
+        writer.Write(cmd.Results.Count);
+        foreach (var def in cmd.Results)
+        {
+            writer.Write(def.Name);
+            writer.Write(def.SlotIndices.Length);
+            foreach (var s in def.SlotIndices) writer.Write(s);
+            writer.Write(def.MemberNames.Length);
+            foreach (var m in def.MemberNames) writer.Write(m);
+            writer.Write((int)def.Type);
+        }
+    }
+
+    private static IndexListCommand ReadIndexListCommand(BinaryReader reader)
+    {
+        var cmd = new IndexListCommand();
+        if (!reader.ReadBoolean()) return cmd;
+        var count = reader.ReadInt32();
+        cmd.Results = new List<CatDb.Database.Indexing.IndexDefinition>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var name = reader.ReadString();
+            var slots = new int[reader.ReadInt32()];
+            for (var j = 0; j < slots.Length; j++) slots[j] = reader.ReadInt32();
+            var members = new string[reader.ReadInt32()];
+            for (var j = 0; j < members.Length; j++) members[j] = reader.ReadString();
+            var type = (CatDb.Database.Indexing.IndexType)reader.ReadInt32();
+            cmd.Results.Add(new CatDb.Database.Indexing.IndexDefinition(name, slots, members, type));
+        }
+        return cmd;
+    }
+
     private void SerializeDescriptor(BinaryWriter writer, IDescriptor description)
     {
         CountCompression.Serialize(writer, (ulong)description.Id);

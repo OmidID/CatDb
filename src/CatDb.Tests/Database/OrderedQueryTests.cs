@@ -124,6 +124,66 @@ public class OrderedQueryTests : IDisposable
     }
 
     [Fact]
+    public void KeyQuery_OrderByKey_StreamsForward()
+    {
+        var table = Seed();
+
+        var results = table
+            .Query()
+            .AtLeast(2)
+            .AtMost(5)
+            .OrderByKey()
+            .ToList();
+
+        results.Select(r => r.Key).Should().ContainInOrder(2, 3, 4, 5);
+    }
+
+    [Fact]
+    public void KeyQuery_OrderByKeyDescending_StreamsBackward()
+    {
+        var table = Seed();
+
+        var results = table
+            .Query()
+            .AtLeast(2)
+            .AtMost(5)
+            .OrderByKeyDescending()
+            .Take(2)
+            .ToList();
+
+        // Backward scan from 5; Take(2) → 5, 4
+        results.Select(r => r.Key).Should().ContainInOrder(5, 4);
+        results.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void OrderByKey_RejectsRedundantSecondaryKey()
+    {
+        var table = Seed();
+
+        var act = () => table.Query().OrderByKey().OrderBy(c => c.Name);
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void OrderByField_ThenByKey_BreaksTiesByKey()
+    {
+        var table = Seed();
+
+        // Two Alices (keys 2, 3). Primary Name asc, tie-break key desc → 3 before 2.
+        var results = table
+            .Query(c => c.Email)
+            .AtLeast("user11@example.com")
+            .AtMost("user14@example.com")
+            .OrderBy(c => c.Name)
+            .ThenByKeyDescending()
+            .ToList();
+
+        var alices = results.Where(r => r.Value.Name == "Alice").Select(r => r.Key).ToList();
+        alices.Should().ContainInOrder(3, 2);
+    }
+
+    [Fact]
     public void OrderBy_IsStable_OnEqualKeys()
     {
         var table = Seed();

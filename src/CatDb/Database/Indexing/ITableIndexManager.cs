@@ -59,11 +59,27 @@ public interface ITableIndexManager
     /// <summary>Returns only the primary keys matching the indexed value.</summary>
     IEnumerable<IData> FindKeysByIndex(string indexName, IData fieldValue);
 
-    /// <summary>Range search on an index.</summary>
+    /// <summary>
+    /// Range search on an index, streamed in index order.
+    /// <paramref name="backward"/> emits in descending field order (engine backward scan).
+    /// Bounds honor inclusivity; results stream with bounded memory.
+    /// </summary>
     IEnumerable<KeyValuePair<IData, IData>> FindByIndexRange(
         string indexName,
-        IData? from, bool hasFrom,
-        IData? to, bool hasTo);
+        IData? from, bool hasFrom, bool fromInclusive,
+        IData? to, bool hasTo, bool toInclusive,
+        bool backward);
+
+    /// <summary>
+    /// Streams records from a composite index restricted to a leading-field <b>prefix</b> value,
+    /// ordered by the remaining indexed field(s). This is the engine plan for
+    /// <c>WHERE a = v ORDER BY b</c> on a composite <c>(a, b)</c> index: a single ordered index
+    /// range scan with no per-row residual or heap fetch beyond the matched rows.
+    /// <paramref name="prefixFieldCount"/> is how many leading slots <paramref name="prefixValue"/>
+    /// covers (currently 1). <paramref name="backward"/> reverses the trailing-field order.
+    /// </summary>
+    IEnumerable<KeyValuePair<IData, IData>> FindByIndexPrefix(
+        string indexName, IData prefixValue, int prefixFieldCount, bool backward);
 
     /// <summary>Checks if a value exists in the named index.</summary>
     bool ExistsInIndex(string indexName, IData fieldValue);

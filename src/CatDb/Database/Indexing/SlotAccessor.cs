@@ -352,6 +352,49 @@ internal static class SlotAccessor
         return Expression.Lambda<Func<IData, IData, bool>>(equalsExpr, aParam, bParam).Compile();
     }
 
+    /// <summary>The .NET type of slot <paramref name="slotIndex"/> in a composite key/record type.</summary>
+    internal static Type GetSlotType(Type compositeKeyType, int slotIndex)
+        => GetMemberType(GetSlotMember(compositeKeyType, slotIndex));
+
+    /// <summary>
+    /// Builds a seek key for a composite-index <b>prefix</b> scan: given the leading prefix value
+    /// (Data&lt;prefixType&gt;), produces the composite key (prefix…, default, …, default) used as
+    /// the inclusive lower bound. Relies on the same "default == minimum" assumption as
+    /// <see cref="BuildScanFromKeyBuilder"/>; correct for non-negative trailing slots.
+    /// </summary>
+    internal static Func<IData, IData> BuildPrefixSeekKeyBuilder(Type compositeKeyType, Type prefixType, int prefixLen)
+    {
+        var inputParam = Expression.Parameter(typeof(IData), "prefix");
+
+        var ctor = compositeKeyType.GetConstructors()
+            .OrderByDescending(c => c.GetParameters().Length).First();
+        var ps = ctor.GetParameters();
+        var args = new Expression[ps.Length];
+
+        var dataPrefixType = typeof(Data<>).MakeGenericType(prefixType);
+        var castInput = Expression.Convert(inputParam, dataPrefixType);
+        var prefixValue = Expression.Field(castInput, dataPrefixType.GetField("Value")!);
+
+        if (prefixLen == 1)
+        {
+            args[0] = prefixValue;
+        }
+        else
+        {
+            for (var i = 0; i < prefixLen; i++)
+                args[i] = AccessMember(prefixValue, GetSlotMember(prefixType, i));
+        }
+        for (var i = prefixLen; i < ps.Length; i++)
+            args[i] = Expression.Default(ps[i].ParameterType);
+
+        var newComposite = Expression.New(ctor, args);
+        var resultDataType = typeof(Data<>).MakeGenericType(compositeKeyType);
+        var dataCtor = resultDataType.GetConstructor([compositeKeyType])!;
+        var newData = Expression.New(dataCtor, newComposite);
+        var castResult = Expression.Convert(newData, typeof(IData));
+        return Expression.Lambda<Func<IData, IData>>(castResult, inputParam).Compile();
+    }
+
     private static MemberInfo GetSlotMember(Type recordType, int index)
     {
         // For Slots<T0,T1,...> types, use Slot{i} fields directly

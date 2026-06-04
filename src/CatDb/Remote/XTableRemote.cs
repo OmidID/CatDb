@@ -399,6 +399,24 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
                 case CommandCode.COUNT:
                     ((CountCommand)command).Count = ((CountCommand)resultOperation).Count;
                     break;
+                case CommandCode.INDEX_FIND:
+                    ((IndexFindCommand)command).Results = ((IndexFindCommand)resultOperation).Results;
+                    break;
+                case CommandCode.INDEX_FIND_RANGE:
+                    ((IndexFindRangeCommand)command).Results = ((IndexFindRangeCommand)resultOperation).Results;
+                    break;
+                case CommandCode.INDEX_FIND_PREFIX:
+                    ((IndexFindPrefixCommand)command).Results = ((IndexFindPrefixCommand)resultOperation).Results;
+                    break;
+                case CommandCode.INDEX_EXISTS:
+                    ((IndexExistsCommand)command).Result = ((IndexExistsCommand)resultOperation).Result;
+                    break;
+                case CommandCode.INDEX_COUNT:
+                    ((IndexCountCommand)command).Result = ((IndexCountCommand)resultOperation).Result;
+                    break;
+                case CommandCode.INDEX_LIST:
+                    ((IndexListCommand)command).Results = ((IndexListCommand)resultOperation).Results;
+                    break;
                 case CommandCode.STORAGE_ENGINE_COMMIT:
                     break;
                 case CommandCode.EXCEPTION:
