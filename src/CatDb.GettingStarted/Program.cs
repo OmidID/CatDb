@@ -55,6 +55,9 @@ var demos = new List<Demo>
 
     new("Ordering — filter then sort by another index/key",
         () => SortDemo.Run(OpenEngine)),
+
+    new("Filtering — chained Where on index/key queries",
+        () => FilterDemo.Run(OpenEngine)),
 };
 
 // ── Menu loop ─────────────────────────────────────────────────────────────────

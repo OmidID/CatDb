@@ -2,6 +2,7 @@
 // Licensed under the MIT License. See LICENSE in the project root for license information.
 
 using CatDb.Data;
+using CatDb.Database.Querying;
 
 namespace CatDb.Database.Indexing;
 
@@ -86,4 +87,12 @@ public interface ITableIndexManager
 
     /// <summary>Counts entries matching the given value in the named index.</summary>
     long CountByIndex(string indexName, IData fieldValue);
+
+    /// <summary>
+    /// Executes a structured query <b>inside the engine</b>: resolves field predicates to index
+    /// scans, intersects multiple indexes by primary key (AND), evaluates non-indexed predicates as
+    /// a structured residual, and orders by the requested index/key fields. Streams matching
+    /// <c>(primaryKey, record)</c> pairs honouring Skip/Take.
+    /// </summary>
+    IEnumerable<KeyValuePair<IData, IData>> ExecuteQuery(EngineQuery query);
 }

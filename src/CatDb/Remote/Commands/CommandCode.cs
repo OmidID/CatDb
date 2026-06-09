@@ -54,6 +54,7 @@ public static class CommandCode
     public const int INDEX_REBUILD = 37;
     public const int INDEX_LIST = 38;
     public const int INDEX_FIND_PREFIX = 39;
+    public const int INDEX_QUERY = 51;
 
     //Heap
     public const int HEAP_OBTAIN_NEW_HANDLE = 40;

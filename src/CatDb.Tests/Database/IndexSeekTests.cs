@@ -43,7 +43,7 @@ public class IndexSeekTests : IDisposable
         _engine.Commit();
 
         table.CountByIndex<int, Row, string>("City", "nyc").Should().Be(keys.Length);
-        var got = table.Query(c => c.City).Equals("nyc").Select(r => r.Key).OrderBy(x => x).ToList();
+        var got = table.Query(c => c.City).Equal("nyc").Select(r => r.Key).OrderBy(x => x).ToList();
         got.Should().Equal(keys); // every negative key present
     }
 
@@ -132,9 +132,9 @@ public class IndexSeekTests : IDisposable
         _engine.Commit();
 
         // WHERE City='nyc' ORDER BY Age ASC, Score DESC — prefix (City) then mixed trailing.
-        var got = table.Query(c => c.City).Equals("nyc")
+        var got = table.Query(c => c.City).Equal("nyc")
             .OrderBy(c => c.Age)
-            .OrderByDescending(c => c.Score)
+            .ThenByDescending(c => c.Score)
             .Select(r => r.Key).ToList();
 
         var expected = all.Where(kv => kv.Value.City == "nyc")

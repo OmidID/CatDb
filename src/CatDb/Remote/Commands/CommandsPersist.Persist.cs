@@ -1049,6 +1049,84 @@ public partial class CommandPersist
         return cmd;
     }
 
+    private void WriteIndexQueryCommand(BinaryWriter writer, ICommand command)
+    {
+        var cmd = (IndexQueryCommand)command;
+
+        writer.Write(cmd.Filters.Count);
+        foreach (var f in cmd.Filters)
+        {
+            writer.Write(f.Member);
+            writer.Write(f.Op);
+            writer.Write(f.FromInclusive);
+            writer.Write(f.ToInclusive);
+            WriteBytes(writer, f.ValueRaw);
+            WriteBytes(writer, f.Value2Raw);
+        }
+
+        writer.Write(cmd.Sorts.Count);
+        foreach (var s in cmd.Sorts)
+        {
+            writer.Write(s.Member != null);
+            if (s.Member != null) writer.Write(s.Member);
+            writer.Write(s.Descending);
+        }
+
+        writer.Write(cmd.HasKeyFrom);
+        writer.Write(cmd.KeyFromInclusive);
+        WriteBytes(writer, cmd.KeyFromRaw);
+        writer.Write(cmd.HasKeyTo);
+        writer.Write(cmd.KeyToInclusive);
+        WriteBytes(writer, cmd.KeyToRaw);
+
+        writer.Write(cmd.Skip);
+        writer.Write(cmd.HasTake);
+        writer.Write(cmd.Take);
+
+        WriteResults(writer, cmd.Results);
+    }
+
+    private IndexQueryCommand ReadIndexQueryCommand(BinaryReader reader)
+    {
+        var filterCount = reader.ReadInt32();
+        var filters = new List<WireFilter>(filterCount);
+        for (var i = 0; i < filterCount; i++)
+        {
+            filters.Add(new WireFilter
+            {
+                Member = reader.ReadString(),
+                Op = reader.ReadByte(),
+                FromInclusive = reader.ReadBoolean(),
+                ToInclusive = reader.ReadBoolean(),
+                ValueRaw = ReadBytes(reader),
+                Value2Raw = ReadBytes(reader),
+            });
+        }
+
+        var sortCount = reader.ReadInt32();
+        var sorts = new List<WireSort>(sortCount);
+        for (var i = 0; i < sortCount; i++)
+        {
+            var member = reader.ReadBoolean() ? reader.ReadString() : null;
+            sorts.Add(new WireSort { Member = member, Descending = reader.ReadBoolean() });
+        }
+
+        var cmd = new IndexQueryCommand(filters, sorts)
+        {
+            HasKeyFrom = reader.ReadBoolean(),
+            KeyFromInclusive = reader.ReadBoolean(),
+            KeyFromRaw = ReadBytes(reader),
+            HasKeyTo = reader.ReadBoolean(),
+            KeyToInclusive = reader.ReadBoolean(),
+            KeyToRaw = ReadBytes(reader),
+            Skip = reader.ReadInt32(),
+            HasTake = reader.ReadBoolean(),
+            Take = reader.ReadInt32(),
+        };
+        cmd.Results = ReadResults(reader);
+        return cmd;
+    }
+
     private void SerializeDescriptor(BinaryWriter writer, IDescriptor description)
     {
         CountCompression.Serialize(writer, (ulong)description.Id);

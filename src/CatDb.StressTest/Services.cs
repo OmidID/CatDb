@@ -841,7 +841,7 @@ public sealed class KeySearchService : BackgroundService
                         var from = Math.Max(1L, top - _rng.Next(100, 2_000));
                         long prev = -1;
                         int  n   = 0;
-                        foreach (var kv in _ctx.Ticks.Query(KeyQuery<long>.AtLeast(from)))
+                        foreach (var kv in _ctx.Ticks.Scan(KeyQuery<long>.AtLeast(from)))
                         {
                             if (kv.Key < from)
                             {
@@ -868,7 +868,7 @@ public sealed class KeySearchService : BackgroundService
                         var a = _rng.NextInt64(1, top / 2);
                         var b = a + _rng.Next(50, 500);
                         int n = 0;
-                        foreach (var kv in _ctx.Orders.Query(KeyQuery<long>.Between(a, b)))
+                        foreach (var kv in _ctx.Orders.Scan(KeyQuery<long>.Between(a, b)))
                         {
                             if (kv.Key < a || kv.Key > b)
                                 Fail(new Exception(
@@ -886,7 +886,7 @@ public sealed class KeySearchService : BackgroundService
                         if (top < 4) break;
                         var a = _rng.NextInt64(1, top / 2);
                         var b = a + _rng.Next(10, 200);
-                        foreach (var kv in _ctx.Orders.Query(
+                        foreach (var kv in _ctx.Orders.Scan(
                             KeyQuery<long>.Between(a, b, fromInclusive: false, toInclusive: false)))
                         {
                             if (kv.Key <= a || kv.Key >= b)
@@ -936,7 +936,7 @@ public sealed class KeySearchService : BackgroundService
                                                "p5", "p6", "p7", "p8", "p9" };
                         var pfx  = prefixes[_rng.Next(prefixes.Length)];
                         int n    = 0;
-                        foreach (var kv in _ctx.Scores.Query(KeyQuery.StartsWith(pfx)))
+                        foreach (var kv in _ctx.Scores.Scan(KeyQuery.StartsWith(pfx)))
                         {
                             if (!kv.Key.StartsWith(pfx, StringComparison.Ordinal))
                                 Fail(new Exception(
@@ -1739,7 +1739,7 @@ public sealed class IndexStressService : BackgroundService
                     {
                         var id = 1 + (long)(_rng.NextDouble() * maxId);
                         var sku = $"SKU-{id:D8}";
-                        var results = _products.Query(p => p.Sku).Equals(sku).ToList();
+                        var results = _products.Query(p => p.Sku).Equal(sku).ToList();
                         Hit($"find.sku={sku} cnt={results.Count}");
                     }
                 }
@@ -1747,14 +1747,14 @@ public sealed class IndexStressService : BackgroundService
                 {
                     // ── Lookup by Category (non-unique index) ──
                     var cat = Categories[_rng.Next(Categories.Length)];
-                    var count = _products.Query(p => p.Category).Equals(cat).Count();
+                    var count = _products.Query(p => p.Category).Equal(cat).Count();
                     Hit($"count.cat={cat} cnt={count}");
                 }
                 else
                 {
                     // ── Lookup by Brand (non-unique index) ──
                     var brand = Brands[_rng.Next(Brands.Length)];
-                    var count = _products.Query(p => p.Brand).Equals(brand).Count();
+                    var count = _products.Query(p => p.Brand).Equal(brand).Count();
                     Hit($"count.brand={brand} cnt={count}");
                 }
             }
@@ -1883,7 +1883,7 @@ public sealed class SortStressService : BackgroundService
     {
         var cat = Categories[_rng.Next(Categories.Length)];
         // Filter by Category index, ORDER BY Stock index (cross-index drive).
-        var rows = _items.Query(p => p.Category).Equals(cat).OrderBy(p => p.Stock).Take(256).ToList();
+        var rows = _items.Query(p => p.Category).Equal(cat).OrderBy(p => p.Stock).Take(256).ToList();
         AssertStockNonDecreasing(rows, $"cross-asc cat={cat}");
         foreach (var r in rows)
             if (r.Value.Category != cat) Corrupt($"cross-asc residual leak: {r.Value.Category} != {cat}");
@@ -1893,7 +1893,7 @@ public sealed class SortStressService : BackgroundService
     private void ReadCrossIndexDescending()
     {
         var cat = Categories[_rng.Next(Categories.Length)];
-        var rows = _items.Query(p => p.Category).Equals(cat).OrderByDescending(p => p.Stock).Take(256).ToList();
+        var rows = _items.Query(p => p.Category).Equal(cat).OrderByDescending(p => p.Stock).Take(256).ToList();
         for (int i = 1; i < rows.Count; i++)
             if (rows[i - 1].Value.Stock < rows[i].Value.Stock)
                 Corrupt($"cross-desc not descending by Stock cat={cat}");
@@ -1905,7 +1905,7 @@ public sealed class SortStressService : BackgroundService
         var max = Volatile.Read(ref _nextId);
         if (max <= 0) return;
         // ORDER BY (Category, Stock) — served by the covering composite index. Both immutable.
-        var rows = _items.Query().AtLeast(1).AtMost(max)
+        var rows = _items.Query().KeyBetween(1, max)
             .OrderBy(p => p.Category).ThenBy(p => p.Stock).Take(512).ToList();
         for (int i = 1; i < rows.Count; i++)
         {
@@ -1920,8 +1920,8 @@ public sealed class SortStressService : BackgroundService
     {
         var cat = Categories[_rng.Next(Categories.Length)];
         // Leading Stock (immutable) drives; secondary Price desc (mutable) is run-sorted.
-        var rows = _items.Query(p => p.Category).Equals(cat)
-            .OrderBy(p => p.Stock).OrderByDescending(p => p.Price).Take(256).ToList();
+        var rows = _items.Query(p => p.Category).Equal(cat)
+            .OrderBy(p => p.Stock).ThenByDescending(p => p.Price).Take(256).ToList();
         AssertStockNonDecreasing(rows, $"multikey cat={cat}");
         Hit($"multikey cat={cat} n={rows.Count}");
     }
@@ -1939,7 +1939,7 @@ public sealed class SortStressService : BackgroundService
     {
         var cat = Categories[_rng.Next(Categories.Length)];
         // Price is mutated concurrently → ordering can legitimately race; liveness only.
-        var n = _items.Query(p => p.Category).Equals(cat).OrderBy(p => p.Price).Take(128).Count();
+        var n = _items.Query(p => p.Category).Equal(cat).OrderBy(p => p.Price).Take(128).Count();
         Hit($"price-order cat={cat} n={n}");
     }
 
@@ -1954,6 +1954,174 @@ public sealed class SortStressService : BackgroundService
     {
         Interlocked.Increment(ref TotalErrors);
         _ctx.RecordError(Name, $"SORT-CORRUPTION: {detail}");
+    }
+
+    private void EnsureIndex(string name, Action create)
+    {
+        if (_items.Indexes.GetIndex(name) is null)
+            create();
+    }
+}
+
+/// <summary>
+/// Exercises chained residual filtering (<c>.Where(...).Where(...)</c>) on both index and key
+/// queries under concurrent mutation. Predicates over <b>immutable</b> fields (Category, Stock) are
+/// asserted exactly — every returned row must satisfy ALL of them, and the filtered count must equal
+/// a brute-force recount. Predicates touching the mutable Price field are liveness-only.
+/// </summary>
+public sealed class FilterStressService : BackgroundService
+{
+    private static readonly string[] Categories =
+        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot"];
+
+    private readonly StressContext _ctx;
+    private readonly Random _rng;
+    private readonly ITable<long, IndexedProduct> _items;
+    private long _nextId;
+    private bool _ready;
+
+    public FilterStressService(string name, StressContext ctx) : base(name)
+    {
+        _ctx = ctx;
+        _rng = new Random(name.GetHashCode() ^ unchecked((int)0xF117E2));
+        _items = ctx.Engine.OpenXTable<long, IndexedProduct>("filter_items");
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        if (!_ready)
+        {
+            EnsureIndex("Category", () => _items.CreateIndex("Category", p => p.Category, IndexType.NonUnique));
+            EnsureIndex("Stock", () => _items.CreateIndex("Stock", p => p.Stock, IndexType.NonUnique));
+
+            _nextId = _items.LastRow?.Key ?? 0;
+            for (int i = 0; i < 3_000; i++)
+                Insert();
+            _ctx.Commit();
+            _ready = true;
+        }
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var op = _rng.Next(100);
+                if (op < 30) Insert();
+                else if (op < 42) UpdatePrice();             // mutable field only
+                else if (op < 50) DeleteOne();
+                else if (op < 66) ReadIndexChainedImmutable(); // asserted
+                else if (op < 80) ReadKeyChainedImmutable();   // asserted
+                else if (op < 90) ReadFilteredCount();         // asserted
+                else ReadMutableFilterLiveness();              // liveness only
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                Fail(ex, _ctx);
+            }
+
+            await Task.Yield();
+        }
+    }
+
+    private void Insert()
+    {
+        var id = Interlocked.Increment(ref _nextId);
+        _items.Replace(id, new IndexedProduct
+        {
+            Sku = $"F-{id:D8}",
+            Category = Categories[_rng.Next(Categories.Length)], // immutable
+            Stock = _rng.Next(0, 200),                           // immutable
+            Price = Math.Round(1 + _rng.NextDouble() * 999, 2),
+            Brand = "n/a",
+        });
+        Hit($"insert id={id}");
+    }
+
+    private void UpdatePrice()
+    {
+        var max = Volatile.Read(ref _nextId);
+        if (max <= 0) return;
+        var id = 1 + (long)(_rng.NextDouble() * max);
+        if (_items.TryGet(id, out var p))
+        {
+            p.Price = Math.Round(1 + _rng.NextDouble() * 999, 2);
+            _items.Replace(id, p);
+            Hit($"price id={id}");
+        }
+    }
+
+    private void DeleteOne()
+    {
+        var max = Volatile.Read(ref _nextId);
+        if (max <= 0) return;
+        var id = 1 + (long)(_rng.NextDouble() * max);
+        _items.Delete(id);
+        Hit($"delete id={id}");
+    }
+
+    // Index equality drive + two chained Where on immutable fields → every row must satisfy all.
+    private void ReadIndexChainedImmutable()
+    {
+        var cat = Categories[_rng.Next(Categories.Length)];
+        var loStock = _rng.Next(0, 150);
+        // Multi-index AND: Category index ∩ Stock index, engine-intersected.
+        var rows = _items.Query(p => p.Category).Equal(cat)
+            .Then(p => p.Stock).AtLeast(loStock)
+            .Take(256).ToList();
+
+        foreach (var r in rows)
+        {
+            if (r.Value.Category != cat || r.Value.Stock < loStock)
+                Corrupt($"index-chain leak cat={cat} loStock={loStock}: " +
+                        $"got cat={r.Value.Category} stock={r.Value.Stock}");
+        }
+        Hit($"idx-chain cat={cat} n={rows.Count}");
+    }
+
+    // Key range + index predicate on immutable fields → assert membership.
+    private void ReadKeyChainedImmutable()
+    {
+        var max = Volatile.Read(ref _nextId);
+        if (max <= 0) return;
+        var cat = Categories[_rng.Next(Categories.Length)];
+        var rows = _items.Query(p => p.Category).Equal(cat)
+            .Then(p => p.Stock).LessThan(100)
+            .KeyBetween(1, max)
+            .Take(256).ToList();
+
+        foreach (var r in rows)
+        {
+            if (r.Value.Category != cat || r.Value.Stock >= 100 || r.Key < 1 || r.Key > max)
+                Corrupt($"key-chain leak cat={cat}: key={r.Key} cat={r.Value.Category} stock={r.Value.Stock}");
+        }
+        Hit($"key-chain cat={cat} n={rows.Count}");
+    }
+
+    // Filtered Count must equal an independent recount over the same immutable predicates.
+    private void ReadFilteredCount()
+    {
+        var cat = Categories[_rng.Next(Categories.Length)];
+        var filtered = _items.Query(p => p.Category).Equal(cat).Then(p => p.Stock).AtLeast(50).Count();
+        var recount = _items.Query(p => p.Category).Equal(cat).Count(kv => kv.Value.Stock >= 50);
+        if (filtered != recount)
+            Corrupt($"filtered count mismatch cat={cat}: where={filtered} recount={recount}");
+        Hit($"filtered-count cat={cat} n={filtered}");
+    }
+
+    // Filter touching the mutable Price → ordering/count can race; liveness only.
+    private void ReadMutableFilterLiveness()
+    {
+        var cat = Categories[_rng.Next(Categories.Length)];
+        var n = _items.Query(p => p.Category).Equal(cat)
+            .Then(p => p.Price).GreaterThan(500)
+            .Take(128).Count();
+        Hit($"mutable-filter cat={cat} n={n}");
+    }
+
+    private void Corrupt(string detail)
+    {
+        Interlocked.Increment(ref TotalErrors);
+        _ctx.RecordError(Name, $"FILTER-CORRUPTION: {detail}");
     }
 
     private void EnsureIndex(string name, Action create)

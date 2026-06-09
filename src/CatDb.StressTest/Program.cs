@@ -102,6 +102,7 @@ var services = new List<BackgroundService>
     new HighStressKeySearchService("HighSearch-B", SvcCtx(), wideMode: false),
     new IndexStressService        ("IndexStress",  SvcCtx()),
     new SortStressService         ("SortStress",   SvcCtx()),
+    new FilterStressService       ("FilterStress", SvcCtx()),
 };
 
 // ─── Ctrl+C → graceful shutdown ───────────────────────────────────────────

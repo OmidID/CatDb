@@ -70,7 +70,7 @@ public class OrderedQueryTests : IDisposable
             .AtLeast("user11@example.com")
             .AtMost("user14@example.com")
             .OrderBy(c => c.Name)
-            .OrderByDescending(c => c.Age)
+            .ThenByDescending(c => c.Age)
             .ToList();
 
         // Primary Name asc, secondary Age desc:
@@ -85,8 +85,7 @@ public class OrderedQueryTests : IDisposable
 
         var results = table
             .Query()
-            .AtLeast(1)
-            .AtMost(5)
+            .KeyBetween(1, 5)
             .OrderByDescending(c => c.Age)
             .ToList();
 
@@ -100,7 +99,7 @@ public class OrderedQueryTests : IDisposable
 
         var results = table
             .Query(c => c.City)
-            .Equals("NYC")
+            .Equal("NYC")
             .OrderByKeyDescending()
             .ToList();
 
@@ -130,8 +129,7 @@ public class OrderedQueryTests : IDisposable
 
         var results = table
             .Query()
-            .AtLeast(2)
-            .AtMost(5)
+            .KeyBetween(2, 5)
             .OrderByKey()
             .ToList();
 
@@ -145,8 +143,7 @@ public class OrderedQueryTests : IDisposable
 
         var results = table
             .Query()
-            .AtLeast(2)
-            .AtMost(5)
+            .KeyBetween(2, 5)
             .OrderByKeyDescending()
             .Take(2)
             .ToList();
@@ -157,12 +154,14 @@ public class OrderedQueryTests : IDisposable
     }
 
     [Fact]
-    public void OrderByKey_RejectsRedundantSecondaryKey()
+    public void OrderByKey_ThenRedundantKey_IsAllowed_KeyOrderDominates()
     {
         var table = Seed();
 
-        var act = () => table.Query().OrderByKey().OrderBy(c => c.Name);
-        act.Should().Throw<InvalidOperationException>();
+        // The unified builder accepts any sort chain. Since the primary key is unique it fully
+        // determines the order; the secondary key never breaks a tie.
+        var keys = table.Query().OrderByKey().ThenBy(c => c.Name).Select(r => r.Key).ToList();
+        keys.Should().Equal(keys.OrderBy(k => k));
     }
 
     [Fact]

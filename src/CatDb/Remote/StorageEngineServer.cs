@@ -60,6 +60,7 @@ public sealed class StorageEngineServer
         _tableHandlers[CommandCode.INDEX_COUNT]            = IndexCount;
         _tableHandlers[CommandCode.INDEX_REBUILD]          = IndexRebuild;
         _tableHandlers[CommandCode.INDEX_LIST]             = IndexList;
+        _tableHandlers[CommandCode.INDEX_QUERY]            = IndexQuery;
 
         _engineHandlers = new Func<IStorageEngine, ICommand, ICommand>[CommandCode.MAX];
         _engineHandlers[CommandCode.STORAGE_ENGINE_COMMIT]          = StorageEngineCommit;
@@ -394,6 +395,57 @@ public sealed class StorageEngineServer
         var prefix = RemoteFieldCodec.Deserialize(cmd.PrefixRaw, prefixType);
         var results = mgr.FindByIndexPrefix(cmd.IndexName, prefix, cmd.PrefixFieldCount, cmd.Backward).ToList();
         return new IndexFindPrefixCommand(cmd.IndexName, cmd.PrefixRaw, cmd.PrefixFieldCount, cmd.Backward) { Results = results };
+    }
+
+    private ICommand IndexQuery(XTablePortable table, ICommand command)
+    {
+        var cmd = (IndexQueryCommand)command;
+        var mgr = Manager(table);
+
+        var query = new CatDb.Database.Querying.EngineQuery
+        {
+            Skip = cmd.Skip,
+            Take = cmd.HasTake ? cmd.Take : null,
+        };
+
+        foreach (var f in cmd.Filters)
+        {
+            var fieldType = mgr.GetMemberType(f.Member);
+            query.Filters.Add(new CatDb.Database.Querying.FieldFilter
+            {
+                Member = f.Member,
+                Op = (CatDb.Database.Querying.FilterOp)f.Op,
+                FieldType = fieldType,
+                Value = f.ValueRaw != null ? RemoteFieldCodec.Deserialize(f.ValueRaw, fieldType) : null,
+                Value2 = f.Value2Raw != null ? RemoteFieldCodec.Deserialize(f.Value2Raw, fieldType) : null,
+                FromInclusive = f.FromInclusive,
+                ToInclusive = f.ToInclusive,
+            });
+        }
+
+        foreach (var s in cmd.Sorts)
+        {
+            query.Sorts.Add(new CatDb.Database.Querying.SortField
+            {
+                Member = s.Member,
+                FieldType = s.Member != null ? mgr.GetMemberType(s.Member) : null,
+                Descending = s.Descending,
+            });
+        }
+
+        if (cmd.HasKeyFrom || cmd.HasKeyTo)
+        {
+            var keyType = mgr.GetKeyType();
+            query.HasKeyFrom = cmd.HasKeyFrom;
+            query.KeyFromInclusive = cmd.KeyFromInclusive;
+            query.KeyFrom = cmd.KeyFromRaw != null ? RemoteFieldCodec.Deserialize(cmd.KeyFromRaw, keyType) : null;
+            query.HasKeyTo = cmd.HasKeyTo;
+            query.KeyToInclusive = cmd.KeyToInclusive;
+            query.KeyTo = cmd.KeyToRaw != null ? RemoteFieldCodec.Deserialize(cmd.KeyToRaw, keyType) : null;
+        }
+
+        var results = mgr.ExecuteQuery(query).ToList();
+        return new IndexQueryCommand(cmd.Filters, cmd.Sorts) { Results = results };
     }
 
     private ICommand IndexExists(XTablePortable table, ICommand command)

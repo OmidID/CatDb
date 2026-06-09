@@ -80,7 +80,7 @@ public class IndexOrderingTests : IDisposable
             table.Replace(i, new Customer { Age = i });
         _engine.Commit();
 
-        var ages = table.Query(c => c.Age).Backward().Take(5)
+        var ages = table.Query(c => c.Age).OrderByDescending(c => c.Age).Take(5)
             .Select(r => r.Value.Age).ToList();
 
         ages.Should().ContainInOrder(30, 29, 28, 27, 26);
@@ -154,8 +154,8 @@ public class IndexOrderingTests : IDisposable
         _engine.Commit();
 
         table.CountByIndex<int, Customer, string>("City", "NYC").Should().Be(n);
-        table.Query(c => c.City).Equals("NYC").Count().Should().Be(n);
-        table.Query(c => c.City).Equals("NYC").ToList().Should().HaveCount(n);
+        table.Query(c => c.City).Equal("NYC").Count().Should().Be(n);
+        table.Query(c => c.City).Equal("NYC").ToList().Should().HaveCount(n);
     }
 
     [Fact]
@@ -206,7 +206,7 @@ public class IndexOrderingTests : IDisposable
             for (int iter = 0; iter < 50; iter++)
             {
                 // Interleaves index-table scan with main-table point lookups.
-                var count = table.Query(c => c.City).Equals("NYC").Count();
+                var count = table.Query(c => c.City).Equal("NYC").Count();
                 count.Should().BeGreaterThanOrEqualTo(0);
             }
         }

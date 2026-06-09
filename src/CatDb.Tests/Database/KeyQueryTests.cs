@@ -39,21 +39,21 @@ public class KeyQueryTests : IDisposable
     [Fact]
     public void All_ReturnsEveryRecord()
     {
-        var keys = _ints.Query(KeyQuery<int>.All()).Select(kv => kv.Key).ToList();
+        var keys = _ints.Scan(KeyQuery<int>.All()).Select(kv => kv.Key).ToList();
         keys.Should().BeEquivalentTo(Enumerable.Range(1, 10));
     }
 
     [Fact]
     public void AtLeast_ReturnsFromBoundInclusive()
     {
-        var keys = _ints.Query(KeyQuery<int>.AtLeast(5)).Select(kv => kv.Key).ToList();
+        var keys = _ints.Scan(KeyQuery<int>.AtLeast(5)).Select(kv => kv.Key).ToList();
         keys.Should().Equal(5, 6, 7, 8, 9, 10);
     }
 
     [Fact]
     public void GreaterThan_ExcludesLowerBoundKey()
     {
-        var keys = _ints.Query(KeyQuery<int>.GreaterThan(5)).Select(kv => kv.Key).ToList();
+        var keys = _ints.Scan(KeyQuery<int>.GreaterThan(5)).Select(kv => kv.Key).ToList();
         keys.Should().Equal(6, 7, 8, 9, 10);
         keys.Should().NotContain(5);
     }
@@ -61,14 +61,14 @@ public class KeyQueryTests : IDisposable
     [Fact]
     public void AtMost_ReturnsUpToBoundInclusive()
     {
-        var keys = _ints.Query(KeyQuery<int>.AtMost(4)).Select(kv => kv.Key).ToList();
+        var keys = _ints.Scan(KeyQuery<int>.AtMost(4)).Select(kv => kv.Key).ToList();
         keys.Should().Equal(1, 2, 3, 4);
     }
 
     [Fact]
     public void LessThan_ExcludesUpperBoundKey()
     {
-        var keys = _ints.Query(KeyQuery<int>.LessThan(4)).Select(kv => kv.Key).ToList();
+        var keys = _ints.Scan(KeyQuery<int>.LessThan(4)).Select(kv => kv.Key).ToList();
         keys.Should().Equal(1, 2, 3);
         keys.Should().NotContain(4);
     }
@@ -76,14 +76,14 @@ public class KeyQueryTests : IDisposable
     [Fact]
     public void Between_InclusiveBothEnds_ReturnsRange()
     {
-        var keys = _ints.Query(KeyQuery<int>.Between(3, 7)).Select(kv => kv.Key).ToList();
+        var keys = _ints.Scan(KeyQuery<int>.Between(3, 7)).Select(kv => kv.Key).ToList();
         keys.Should().Equal(3, 4, 5, 6, 7);
     }
 
     [Fact]
     public void Between_ExclusiveLower_ExcludesFrom()
     {
-        var keys = _ints.Query(KeyQuery<int>.Between(3, 7, fromInclusive: false)).Select(kv => kv.Key).ToList();
+        var keys = _ints.Scan(KeyQuery<int>.Between(3, 7, fromInclusive: false)).Select(kv => kv.Key).ToList();
         keys.Should().Equal(4, 5, 6, 7);
         keys.Should().NotContain(3);
     }
@@ -91,7 +91,7 @@ public class KeyQueryTests : IDisposable
     [Fact]
     public void Between_ExclusiveUpper_ExcludesTo()
     {
-        var keys = _ints.Query(KeyQuery<int>.Between(3, 7, toInclusive: false)).Select(kv => kv.Key).ToList();
+        var keys = _ints.Scan(KeyQuery<int>.Between(3, 7, toInclusive: false)).Select(kv => kv.Key).ToList();
         keys.Should().Equal(3, 4, 5, 6);
         keys.Should().NotContain(7);
     }
@@ -99,7 +99,7 @@ public class KeyQueryTests : IDisposable
     [Fact]
     public void Between_BothExclusive_ExcludesBothEnds()
     {
-        var keys = _ints.Query(KeyQuery<int>.Between(3, 7, fromInclusive: false, toInclusive: false)).Select(kv => kv.Key).ToList();
+        var keys = _ints.Scan(KeyQuery<int>.Between(3, 7, fromInclusive: false, toInclusive: false)).Select(kv => kv.Key).ToList();
         keys.Should().Equal(4, 5, 6);
     }
 
@@ -108,28 +108,28 @@ public class KeyQueryTests : IDisposable
     [Fact]
     public void StartsWith_ReturnsOnlyMatchingPrefix()
     {
-        var keys = _strings.Query(KeyQuery.StartsWith("a")).Select(kv => kv.Key).ToList();
+        var keys = _strings.Scan(KeyQuery.StartsWith("a")).Select(kv => kv.Key).ToList();
         keys.Should().Equal("apple", "apricot", "avocado");
     }
 
     [Fact]
     public void StartsWith_NarrowPrefix_ReturnsSubset()
     {
-        var keys = _strings.Query(KeyQuery.StartsWith("ap")).Select(kv => kv.Key).ToList();
+        var keys = _strings.Scan(KeyQuery.StartsWith("ap")).Select(kv => kv.Key).ToList();
         keys.Should().Equal("apple", "apricot");
     }
 
     [Fact]
     public void StartsWith_ExactKey_ReturnsThatKey()
     {
-        var keys = _strings.Query(KeyQuery.StartsWith("banana")).Select(kv => kv.Key).ToList();
+        var keys = _strings.Scan(KeyQuery.StartsWith("banana")).Select(kv => kv.Key).ToList();
         keys.Should().Equal("banana");
     }
 
     [Fact]
     public void StartsWith_NoMatch_ReturnsEmpty()
     {
-        var keys = _strings.Query(KeyQuery.StartsWith("zzz")).Select(kv => kv.Key).ToList();
+        var keys = _strings.Scan(KeyQuery.StartsWith("zzz")).Select(kv => kv.Key).ToList();
         keys.Should().BeEmpty();
     }
 
@@ -282,7 +282,7 @@ public class KeyQueryTests : IDisposable
     {
         // Only even keys in range 1-10
         var keys = _ints
-            .Query(KeyQuery<int>.All().WithFilter(k => k % 2 == 0))
+            .Scan(KeyQuery<int>.All().WithFilter(k => k % 2 == 0))
             .Select(kv => kv.Key).ToList();
         keys.Should().Equal(2, 4, 6, 8, 10);
     }

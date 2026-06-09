@@ -91,14 +91,14 @@ static class SecondaryIndexDemo
 
         // ── Unique index lookup ───────────────────────────────────────────────
         Console.WriteLine("Unique index lookup: Email = 'user42@example.com'");
-        var results = table.Query(c => c.Email).Equals("user42@example.com").ToList();
+        var results = table.Query(c => c.Email).Equal("user42@example.com").ToList();
         foreach (var kv in results)
             Console.WriteLine($"  Key={kv.Key}, Name={kv.Value.Name}, City={kv.Value.City}");
 
         // ── Non-unique index lookup ───────────────────────────────────────────────
         Console.WriteLine("\nNon-unique index lookup: City = 'Tokyo'");
-        var tokyoResults = table.Query(c => c.City).Equals("Tokyo").Take(5).ToList();
-        Console.WriteLine($"  Found {table.Query(c => c.City).Equals("Tokyo").Count()} total, showing first 5:");
+        var tokyoResults = table.Query(c => c.City).Equal("Tokyo").Take(5).ToList();
+        Console.WriteLine($"  Found {table.Query(c => c.City).Equal("Tokyo").Count()} total, showing first 5:");
         foreach (var kv in tokyoResults)
             Console.WriteLine($"  Key={kv.Key}, Name={kv.Value.Name}, Age={kv.Value.Age}");
 
@@ -121,7 +121,7 @@ static class SecondaryIndexDemo
         table.Replace(42, c42);
         engine.Commit();
 
-        var berlinCount = table.Query(c => c.City).Equals("Berlin").Count();
+        var berlinCount = table.Query(c => c.City).Equal("Berlin").Count();
         Console.WriteLine($"  Berlin now has {berlinCount} customers");
 
         // ── Range search ──────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ static class SecondaryIndexDemo
         Console.WriteLine("\nDeleting customer 42...");
         table.Delete(42);
         engine.Commit();
-        var exists = table.Query(c => c.Email).Equals("user42@example.com").Exists();
+        var exists = table.Query(c => c.Email).Equal("user42@example.com").Exists();
         Console.WriteLine($"  Email 'user42@example.com' exists in index: {exists}");
 
         // ── Portable (IData) table with manual index ──────────────────────────

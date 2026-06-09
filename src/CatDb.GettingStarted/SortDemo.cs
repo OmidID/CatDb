@@ -67,20 +67,20 @@ static class SortDemo
         //    City re-applied as a residual. Top 5 youngest Londoners.
         Section("Cross-index drive (streaming): City='london' ORDER BY Age — youngest 5");
         sw.Restart();
-        foreach (var kv in table.Query(c => c.City).Equals("london")
+        foreach (var kv in table.Query(c => c.City).Equal("london")
                      .OrderBy(c => c.Age).Take(5))
             Console.WriteLine($"   #{kv.Key}  age={kv.Value.Age}  {kv.Value.Name}");
         Console.WriteLine($"   (returned in {sw.Elapsed.TotalMilliseconds:F1} ms — no full-set buffer)");
 
         // 4) Multi-key drive: leading index drives, equal-leading runs sorted by the rest.
         Section("Multi-key drive: City='nyc' ORDER BY Name, Age DESC — first 8");
-        foreach (var kv in table.Query(c => c.City).Equals("nyc")
-                     .OrderBy(c => c.Name).OrderByDescending(c => c.Age).Take(8))
+        foreach (var kv in table.Query(c => c.City).Equal("nyc")
+                     .OrderBy(c => c.Name).ThenByDescending(c => c.Age).Take(8))
             Console.WriteLine($"   {kv.Value.Name,-6} age={kv.Value.Age}  #{kv.Key}");
 
         // 5) Covering composite index: ORDER BY (City, Age) served entirely by the (City,Age) index.
         Section("Covering composite: key in [1000..200000] ORDER BY City, Age — first 8");
-        foreach (var kv in table.Query().AtLeast(1000).AtMost(200_000)
+        foreach (var kv in table.Query().KeyBetween(1000, 200_000)
                      .OrderBy(c => c.City).ThenBy(c => c.Age).Take(8))
             Console.WriteLine($"   {kv.Value.City,-7} age={kv.Value.Age}  #{kv.Key}");
 

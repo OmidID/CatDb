@@ -15,7 +15,7 @@ namespace CatDb.Database.Indexing;
 ///
 /// Thread safety: relies on XTablePortable's SyncRoot which is held during writes.
 /// </summary>
-internal sealed class TableIndexManager : ITableIndexManager
+internal sealed partial class TableIndexManager : ITableIndexManager
 {
     private readonly XTablePortable _table;
     private readonly WTree _tree;

@@ -159,3 +159,51 @@ public class IndexListCommand : ICommand
     public int Code => CommandCode.INDEX_LIST;
     public bool IsSynchronous => true;
 }
+
+// ── Structured engine query over the wire ─────────────────────────────────────
+// Field values are opaque raw bytes (RemoteFieldCodec). The server resolves each field's type from
+// its member name, decodes the values, rebuilds the EngineQuery and runs it on its local engine.
+
+public struct WireFilter
+{
+    public string Member;
+    public byte Op;             // FilterOp
+    public bool FromInclusive;
+    public bool ToInclusive;
+    public byte[]? ValueRaw;
+    public byte[]? Value2Raw;
+}
+
+public struct WireSort
+{
+    public string? Member;      // null => primary key
+    public bool Descending;
+}
+
+public class IndexQueryCommand : ICommand
+{
+    public List<WireFilter> Filters;
+    public List<WireSort> Sorts;
+
+    public bool HasKeyFrom;
+    public bool KeyFromInclusive;
+    public byte[]? KeyFromRaw;
+    public bool HasKeyTo;
+    public bool KeyToInclusive;
+    public byte[]? KeyToRaw;
+
+    public int Skip;
+    public bool HasTake;
+    public int Take;
+
+    public List<KeyValuePair<IData, IData>>? Results;
+
+    public IndexQueryCommand(List<WireFilter> filters, List<WireSort> sorts)
+    {
+        Filters = filters;
+        Sorts = sorts;
+    }
+
+    public int Code => CommandCode.INDEX_QUERY;
+    public bool IsSynchronous => true;
+}

@@ -53,7 +53,7 @@ static class KeyQueryPerfDemo
         // ── 2. Seek: AtLeast(mid) — should be microseconds ────────────────
         Console.Write($"Seek AtLeast({mid}):          ");
         sw.Restart();
-        var seekResult = t.Query(KeyQuery<long>.AtLeast(mid)).FirstOrDefault();
+        var seekResult = t.Scan(KeyQuery<long>.AtLeast(mid)).FirstOrDefault();
         sw.Stop();
         Console.WriteLine($"{sw.Elapsed.TotalMilliseconds:F3} ms  (key={seekResult.Key})");
 
@@ -76,7 +76,7 @@ static class KeyQueryPerfDemo
         // ── 4. Range scan — take first 10K from range ─────────────────────
         Console.Write("Scan first 10K from mid:    ");
         sw.Restart();
-        var scanned = t.Query(KeyQuery<long>.AtLeast(mid)).Take(10_000).Count();
+        var scanned = t.Scan(KeyQuery<long>.AtLeast(mid)).Take(10_000).Count();
         sw.Stop();
         Console.WriteLine($"{sw.Elapsed.TotalMilliseconds:F1} ms  ({scanned:N0} records)");
 
@@ -100,7 +100,7 @@ static class KeyQueryPerfDemo
         // Engine Scan (segment-based, 1 yield layer, buffer per leaf)
         Console.Write("Query.Scan 100K:            ");
         sw.Restart();
-        var scanCount = t.Query(KeyQuery<long>.AtLeast(mid)).Take(100_000).Count();
+        var scanCount = t.Scan(KeyQuery<long>.AtLeast(mid)).Take(100_000).Count();
         sw.Stop();
         var scanMs = sw.Elapsed.TotalMilliseconds;
         Console.WriteLine($"{scanMs:F1} ms  ({scanCount:N0} records, {scanCount / scanMs * 1000:N0} rec/sec)");

@@ -528,6 +528,9 @@ public class XTableRemote : ITable<IData, IData>, IRemoteScanTable, IDisposable
                 case CommandCode.INDEX_LIST:
                     ((IndexListCommand)command).Results = ((IndexListCommand)resultOperation).Results;
                     break;
+                case CommandCode.INDEX_QUERY:
+                    ((IndexQueryCommand)command).Results = ((IndexQueryCommand)resultOperation).Results;
+                    break;
                 case CommandCode.STORAGE_ENGINE_COMMIT:
                     break;
                 case CommandCode.EXCEPTION:

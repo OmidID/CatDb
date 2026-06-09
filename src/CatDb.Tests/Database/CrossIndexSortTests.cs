@@ -64,7 +64,7 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = Seed();
 
-        var got = table.Query(c => c.City).Equals("nyc")
+        var got = table.Query(c => c.City).Equal("nyc")
             .OrderBy(c => c.Age)
             .Select(r => r.Key).ToList();
 
@@ -83,7 +83,7 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = Seed();
 
-        var ages = table.Query(c => c.City).Equals("la")
+        var ages = table.Query(c => c.City).Equal("la")
             .OrderByDescending(c => c.Age)
             .Select(r => r.Value.Age).ToList();
 
@@ -96,7 +96,7 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = Seed();
 
-        var got = table.Query().AtLeast(100).AtMost(399)
+        var got = table.Query().KeyBetween(100, 399)
             .OrderBy(c => c.Age)
             .Select(r => r.Key).ToList();
 
@@ -129,7 +129,7 @@ public class CrossIndexSortTests : IDisposable
         var got = table.Query(c => c.Email)
             .AtLeast("u100@x.com").AtMost("u399@x.com")
             .OrderBy(c => c.Name)            // leading key: Name index drives
-            .OrderByDescending(c => c.Age)   // secondary: run-sorted within equal Name
+            .ThenByDescending(c => c.Age)   // secondary: run-sorted within equal Name
             .Select(r => r.Key).ToList();
 
         var expected = all
@@ -148,9 +148,9 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = Seed();
 
-        var got = table.Query(c => c.City).Equals("nyc")
+        var got = table.Query(c => c.City).Equal("nyc")
             .OrderBy(c => c.Name)
-            .OrderByDescending(c => c.Age)
+            .ThenByDescending(c => c.Age)
             .Take(7)
             .Select(r => r.Key).ToList();
 
@@ -192,7 +192,7 @@ public class CrossIndexSortTests : IDisposable
         var (table, all) = Seed(300);
 
         // Drive path (Age indexed):
-        var driven = table.Query(c => c.City).Equals("nyc")
+        var driven = table.Query(c => c.City).Equal("nyc")
             .OrderBy(c => c.Age).ThenBy(c => c.Email)
             .Select(r => r.Key).ToList();
 
@@ -238,7 +238,7 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = SeedComposite();
 
-        var got = table.Query().AtLeast(50).AtMost(349)
+        var got = table.Query().KeyBetween(50, 349)
             .OrderBy(c => c.City)
             .ThenBy(c => c.Age)
             .Select(r => r.Key).ToList();
@@ -257,7 +257,7 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = SeedComposite();
 
-        var got = table.Query().AtLeast(50).AtMost(349)
+        var got = table.Query().KeyBetween(50, 349)
             .OrderBy(c => c.City)             // ascending
             .ThenByDescending(c => c.Age)     // descending — mixed
             .Select(r => r.Key).ToList();
@@ -276,7 +276,7 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = SeedComposite();
 
-        var got = table.Query().AtLeast(50).AtMost(349)
+        var got = table.Query().KeyBetween(50, 349)
             .OrderByDescending(c => c.City)   // descending lead → composite scanned backward
             .ThenBy(c => c.Age)               // ascending — mixed
             .Select(r => r.Key).ToList();
@@ -299,7 +299,7 @@ public class CrossIndexSortTests : IDisposable
 
         // Email is NOT indexed in the composite-only table → buffered path. Take triggers Top-K.
         const int k = 17;
-        var got = table.Query().AtLeast(1).AtMost(400)
+        var got = table.Query().KeyBetween(1, 400)
             .OrderBy(c => c.Email)
             .Take(k)
             .Select(r => r.Key).ToList();
@@ -319,7 +319,7 @@ public class CrossIndexSortTests : IDisposable
         var (table, all) = SeedComposite();
 
         const int k = 23;
-        var got = table.Query().AtLeast(1).AtMost(400)
+        var got = table.Query().KeyBetween(1, 400)
             .OrderBy(c => c.City)
             .ThenByDescending(c => c.Age)
             .Take(k)
@@ -340,7 +340,7 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = SeedComposite();
 
-        var got = table.Query().AtLeast(1).AtMost(400)
+        var got = table.Query().KeyBetween(1, 400)
             .OrderBy(c => c.Email)
             .Skip(10).Take(15)
             .Select(r => r.Key).ToList();
@@ -381,7 +381,7 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = SeedPrefix();
 
-        var got = table.Query(c => c.City).Equals("nyc")
+        var got = table.Query(c => c.City).Equal("nyc")
             .OrderBy(c => c.Age)
             .Select(r => r.Key).ToList();
 
@@ -398,7 +398,7 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = SeedPrefix();
 
-        var got = table.Query(c => c.City).Equals("nyc")
+        var got = table.Query(c => c.City).Equal("nyc")
             .OrderByDescending(c => c.Age)
             .Select(r => r.Key).ToList();
 
@@ -417,7 +417,7 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = SeedPrefix();
 
-        var got = table.Query(c => c.City).Equals("nyc")
+        var got = table.Query(c => c.City).Equal("nyc")
             .OrderBy(c => c.Age).Take(9)
             .Select(r => r.Key).ToList();
 
@@ -454,7 +454,7 @@ public class CrossIndexSortTests : IDisposable
     {
         var (table, all) = SeedComposite();
 
-        var got = table.Query().AtLeast(50).AtMost(349)
+        var got = table.Query().KeyBetween(50, 349)
             .OrderByDescending(c => c.City)
             .ThenByDescending(c => c.Age)
             .Select(r => r.Key).ToList();

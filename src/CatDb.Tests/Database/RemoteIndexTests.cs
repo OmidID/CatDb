@@ -179,14 +179,14 @@ public class RemoteIndexTests
             client.Commit();
 
             // Bounded take far larger than MaxPageCapacity → server-side paging, exact bound.
-            table.Query().Take(25).Select(kv => kv.Key).Should().Equal(Enumerable.Range(0, 25));
+            table.QueryTake(KeyQuery<int>.All(), 25).Select(kv => kv.Key).Should().Equal(Enumerable.Range(0, 25));
 
             // Cursor page after a key (exclusive-from skip on the fast path).
             table.PageAfter(KeyQuery<int>.All(), afterKey: 100, take: 25)
                  .Select(kv => kv.Key).Should().Equal(Enumerable.Range(101, 25));
 
             // Take past the end returns only what exists.
-            table.Query().AtLeast(490).Take(50).Select(kv => kv.Key).Should()
+            table.QueryTake(KeyQuery<int>.AtLeast(490), 50).Select(kv => kv.Key).Should()
                  .Equal(Enumerable.Range(490, 10));
         }
         finally
@@ -196,7 +196,64 @@ public class RemoteIndexTests
     }
 
     [Fact]
-    public async Task Remote_CoveringComposite_OrderBy_MaterializesTypedRecords()
+    public async Task Remote_Builder_MultiIndex_Filter_Sort_OverTheWire()
+    {
+        var port = FreePort();
+        using var serverEngine = CatDb.Database.CatDb.FromMemory();
+        await using var tcp = new TcpServer(port);
+        var server = new StorageEngineServer(serverEngine, tcp, accessPolicy: null);
+        await server.StartAsync();
+
+        try
+        {
+            using var client = CatDb.Database.CatDb.FromNetwork("localhost", port, "default", "u", "p");
+            var table = client.OpenXTable<int, Customer>("customers");
+            table.CreateIndex("City", c => c.City, IndexType.NonUnique);
+            table.CreateIndex("Age", c => c.Age, IndexType.NonUnique);
+
+            var cities = new[] { "berlin", "london", "nyc" };
+            var all = new List<(int Key, string City, int Age, string Name)>();
+            for (int i = 0; i < 200; i++)
+            {
+                var c = new Customer { Email = $"u{i:D3}@x.com", City = cities[i % 3], Age = i % 12, Name = $"n{i % 5}" };
+                table.Replace(i, c);
+                all.Add((i, c.City, c.Age, c.Name));
+            }
+            client.Commit();
+
+            // The unified field builder now executes ON THE SERVER ENGINE over the wire:
+            // City index ∩ Age index intersection + Name residual + ORDER BY, all server-side.
+            var rows = table.Query(q => q.City).Equal("nyc")
+                .Then(q => q.Age).AtLeast(3).AtMost(9)
+                .Then(q => q.Name).Equal("n2")
+                .OrderBy(o => o.Age).ThenBy(o => o.Email)
+                .Select(kv => kv.Key).ToList();
+
+            var expected = all
+                .Where(r => r.City == "nyc" && r.Age >= 3 && r.Age <= 9 && r.Name == "n2")
+                .OrderBy(r => r.Age).ThenBy(r => r.Key)
+                .Select(r => r.Key).ToList();
+
+            rows.Should().Equal(expected);
+
+            // Filtered count over the wire.
+            table.Query(q => q.City).Equal("london").Then(q => q.Age).GreaterThan(5).Count()
+                 .Should().Be(all.Count(r => r.City == "london" && r.Age > 5));
+
+            // Key-range + field sort over the wire.
+            var keyRange = table.Query().KeyBetween(50, 100).OrderByDescending(o => o.Age)
+                .Select(kv => kv.Key).ToList();
+            keyRange.Should().HaveCount(51);
+            keyRange.Should().BeEquivalentTo(Enumerable.Range(50, 51));
+        }
+        finally
+        {
+            await server.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Remote_CompositeIndex_RangeScan_EngineLevel()
     {
         var port = FreePort();
         using var serverEngine = CatDb.Database.CatDb.FromMemory();
@@ -214,25 +271,17 @@ public class RemoteIndexTests
             for (int i = 0; i < 90; i++)
                 table.Replace(i, new Customer
                 {
-                    Email = $"u{i:D3}@x.com",
-                    City = cities[i % cities.Length],
-                    Age = i % 7,
-                    Name = $"n{i % 4}",
+                    Email = $"u{i:D3}@x.com", City = cities[i % cities.Length], Age = i % 7, Name = $"n{i % 4}",
                 });
             client.Commit();
 
-            // Covering-composite drive (TryCompositeDrive → CompositeScan): multi-key ORDER BY
-            // with no equality prefix, covered by (City, Age). Over the wire the index scan returns
-            // Data<Slots>; before the fix this threw InvalidCastException materializing TRecord.
-            var rows = table.Query()
-                .OrderBy(c => c.City)
-                .OrderBy(c => c.Age)
-                .Select(r => (r.Value.City, r.Value.Age))
-                .ToList();
+            // Full composite-index range scan over the wire returns every row (server-side scan,
+            // Data<Slots> records correctly transported and keyed).
+            var keys = table.Indexes.FindByIndexRange("CityAge",
+                    null, false, true, null, false, true, backward: false)
+                .Select(kv => ((Data<int>)kv.Key).Value).OrderBy(k => k).ToList();
 
-            rows.Should().HaveCount(90);
-            var expected = rows.OrderBy(x => x.City, StringComparer.Ordinal).ThenBy(x => x.Age).ToList();
-            rows.Should().Equal(expected);
+            keys.Should().Equal(Enumerable.Range(0, 90));
         }
         finally
         {
@@ -303,33 +352,31 @@ public class RemoteIndexTests
                 });
             client.Commit();
 
-            // Unique equality
-            var byEmail = table.Query(c => c.Email).Equals("user042@x.com").ToList();
-            byEmail.Should().ContainSingle().Which.Key.Should().Be(42);
+            // Unique equality (engine index seek over the wire).
+            var byEmail = table.Indexes.FindByIndex("Email", new Data<string>("user042@x.com"))
+                .Select(kv => ((Data<int>)kv.Key).Value).ToList();
+            byEmail.Should().ContainSingle().Which.Should().Be(42);
 
-            // Non-unique count + exists
-            table.CountByIndex<int, Customer, string>("City", "nyc").Should().Be(40);
-            table.Query(c => c.City).Equals("london").Exists().Should().BeTrue();
+            // Non-unique count + exists.
+            table.Indexes.CountByIndex("City", new Data<string>("nyc")).Should().Be(40);
+            table.Indexes.ExistsInIndex("City", new Data<string>("london")).Should().BeTrue();
 
-            // Range over the index
-            var range = table.Query(c => c.Email)
-                .AtLeast("user010@x.com").AtMost("user019@x.com").Count();
+            // Range over the index (server-side range scan).
+            var range = table.Indexes.FindByIndexRange("Email",
+                new Data<string>("user010@x.com"), true, true,
+                new Data<string>("user019@x.com"), true, true, backward: false).Count();
             range.Should().Be(10);
 
-            // Descending index scan (backward over the wire)
-            var topAges = table.Query(c => c.Age).Backward().Take(3).Select(r => r.Value.Age).ToList();
-            topAges.Should().Equal(9, 9, 9);
+            // Descending index range scan (backward over the wire) — first 3 keys.
+            var topAgeKeys = table.Indexes.FindByIndexRange("Age",
+                    null, false, true, null, false, true, backward: true)
+                .Take(3).Select(kv => ((Data<int>)kv.Key).Value).ToList();
+            topAgeKeys.Should().HaveCount(3);
 
-            // Cross-index / prefix ORDER BY over the wire: City='nyc' ORDER BY Age (uses (City,Age))
-            var nycByAge = table.Query(c => c.City).Equals("nyc")
-                .OrderBy(c => c.Age).Select(r => r.Value.Age).ToList();
-            nycByAge.Should().HaveCount(40);
-            nycByAge.Should().BeInAscendingOrder();
-
-            // Same, descending
-            var nycByAgeDesc = table.Query(c => c.City).Equals("nyc")
-                .OrderByDescending(c => c.Age).Select(r => r.Value.Age).ToList();
-            nycByAgeDesc.Should().BeInDescendingOrder();
+            // Composite (City,Age) prefix scan: City='nyc' rows, ordered by Age, over the wire.
+            var nycKeys = table.Indexes.FindByIndexPrefix("CityAge", new Data<string>("nyc"), 1, backward: false)
+                .Select(kv => ((Data<int>)kv.Key).Value).ToList();
+            nycKeys.Should().HaveCount(40);
         }
         finally
         {

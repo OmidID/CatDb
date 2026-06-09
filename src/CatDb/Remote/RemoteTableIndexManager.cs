@@ -130,4 +130,44 @@ internal sealed class RemoteTableIndexManager : ITableIndexManager
         _table.Execute(cmd);
         return cmd.Result;
     }
+
+    public IEnumerable<KeyValuePair<IData, IData>> ExecuteQuery(CatDb.Database.Querying.EngineQuery query)
+    {
+        var filters = new List<WireFilter>(query.Filters.Count);
+        foreach (var f in query.Filters)
+        {
+            filters.Add(new WireFilter
+            {
+                Member = f.Member,
+                Op = (byte)f.Op,
+                FromInclusive = f.FromInclusive,
+                ToInclusive = f.ToInclusive,
+                ValueRaw = f.Value != null ? RemoteFieldCodec.Serialize(f.Value, f.FieldType) : null,
+                Value2Raw = f.Value2 != null ? RemoteFieldCodec.Serialize(f.Value2, f.FieldType) : null,
+            });
+        }
+
+        var sorts = query.Sorts
+            .Select(s => new WireSort { Member = s.Member, Descending = s.Descending })
+            .ToList();
+
+        var keyType = _table.Descriptor.KeyType
+                      ?? CatDb.Data.DataTypeUtils.BuildType(_table.Descriptor.KeyDataType);
+
+        var cmd = new IndexQueryCommand(filters, sorts)
+        {
+            HasKeyFrom = query.HasKeyFrom,
+            KeyFromInclusive = query.KeyFromInclusive,
+            KeyFromRaw = query.KeyFrom != null ? RemoteFieldCodec.Serialize(query.KeyFrom, keyType) : null,
+            HasKeyTo = query.HasKeyTo,
+            KeyToInclusive = query.KeyToInclusive,
+            KeyToRaw = query.KeyTo != null ? RemoteFieldCodec.Serialize(query.KeyTo, keyType) : null,
+            Skip = query.Skip,
+            HasTake = query.Take.HasValue,
+            Take = query.Take ?? 0,
+        };
+
+        _table.Execute(cmd);
+        return cmd.Results ?? [];
+    }
 }
