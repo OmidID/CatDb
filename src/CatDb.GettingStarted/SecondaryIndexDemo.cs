@@ -16,6 +16,26 @@ static class SecondaryIndexDemo
         public string City { get; set; } = "";
         public int Age { get; set; }
         public string Name { get; set; } = "";
+        public CustomerContact Contact { get; set; } = new CustomerContact();
+    }
+
+    public class CustomerContact
+    {
+        public List<CustomerPhoneContact> Phones { get; set; } = new();
+        public List<CustomerAddress> Addresses { get; set; } = new();
+    }
+
+    public class CustomerPhoneContact
+    {
+        public string Type { get; set; } = "";
+        public string Phone { get; set; } = "";
+    }
+
+    public class CustomerAddress
+    {
+        public string Street { get; set; } = "";
+        public string City { get; set; } = "";
+        public string Country { get; set; } = "";
     }
 
     public static void Run(Func<bool, IStorageEngine> openEngine)
@@ -52,6 +72,18 @@ static class SecondaryIndexDemo
                 City = cities[i % cities.Length],
                 Age = 20 + (i % 50),
                 Name = $"Customer {i}",
+                Contact = new CustomerContact
+                {
+                    Phones = new List<CustomerPhoneContact>
+                    {
+                        new CustomerPhoneContact { Type = "Mobile", Phone = $"555-000{i:D4}" },
+                        new CustomerPhoneContact { Type = "Home", Phone = $"555-100{i:D4}" },
+                    },
+                    Addresses = new List<CustomerAddress>
+                    {
+                        new CustomerAddress { Street = $"{i} Main St", City = cities[i % cities.Length], Country = "USA" },
+                    }
+                }
             });
         }
         engine.Commit();

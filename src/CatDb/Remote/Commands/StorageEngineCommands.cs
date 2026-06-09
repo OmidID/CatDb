@@ -115,10 +115,10 @@ public class StorageEngineOpenXIndexCommand : ICommand
 
     public DateTime CreateTime;
 
-    /// Optional member-name → slot-index maps.
+    /// Optional recursive member maps (nested object/collection field names).
     /// Sent by the client so the server can persist field names in the locator.
-    public Dictionary<string, int>? KeyMembers;
-    public Dictionary<string, int>? RecordMembers;
+    public MemberMap? KeyMembers;
+    public MemberMap? RecordMembers;
 
     public StorageEngineOpenXIndexCommand(long id)
     {
@@ -126,7 +126,7 @@ public class StorageEngineOpenXIndexCommand : ICommand
     }
 
     public StorageEngineOpenXIndexCommand(string name, DataType keyType, DataType recordType, DateTime createTime,
-        Dictionary<string, int>? keyMembers = null, Dictionary<string, int>? recordMembers = null)
+        MemberMap? keyMembers = null, MemberMap? recordMembers = null)
     {
         Id = -1;
         Name = name;
@@ -140,7 +140,7 @@ public class StorageEngineOpenXIndexCommand : ICommand
     }
 
     public StorageEngineOpenXIndexCommand(string name, DataType keyType, DataType recordType,
-        Dictionary<string, int>? keyMembers = null, Dictionary<string, int>? recordMembers = null)
+        MemberMap? keyMembers = null, MemberMap? recordMembers = null)
         : this(name, keyType, recordType, new DateTime(), keyMembers, recordMembers)
     {
     }

@@ -28,28 +28,49 @@ public sealed class GlobalPermissionHandler : AuthorizationHandler<GlobalPermiss
 
 public sealed class DatabaseReadHandler : AuthorizationHandler<DatabaseReadRequirement>
 {
-    protected override Task HandleRequirementAsync(
-        AuthorizationHandlerContext context,
-        DatabaseReadRequirement requirement)
+    protected override Task HandleRequirementAsync(AuthorizationHandlerContext ctx, DatabaseReadRequirement req)
     {
-        var httpContext = context.Resource as HttpContext;
-        if (httpContext?.Items["AuthenticatedUser"] is not AuthenticatedUser user)
-        {
-            context.Fail();
-            return Task.CompletedTask;
-        }
-
-        // Extract database name from route values.
-        var databaseName = httpContext.Request.RouteValues["databaseName"]?.ToString();
-        if (string.IsNullOrWhiteSpace(databaseName))
-        {
-            context.Fail();
-            return Task.CompletedTask;
-        }
-
-        if (user.HasDatabase(databaseName, DatabasePermission.Read))
-            context.Succeed(requirement);
-
+        if (!DbAuth.TryGet(ctx, out var user, out var db)) { ctx.Fail(); return Task.CompletedTask; }
+        if (user.HasDatabase(db, DatabasePermission.Read)) ctx.Succeed(req);
         return Task.CompletedTask;
+    }
+}
+
+public sealed class DatabaseWriteHandler : AuthorizationHandler<DatabaseWriteRequirement>
+{
+    protected override Task HandleRequirementAsync(AuthorizationHandlerContext ctx, DatabaseWriteRequirement req)
+    {
+        if (!DbAuth.TryGet(ctx, out var user, out var db)) { ctx.Fail(); return Task.CompletedTask; }
+        if (user.HasDatabase(db, DatabasePermission.Write)) ctx.Succeed(req);
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class DatabaseTableAdminHandler : AuthorizationHandler<DatabaseTableAdminRequirement>
+{
+    protected override Task HandleRequirementAsync(AuthorizationHandlerContext ctx, DatabaseTableAdminRequirement req)
+    {
+        if (!DbAuth.TryGet(ctx, out var user, out var db)) { ctx.Fail(); return Task.CompletedTask; }
+        if (user.HasDatabase(db, DatabasePermission.TableAdmin)) ctx.Succeed(req);
+        return Task.CompletedTask;
+    }
+}
+
+file static class DbAuth
+{
+    internal static bool TryGet(
+        AuthorizationHandlerContext ctx,
+        out AuthenticatedUser user,
+        out string databaseName)
+    {
+        user = null!;
+        databaseName = string.Empty;
+        var http = ctx.Resource as HttpContext;
+        if (http?.Items["AuthenticatedUser"] is not AuthenticatedUser u) return false;
+        var db = http.Request.RouteValues["databaseName"]?.ToString();
+        if (string.IsNullOrWhiteSpace(db)) return false;
+        user = u;
+        databaseName = db;
+        return true;
     }
 }

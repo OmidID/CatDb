@@ -9,4 +9,6 @@ public static class PolicyNames
     public const string ManageDatabases = "ManageDatabases";
     public const string ListDatabases = "ListDatabases";
     public const string DatabaseRead = "DatabaseRead";
+    public const string DatabaseWrite = "DatabaseWrite";
+    public const string DatabaseTableAdmin = "DatabaseTableAdmin";
 }

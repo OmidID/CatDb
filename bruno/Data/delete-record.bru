@@ -1,12 +1,12 @@
 meta {
-  name: Browse Table
+  name: Delete Record
   type: http
-  seq: 1
+  seq: 4
 }
 
-get {
+delete {
   url: {{baseUrl}}/api/v1/data/{{databaseName}}/{{tableName}}
-  body: none
+  body: json
   auth: basic
 }
 
@@ -15,9 +15,8 @@ auth:basic {
   password: {{adminPassword}}
 }
 
-params:query {
-  take: 50
-  direction: forward
-  fromKey: 
-  toKey: 
+body:json {
+  {
+    "key": 1
+  }
 }

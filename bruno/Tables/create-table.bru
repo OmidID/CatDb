@@ -1,0 +1,36 @@
+meta {
+  name: Create Table
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/tables/{{databaseName}}
+  body: json
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}
+
+body:json {
+  {
+    "name": "{{tableName}}",
+    "keySchema": {
+      "type": "integer",
+      "format": "int32"
+    },
+    "valueSchema": {
+      "type": "object",
+      "properties": {
+        "Email":  { "type": "string" },
+        "City":   { "type": "string" },
+        "Age":    { "type": "integer", "format": "int32" },
+        "Name":   { "type": "string" }
+      },
+      "required": ["Email", "City", "Age", "Name"]
+    }
+  }
+}

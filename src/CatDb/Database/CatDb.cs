@@ -45,8 +45,13 @@ public static class CatDb
         int port = 7182,
         string databaseName = "default",
         string? userName = null,
-        string? password = null) =>
-        new StorageEngineClient(host, port, databaseName, userName, password);
+        string? password = null,
+        RemoteScanOptions? scanOptions = null)
+    {
+        var client = new StorageEngineClient(host, port, databaseName, userName, password);
+        if (scanOptions != null) client.ScanOptions = scanOptions;
+        return client;
+    }
 
     /// <summary>Fully async version of <see cref="FromNetwork"/>.</summary>
     public static async Task<IStorageEngine> FromNetworkAsync(
@@ -55,9 +60,11 @@ public static class CatDb
         string databaseName = "default",
         string? userName = null,
         string? password = null,
+        RemoteScanOptions? scanOptions = null,
         CancellationToken ct = default)
     {
         var client = StorageEngineClient.CreateUnconnected(host, port, databaseName, userName, password);
+        if (scanOptions != null) client.ScanOptions = scanOptions;
         await client.ConnectAsync(ct).ConfigureAwait(false);
         return client;
     }

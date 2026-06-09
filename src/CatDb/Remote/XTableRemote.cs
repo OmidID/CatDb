@@ -10,9 +10,12 @@ using CatDb.Remote.Commands;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Remote;
-public class XTableRemote : ITable<IData, IData>, IDisposable
+public class XTableRemote : ITable<IData, IData>, IRemoteScanTable, IDisposable
 {
-    private readonly int _pageCapacity = 100000;
+    // Adaptive/bounded page sizing for Forward/Backward is configured per-connection via
+    // StorageEngineClient.ScanOptions (no hard-coded numbers): an unbounded scan grows the page
+    // geometrically; a bounded scan (.Take/cursor) pushes the exact limit to the server.
+    private RemoteScanOptions ScanOptions => _storageEngine.ScanOptions;
     private readonly CommandCollection _commands;
 
     // Guards _commands and all operations that read/write the shared command buffer.
@@ -246,14 +249,14 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
         from = hasFrom ? from : default(IData);
         to = hasTo ? to : default(IData);
 
-        List<KeyValuePair<IData, IData>>? records = null;
-        IData? nextKey = null;
+        var opts = ScanOptions;
+        var cap = opts.Clamp(opts.InitialPageCapacity);
 
-        var command = new ForwardCommand(_pageCapacity, from, to, null);
+        var command = new ForwardCommand(cap, from, to, null);
         Execute(command);
 
-        records = command.List;
-        nextKey = records != null && records.Count == _pageCapacity ? records[records.Count - 1].Key : null;
+        var records = command.List;
+        var nextKey = records != null && records.Count == cap ? records[records.Count - 1].Key : null;
 
         while (records != null)
         {
@@ -266,10 +269,11 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
 
             if (nextKey != null)
             {
-                var nextCommand = new ForwardCommand(_pageCapacity, nextKey, to, null);
+                cap = opts.Clamp(cap * opts.PageGrowthFactor);
+                var nextCommand = new ForwardCommand(cap, nextKey, to, null);
                 Execute(nextCommand);
                 records  = nextCommand.List;
-                nextKey  = records != null && records.Count == _pageCapacity ? records[records.Count - 1].Key : null;
+                nextKey  = records != null && records.Count == cap ? records[records.Count - 1].Key : null;
             }
         }
     }
@@ -287,14 +291,14 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
         from = hasFrom ? from : default(IData);
         to = hasTo ? to : default(IData);
 
-        List<KeyValuePair<IData, IData>>? records = null;
-        IData? nextKey = null;
+        var opts = ScanOptions;
+        var cap = opts.Clamp(opts.InitialPageCapacity);
 
-        var command = new BackwardCommand(_pageCapacity, to, from, null);
+        var command = new BackwardCommand(cap, to, from, null);
         Execute(command);
 
-        records = command.List;
-        nextKey = records != null && records.Count == _pageCapacity ? records[records.Count - 1].Key : null;
+        var records = command.List;
+        var nextKey = records != null && records.Count == cap ? records[records.Count - 1].Key : null;
 
         while (records != null)
         {
@@ -307,11 +311,112 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
 
             if (nextKey != null)
             {
-                var nextCommand = new BackwardCommand(_pageCapacity, nextKey, from, null);
+                cap = opts.Clamp(cap * opts.PageGrowthFactor);
+                var nextCommand = new BackwardCommand(cap, nextKey, from, null);
                 Execute(nextCommand);
                 records  = nextCommand.List;
-                nextKey  = records != null && records.Count == _pageCapacity ? records[records.Count - 1].Key : null;
+                nextKey  = records != null && records.Count == cap ? records[records.Count - 1].Key : null;
             }
+        }
+    }
+
+    /// <summary>
+    /// Forward range bounded to at most <paramref name="maxRows"/> rows. Pushes the limit to the
+    /// server so a short query (cursor page / <c>.Take(n)</c>) returns in a single round-trip with
+    /// no over-fetch. Larger limits page server-side, capped by <see cref="RemoteScanOptions.MaxPageCapacity"/>.
+    /// </summary>
+    public IEnumerable<KeyValuePair<IData, IData>> ForwardTake(IData from, bool hasFrom, IData to, bool hasTo, int maxRows)
+    {
+        if (maxRows <= 0)
+            yield break;
+        if (hasFrom && hasTo && _indexDescriptor.KeyComparer.Compare(from, to) > 0)
+            yield break;
+
+        from = hasFrom ? from : default(IData);
+        to   = hasTo   ? to   : default(IData);
+
+        var opts = ScanOptions;
+        var remaining = maxRows;
+        var curFrom = from;
+
+        while (remaining > 0)
+        {
+            var cap = opts.Clamp(remaining);
+            var command = new ForwardCommand(cap, curFrom, to, null);
+            Execute(command);
+
+            var records = command.List;
+            if (records == null || records.Count == 0)
+                yield break;
+
+            var full = records.Count == cap;
+            int emit;
+            if (full && remaining > records.Count)
+            {
+                // Need more than this page holds → drop the last row and re-seek from it (the
+                // server treats `from` as inclusive, so this avoids a duplicate without a gap).
+                emit = records.Count - 1;
+                curFrom = records[records.Count - 1].Key;
+            }
+            else
+            {
+                emit = Math.Min(records.Count, remaining);
+            }
+
+            for (var i = 0; i < emit; i++)
+                yield return records[i];
+
+            remaining -= emit;
+
+            if (!full || emit == 0)
+                yield break; // reached end of data (or nothing left to make progress)
+        }
+    }
+
+    /// <summary>Backward counterpart of <see cref="ForwardTake"/>.</summary>
+    public IEnumerable<KeyValuePair<IData, IData>> BackwardTake(IData to, bool hasTo, IData from, bool hasFrom, int maxRows)
+    {
+        if (maxRows <= 0)
+            yield break;
+        if (hasFrom && hasTo && _indexDescriptor.KeyComparer.Compare(from, to) > 0)
+            yield break;
+
+        from = hasFrom ? from : default(IData);
+        to   = hasTo   ? to   : default(IData);
+
+        var opts = ScanOptions;
+        var remaining = maxRows;
+        var curTo = to;
+
+        while (remaining > 0)
+        {
+            var cap = opts.Clamp(remaining);
+            var command = new BackwardCommand(cap, curTo, from, null);
+            Execute(command);
+
+            var records = command.List;
+            if (records == null || records.Count == 0)
+                yield break;
+
+            var full = records.Count == cap;
+            int emit;
+            if (full && remaining > records.Count)
+            {
+                emit = records.Count - 1;
+                curTo = records[records.Count - 1].Key;
+            }
+            else
+            {
+                emit = Math.Min(records.Count, remaining);
+            }
+
+            for (var i = 0; i < emit; i++)
+                yield return records[i];
+
+            remaining -= emit;
+
+            if (!full || emit == 0)
+                yield break;
         }
     }
 
@@ -364,6 +469,12 @@ public class XTableRemote : ITable<IData, IData>, IDisposable
             return;
 
         var resultOperation = resultCommands[resultCommands.Count - 1];
+
+        // The server returns an ExceptionCommand (code EXCEPTION) when any command in the
+        // batch threw — its code won't match the request command's code, so check the RESULT
+        // here and surface the real server message instead of mis-casting it below.
+        if (resultOperation.Code == CommandCode.EXCEPTION)
+            throw new Exception(((ExceptionCommand)resultOperation).Exception);
 
         try
         {

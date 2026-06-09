@@ -1,0 +1,16 @@
+meta {
+  name: Rebuild All Indexes
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/v1/tables/{{databaseName}}/{{tableName}}/indexes/rebuild
+  body: none
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}

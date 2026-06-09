@@ -1,0 +1,24 @@
+meta {
+  name: Create Index
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/tables/{{databaseName}}/{{tableName}}/indexes
+  body: json
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}
+
+body:json {
+  {
+    "indexName": "Email",
+    "members": ["Email"],
+    "type": "Unique"
+  }
+}

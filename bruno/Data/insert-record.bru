@@ -1,0 +1,27 @@
+meta {
+  name: Insert Record
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/data/{{databaseName}}/{{tableName}}
+  body: json
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}
+
+body:json {
+  {
+    "key": 1,
+    "value": {
+      "Name": "Alice",
+      "Email": "alice@example.com",
+      "City": "London"
+    }
+  }
+}

@@ -85,6 +85,40 @@ public class StorageEngine : WTree, IStorageEngine
         finally { _syncRoot.Exit(); }
     }
 
+    public ITable<IData, IData> OpenXTablePortable(
+        string name,
+        DataType keyDataType,
+        DataType recordDataType,
+        Dictionary<string, int>? keyMembers,
+        Dictionary<string, int>? recordMembers)
+    {
+        _syncRoot.Enter();
+        try
+        {
+            var item = Obtain(name, StructureType.XTABLE, keyDataType, recordDataType, null, null);
+            item.Locator.SetMembers(keyMembers, recordMembers);
+            return item.Table;
+        }
+        finally { _syncRoot.Exit(); }
+    }
+
+    public ITable<IData, IData> OpenXTablePortable(
+        string name,
+        DataType keyDataType,
+        DataType recordDataType,
+        MemberMap? keyMemberMap,
+        MemberMap? recordMemberMap)
+    {
+        _syncRoot.Enter();
+        try
+        {
+            var item = Obtain(name, StructureType.XTABLE, keyDataType, recordDataType, null, null);
+            item.Locator.SetMembers(keyMemberMap, recordMemberMap);
+            return item.Table;
+        }
+        finally { _syncRoot.Exit(); }
+    }
+
     public ITable<TKey, TRecord> OpenXTablePortable<TKey, TRecord>(string name, DataType keyDataType, DataType recordDataType, ITransformer<TKey, IData> keyTransformer, ITransformer<TRecord, IData> recordTransformer)
     {
         _syncRoot.Enter();

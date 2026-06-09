@@ -2,6 +2,7 @@
 // Licensed under the MIT License. See LICENSE in the project root for license information.
 
 ﻿using System.Diagnostics.CodeAnalysis;
+using CatDb.Data;
 using CatDb.Database.Indexing;
 using CatDb.WaterfallTree;
 
@@ -14,6 +15,17 @@ public interface ITable
     /// Available on all table types (local, remote, typed, portable).
     /// </summary>
     ITableIndexManager Indexes { get; }
+}
+
+/// <summary>
+/// Implemented by remote tables that can push a row limit to the server, returning at most
+/// <c>maxRows</c> rows for a forward/backward range in as few round-trips as possible (ideally one).
+/// Lets bounded queries (<c>.Take(n)</c>, cursor paging) avoid dragging an entire range over the wire.
+/// </summary>
+internal interface IRemoteScanTable
+{
+    IEnumerable<KeyValuePair<IData, IData>> ForwardTake(IData from, bool hasFrom, IData to, bool hasTo, int maxRows);
+    IEnumerable<KeyValuePair<IData, IData>> BackwardTake(IData to, bool hasTo, IData from, bool hasFrom, int maxRows);
 }
 
 public interface ITable<TKey, TRecord> : ITable, IEnumerable<KeyValuePair<TKey, TRecord>>

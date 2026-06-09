@@ -12,3 +12,5 @@ public sealed class GlobalPermissionRequirement(GlobalPermission permission) : I
 }
 
 public sealed class DatabaseReadRequirement : IAuthorizationRequirement;
+public sealed class DatabaseWriteRequirement : IAuthorizationRequirement;
+public sealed class DatabaseTableAdminRequirement : IAuthorizationRequirement;

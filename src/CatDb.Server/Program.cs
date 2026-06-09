@@ -4,6 +4,7 @@
 ﻿using CatDb.Server;
 using CatDb.Server.Apis.Admin;
 using CatDb.Server.Apis.Data;
+using CatDb.Server.Services;
 using CatDb.Server.Auth;
 using CatDb.Server.Models;
 using CatDb.Server.Services;
@@ -45,6 +46,7 @@ builder.Services.AddSingleton<DatabaseHostService>(sp =>
 });
 builder.Services.AddSingleton<EngineAccessPolicy>();
 builder.Services.AddSingleton<DataExplorerService>();
+builder.Services.AddSingleton<TableManagementService>();
 builder.Services.AddHostedService<CatDbServerService>();
 
 // ── Authentication & Authorization ────────────────────────────────────────────
@@ -60,10 +62,16 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy(PolicyNames.ListDatabases, policy =>
         policy.AddRequirements(new GlobalPermissionRequirement(GlobalPermission.ListDatabases)))
     .AddPolicy(PolicyNames.DatabaseRead, policy =>
-        policy.AddRequirements(new DatabaseReadRequirement()));
+        policy.AddRequirements(new DatabaseReadRequirement()))
+    .AddPolicy(PolicyNames.DatabaseWrite, policy =>
+        policy.AddRequirements(new DatabaseWriteRequirement()))
+    .AddPolicy(PolicyNames.DatabaseTableAdmin, policy =>
+        policy.AddRequirements(new DatabaseTableAdminRequirement()));
 
 builder.Services.AddSingleton<IAuthorizationHandler, GlobalPermissionHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, DatabaseReadHandler>();
+builder.Services.AddSingleton<IAuthorizationHandler, DatabaseWriteHandler>();
+builder.Services.AddSingleton<IAuthorizationHandler, DatabaseTableAdminHandler>();
 
 // ── Health checks ─────────────────────────────────────────────────────────────
 builder.Services.AddHealthChecks()
@@ -104,8 +112,8 @@ app.MapGet("/", () => Results.Ok(new
 }));
 app.MapAdminDatabaseEndpoints();
 app.MapAdminUserEndpoints();
-app.MapDataDatabaseEndpoints();
 app.MapDataTableEndpoints();
+app.MapDataTableManagementEndpoints();
 
 await app.RunAsync();
 

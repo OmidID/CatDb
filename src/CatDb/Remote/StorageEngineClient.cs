@@ -29,6 +29,12 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
     private readonly string? _userName;
     private readonly string? _password;
     private int _cacheSize;
+
+    /// <summary>
+    /// Connection-level scan paging tuning shared by every table opened on this client.
+    /// Mutable so callers can adjust it after connect; defaults are sensible for mixed workloads.
+    /// </summary>
+    public RemoteScanOptions ScanOptions { get; set; } = new();
     private readonly ConcurrentDictionary<string, XTableRemote> _indexes = new();
     private readonly Dictionary<TransformerCacheKey, object> _transformerCache = new();
     private readonly CatDb.General.Threading.ReentrantLock _transformerCacheLock = new();
@@ -153,6 +159,29 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
         return index;
     }
 
+    public ITable<IData, IData> OpenXTablePortable(
+        string name,
+        DataType keyDataType,
+        DataType recordDataType,
+        Dictionary<string, int>? keyMembers,
+        Dictionary<string, int>? recordMembers)
+    {
+        // Remote: member maps are informational only (server already persists them).
+        // Delegate to the plain overload; the server will apply the maps server-side.
+        return OpenXTablePortable(name, keyDataType, recordDataType);
+    }
+
+    public ITable<IData, IData> OpenXTablePortable(
+        string name,
+        DataType keyDataType,
+        DataType recordDataType,
+        MemberMap? keyMemberMap,
+        MemberMap? recordMemberMap)
+    {
+        // Remote: recursive member maps are informational only (server persists them).
+        return OpenXTablePortable(name, keyDataType, recordDataType);
+    }
+
     public ITable<TKey, TRecord> OpenXTablePortable<TKey, TRecord>(string name)
     {
         var keyDataType    = DataTypeUtils.BuildDataType(typeof(TKey));
@@ -165,9 +194,10 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
         var keyDataType    = DataTypeUtils.BuildDataType(typeof(TKey));
         var recordDataType = DataTypeUtils.BuildDataType(typeof(TRecord));
 
-        // Compute member names from the concrete types so the server can persist them.
-        var keyMembers    = BuildMemberMap(typeof(TKey));
-        var recordMembers = BuildMemberMap(typeof(TRecord));
+        // Compute recursive member maps from the concrete types (nested object/collection
+        // field names included) so the server can persist the full name hierarchy.
+        var keyMembers    = BuildMemberMap(typeof(TKey),    keyDataType);
+        var recordMembers = BuildMemberMap(typeof(TRecord), recordDataType);
 
         var cmd = new StorageEngineOpenXIndexCommand(name, keyDataType, recordDataType, keyMembers, recordMembers);
         InternalExecute(cmd);
@@ -180,18 +210,12 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
         return new XTablePortable<TKey, TRecord>(index, keyTransformer, recordTransformer);
     }
 
-    private static Dictionary<string, int>? BuildMemberMap(Type type)
+    private static MemberMap? BuildMemberMap(Type type, DataType dataType)
     {
         if (DataType.IsPrimitiveType(type) || DataTypeUtils.IsAnonymousType(type))
             return null;
 
-        var members = DataTypeUtils.GetPublicMembers(type).ToArray();
-        if (members.Length == 0) return null;
-
-        var map = new Dictionary<string, int>(members.Length);
-        for (var i = 0; i < members.Length; i++)
-            map[members[i].Name] = i;
-        return map;
+        return MemberMap.Build(dataType, type);
     }
 
     public XFile OpenXFile(string name) => throw new NotSupportedException();

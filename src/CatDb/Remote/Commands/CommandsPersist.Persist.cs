@@ -476,37 +476,24 @@ public partial class CommandPersist
         return new StorageEngineOpenXIndexCommand(id);
     }
 
-    private static void WriteMemberMap(BinaryWriter writer, Dictionary<string, int>? members)
+    private static void WriteMemberMap(BinaryWriter writer, MemberMap? members)
     {
-        if (members == null || members.Count == 0)
+        if (members == null)
         {
             writer.Write((byte)0);
             return;
         }
 
         writer.Write((byte)1);
-        writer.Write((ushort)members.Count);
-        foreach (var kv in members)
-        {
-            writer.Write(kv.Key);
-            writer.Write((ushort)kv.Value);
-        }
+        members.Serialize(writer);
     }
 
-    private static Dictionary<string, int>? ReadMemberMap(BinaryReader reader)
+    private static MemberMap? ReadMemberMap(BinaryReader reader)
     {
         var marker = reader.ReadByte();
         if (marker == 0) return null;
 
-        var count = reader.ReadUInt16();
-        var map = new Dictionary<string, int>(count);
-        for (var i = 0; i < count; i++)
-        {
-            var key = reader.ReadString();
-            var value = reader.ReadUInt16();
-            map[key] = value;
-        }
-        return map;
+        return MemberMap.Deserialize(reader);
     }
 
     private void WriteStorageEngineOpenXFileCommand(BinaryWriter writer, ICommand command)

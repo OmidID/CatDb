@@ -42,6 +42,11 @@ public sealed class OrderedQuery<TKey, TRecord> : IEnumerable<KeyValuePair<TKey,
     private int? _take;
     private int _skip;
 
+    // Lazy transformers for portable/remote tables whose index scans return Data<Slots>
+    // rather than Data<TRecord>; reused across the whole composite scan.
+    private DataTransformer<TKey>? _keyTransform;
+    private DataTransformer<TRecord>? _recordTransform;
+
     internal OrderedQuery(
         ITable<TKey, TRecord> table,
         IEnumerable<KeyValuePair<TKey, TRecord>> filtered,
@@ -233,8 +238,23 @@ public sealed class OrderedQuery<TKey, TRecord> : IEnumerable<KeyValuePair<TKey,
     {
         foreach (var kv in _table!.Indexes.FindByIndexRange(
                      indexName, null, false, true, null, false, true, descending))
-            yield return new KeyValuePair<TKey, TRecord>(
-                ((Data<TKey>)kv.Key).Value, ((Data<TRecord>)kv.Value).Value);
+            yield return ConvertPair(kv);
+    }
+
+    /// <summary>
+    /// Converts a raw index-scan pair to the typed pair. Local tables already hand back
+    /// <c>Data&lt;TKey&gt;</c>/<c>Data&lt;TRecord&gt;</c>; portable/remote tables return
+    /// <c>Data&lt;Slots&gt;</c>, so fall back to a <see cref="DataTransformer{T}"/>.
+    /// </summary>
+    private KeyValuePair<TKey, TRecord> ConvertPair(KeyValuePair<IData, IData> kv)
+    {
+        var key = kv.Key is Data<TKey> dk
+            ? dk.Value
+            : (_keyTransform ??= new DataTransformer<TKey>(_table!.Descriptor.KeyType)).From(kv.Key);
+        var record = kv.Value is Data<TRecord> dr
+            ? dr.Value
+            : (_recordTransform ??= new DataTransformer<TRecord>(_table!.Descriptor.RecordType)).From(kv.Value);
+        return new KeyValuePair<TKey, TRecord>(key, record);
     }
 
     /// <summary>Applies Skip/Take after the order is established (streaming).</summary>

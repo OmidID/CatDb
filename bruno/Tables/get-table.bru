@@ -1,0 +1,16 @@
+meta {
+  name: Get Table
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/tables/{{databaseName}}/{{tableName}}
+  body: none
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}

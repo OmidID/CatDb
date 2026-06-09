@@ -191,6 +191,27 @@ public class XTablePortable<TKey, TRecord> : ITable<TKey, TRecord>
             yield break;
         }
 
+        // Remote fast path: push the exact row limit to the server (single round-trip, no over-fetch).
+        // Only the simple forward range with no upper bound goes here; upper-bound/exclusive cases
+        // with a filter already took the segment path above.
+        if (Table is IRemoteScanTable remote && !query.HasTo)
+        {
+            // +1 covers the exclusive-from skip (the `from` key itself is dropped below).
+            var want = take + (query.FromExclusive && query.HasFrom ? 1 : 0);
+            var eqr = System.Collections.Generic.EqualityComparer<TKey>.Default;
+            var skipFirst = query.FromExclusive && query.HasFrom;
+            var emitted = 0;
+            foreach (var kv in remote.ForwardTake(ifrom, query.HasFrom, null, false, want))
+            {
+                var key = KeyTransformer.From(kv.Key);
+                if (skipFirst) { skipFirst = false; if (eqr.Equals(key, query.From)) continue; }
+                yield return new KeyValuePair<TKey, TRecord>(key, RecordTransformer.From(kv.Value));
+                if (++emitted >= take)
+                    yield break;
+            }
+            yield break;
+        }
+
         var n = 0;
         foreach (var kv in Scan(query))
         {
@@ -265,6 +286,25 @@ public class XTablePortable<TKey, TRecord> : ITable<TKey, TRecord>
                     if (++produced >= take)
                         yield break;
                 }
+            }
+            yield break;
+        }
+
+        // Remote fast path: push the row limit to the server (single round-trip). Simple backward
+        // range with no lower bound; the exclusive upper key is dropped below.
+        if (Table is IRemoteScanTable remote && !query.HasFrom)
+        {
+            var want = take + (query.ToExclusive && query.HasTo ? 1 : 0);
+            var eqr = System.Collections.Generic.EqualityComparer<TKey>.Default;
+            var skipFirst = query.ToExclusive && query.HasTo;
+            var emitted = 0;
+            foreach (var kv in remote.BackwardTake(ito, query.HasTo, null, false, want))
+            {
+                var key = KeyTransformer.From(kv.Key);
+                if (skipFirst) { skipFirst = false; if (eqr.Equals(key, query.To)) continue; }
+                yield return new KeyValuePair<TKey, TRecord>(key, RecordTransformer.From(kv.Value));
+                if (++emitted >= take)
+                    yield break;
             }
             yield break;
         }

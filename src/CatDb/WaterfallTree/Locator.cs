@@ -13,7 +13,7 @@ namespace CatDb.WaterfallTree;
 
 public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
     {
-        private const byte VERSION = 40;
+        private const byte VERSION = 41;
 
         private byte[]? _serializationData;
 
@@ -26,8 +26,8 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         private Type? _keyType;
         private Type? _recordType;
 
-        private Dictionary<string, int>? _keyMembers;
-        private Dictionary<string, int>? _recordMembers;
+        private MemberMap? _keyMemberMap;
+        private MemberMap? _recordMemberMap;
 
         private IComparer<IData>? _keyComparer;
         private IEqualityComparer<IData>? _keyEqualityComparer;
@@ -92,41 +92,21 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             OrderedSetFactory = new OrderedSetFactory(this);
         }
 
-        private void WriteMembers(BinaryWriter writer, Dictionary<string, int> members)
+        private static void WriteMemberMap(BinaryWriter writer, MemberMap? map)
         {
-            if (members == null)
+            if (map == null)
             {
                 writer.Write(false);
                 return;
             }
 
             writer.Write(true);
-            writer.Write(members.Count);
-
-            foreach (var kv in members)
-            {
-                writer.Write(kv.Key);
-                writer.Write(kv.Value);
-            }
+            map.Serialize(writer);
         }
 
-        private static Dictionary<string, int> ReadMembers(BinaryReader reader)
+        private static MemberMap? ReadMemberMap(BinaryReader reader)
         {
-            if (!reader.ReadBoolean())
-                return null;
-
-            var count = reader.ReadInt32();
-            var members = new Dictionary<string, int>(count);
-
-            for (var i = 0; i < count; i++)
-            {
-                var key = reader.ReadString();
-                var value = reader.ReadInt32();
-
-                members.Add(key, value);
-            }
-
-            return members;
+            return reader.ReadBoolean() ? MemberMap.Deserialize(reader) : null;
         }
 
         private void InternalSerialize(BinaryWriter writer)
@@ -160,8 +140,8 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
                     writer.Write("");
 
                 //key & record members
-                WriteMembers(writer, _keyMembers);
-                WriteMembers(writer, _recordMembers);
+                WriteMemberMap(writer, _keyMemberMap);
+                WriteMemberMap(writer, _recordMemberMap);
 
                 //times
                 writer.Write(CreateTime.Ticks);
@@ -221,8 +201,8 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             var recordType = (sRecordType != "") ? TypeCache.GetType(sRecordType) : DataTypeUtils.BuildType(recordDataType);
 
             //key & record members
-            var keyMembers = ReadMembers(reader);
-            var recordMembers = ReadMembers(reader);
+            var keyMemberMap = ReadMemberMap(reader);
+            var recordMemberMap = ReadMemberMap(reader);
 
             //create time
             var createTime = new DateTime(reader.ReadInt64());
@@ -235,8 +215,8 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             var locator = new Locator(id, name, structureType, keyDataType, recordDataType, keyType, recordType)
                 {
                     IsDeleted = isDeleted,
-                    _keyMembers = keyMembers,
-                    _recordMembers = recordMembers,
+                    _keyMemberMap = keyMemberMap,
+                    _recordMemberMap = recordMemberMap,
                     CreateTime = createTime,
                     ModifiedTime = modifiedTime,
                     AccessTime = accessTime,
@@ -640,7 +620,7 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             get
             {
                 using (_syncRoot.Lock())
-                    return _keyMembers;
+                    return _keyMemberMap?.Names;
             }
         }
 
@@ -649,7 +629,25 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
             get
             {
                 using (_syncRoot.Lock())
-                    return _recordMembers;
+                    return _recordMemberMap?.Names;
+            }
+        }
+
+        public MemberMap? KeyMemberMap
+        {
+            get
+            {
+                using (_syncRoot.Lock())
+                    return _keyMemberMap;
+            }
+        }
+
+        public MemberMap? RecordMemberMap
+        {
+            get
+            {
+                using (_syncRoot.Lock())
+                    return _recordMemberMap;
             }
         }
 
@@ -663,52 +661,61 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         {
             using (_syncRoot.Lock())
             {
-                if (_keyMembers == null && keyType != null && !DataTypeUtils.IsAnonymousType(keyType))
+                if (_keyMemberMap == null && keyType != null && !DataTypeUtils.IsAnonymousType(keyType))
                 {
-                    _keyMembers = BuildMemberMap(keyType);
+                    _keyMemberMap = BuildMemberMap(KeyDataType, keyType);
                     _serializationData = null;
                 }
 
-                if (_recordMembers == null && recordType != null && !DataTypeUtils.IsAnonymousType(recordType))
+                if (_recordMemberMap == null && recordType != null && !DataTypeUtils.IsAnonymousType(recordType))
                 {
-                    _recordMembers = BuildMemberMap(recordType);
+                    _recordMemberMap = BuildMemberMap(RecordDataType, recordType);
                     _serializationData = null;
                 }
             }
         }
 
         /// <summary>
-        /// Stores explicitly provided member maps (sent by a remote client that
-        /// knows the real field names).  Only sets if not already populated.
+        /// Stores explicitly provided recursive member maps (sent by a remote client
+        /// or the HTTP schema layer that knows the real field names — including
+        /// nested object/collection members).  Only sets if not already populated.
         /// </summary>
-        internal void SetMembers(Dictionary<string, int>? keyMembers, Dictionary<string, int>? recordMembers)
+        internal void SetMembers(MemberMap? keyMemberMap, MemberMap? recordMemberMap)
         {
             using (_syncRoot.Lock())
             {
-                if (_keyMembers == null && keyMembers != null && keyMembers.Count > 0)
+                if (_keyMemberMap == null && keyMemberMap != null)
                 {
-                    _keyMembers = keyMembers;
+                    _keyMemberMap = keyMemberMap;
                     _serializationData = null;
                 }
 
-                if (_recordMembers == null && recordMembers != null && recordMembers.Count > 0)
+                if (_recordMemberMap == null && recordMemberMap != null)
                 {
-                    _recordMembers = recordMembers;
+                    _recordMemberMap = recordMemberMap;
                     _serializationData = null;
                 }
             }
         }
 
-        private static Dictionary<string, int> BuildMemberMap(Type type)
+        /// <summary>
+        /// Stores flat (top-level only) member maps. Kept for callers that pass a
+        /// simple name→index dictionary; wrapped into a childless <see cref="MemberMap"/>.
+        /// </summary>
+        internal void SetMembers(Dictionary<string, int>? keyMembers, Dictionary<string, int>? recordMembers)
+        {
+            SetMembers(
+                keyMembers is { Count: > 0 } ? new MemberMap(keyMembers) : null,
+                recordMembers is { Count: > 0 } ? new MemberMap(recordMembers) : null);
+        }
+
+        private static MemberMap BuildMemberMap(DataType dataType, Type type)
         {
             if (DataType.IsPrimitiveType(type))
-                return new Dictionary<string, int> { [type.Name] = 0 };
+                return new MemberMap(new Dictionary<string, int> { [type.Name] = 0 });
 
-            var members = DataTypeUtils.GetPublicMembers(type).ToArray();
-            var map = new Dictionary<string, int>(members.Length);
-            for (var i = 0; i < members.Length; i++)
-                map[members[i].Name] = i;
-            return map;
+            return MemberMap.Build(dataType, type)
+                   ?? new MemberMap(new Dictionary<string, int>());
         }
 
         #endregion

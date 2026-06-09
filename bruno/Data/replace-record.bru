@@ -1,0 +1,27 @@
+meta {
+  name: Replace Record
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{baseUrl}}/api/v1/data/{{databaseName}}/{{tableName}}
+  body: json
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}
+
+body:json {
+  {
+    "key": 1,
+    "value": {
+      "Name": "Alice Updated",
+      "Email": "alice@example.com",
+      "City": "Paris"
+    }
+  }
+}

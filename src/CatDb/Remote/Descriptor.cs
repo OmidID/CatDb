@@ -138,6 +138,9 @@ public class Descriptor : IDescriptor
     public IReadOnlyDictionary<string, int>? KeyMembers => InternalDescriptor.KeyMembers;
     public IReadOnlyDictionary<string, int>? RecordMembers => InternalDescriptor.RecordMembers;
 
+    public MemberMap? KeyMemberMap => InternalDescriptor.KeyMemberMap;
+    public MemberMap? RecordMemberMap => InternalDescriptor.RecordMemberMap;
+
     #endregion
 
     public void Serialize(BinaryWriter writer)
@@ -203,6 +206,9 @@ public class DescriptorStructure : IDescriptor
 
     public IReadOnlyDictionary<string, int>? KeyMembers { get; set; }
     public IReadOnlyDictionary<string, int>? RecordMembers { get; set; }
+
+    public MemberMap? KeyMemberMap { get; set; }
+    public MemberMap? RecordMemberMap { get; set; }
 
     #endregion
 

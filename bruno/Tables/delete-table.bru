@@ -1,11 +1,11 @@
 meta {
-  name: List Tables
+  name: Delete Table
   type: http
-  seq: 1
+  seq: 4
 }
 
-get {
-  url: {{baseUrl}}/api/v1/data/{{databaseName}}
+delete {
+  url: {{baseUrl}}/api/v1/tables/{{databaseName}}/{{tableName}}
   body: none
   auth: basic
 }

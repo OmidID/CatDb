@@ -1,0 +1,16 @@
+meta {
+  name: List Indexes
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/api/v1/tables/{{databaseName}}/{{tableName}}/indexes
+  body: none
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}

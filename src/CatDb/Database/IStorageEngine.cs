@@ -11,6 +11,22 @@ public interface IStorageEngine : IEnumerable<IDescriptor>, IDisposable
     /// Works with anonymous types.
     ITable<IData, IData> OpenXTablePortable(string name, DataType keyDataType, DataType recordDataType);
 
+    /// Works with anonymous types and explicit member-name maps (persisted as slot-index → name).
+    ITable<IData, IData> OpenXTablePortable(
+        string name,
+        DataType keyDataType,
+        DataType recordDataType,
+        Dictionary<string, int>? keyMembers,
+        Dictionary<string, int>? recordMembers);
+
+    /// Works with anonymous types and explicit recursive member maps (nested object/collection names).
+    ITable<IData, IData> OpenXTablePortable(
+        string name,
+        DataType keyDataType,
+        DataType recordDataType,
+        MemberMap? keyMemberMap,
+        MemberMap? recordMemberMap);
+
     /// Works with portable types via custom transformers.
     ITable<TKey, TRecord> OpenXTablePortable<TKey, TRecord>(string name, DataType keyDataType, DataType recordDataType, ITransformer<TKey, IData> keyTransformer, ITransformer<TRecord, IData> recordTransformer);
 

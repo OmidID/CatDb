@@ -1,0 +1,16 @@
+meta {
+  name: Drop Index
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/tables/{{databaseName}}/{{tableName}}/indexes/{{indexName}}
+  body: none
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}

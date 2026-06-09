@@ -49,5 +49,17 @@ public interface IDescriptor
     /// </summary>
     IReadOnlyDictionary<string, int>? RecordMembers { get; }
 
+    /// <summary>
+    /// Recursive key member map — descends into nested Slots and collection element
+    /// types so deeply-nested schemas keep their real field names. Null when the
+    /// table was opened with an anonymous key type.
+    /// </summary>
+    MemberMap? KeyMemberMap { get; }
+
+    /// <summary>
+    /// Recursive record/value member map (see <see cref="KeyMemberMap"/>).
+    /// </summary>
+    MemberMap? RecordMemberMap { get; }
+
     byte[]? Tag { get; set; }
 }
