@@ -1053,16 +1053,7 @@ public partial class CommandPersist
     {
         var cmd = (IndexQueryCommand)command;
 
-        writer.Write(cmd.Filters.Count);
-        foreach (var f in cmd.Filters)
-        {
-            writer.Write(f.Member);
-            writer.Write(f.Op);
-            writer.Write(f.FromInclusive);
-            writer.Write(f.ToInclusive);
-            WriteBytes(writer, f.ValueRaw);
-            WriteBytes(writer, f.Value2Raw);
-        }
+        WriteWireNode(writer, cmd.FilterRoot);
 
         writer.Write(cmd.Sorts.Count);
         foreach (var s in cmd.Sorts)
@@ -1086,22 +1077,63 @@ public partial class CommandPersist
         WriteResults(writer, cmd.Results);
     }
 
+    private static void WriteWireNode(BinaryWriter writer, WireNode? node)
+    {
+        writer.Write(node != null);
+        if (node == null) return;
+
+        writer.Write(node.Kind);
+        switch (node.Kind)
+        {
+            case 0: // predicate
+                writer.Write(node.Member!);
+                writer.Write(node.Op);
+                writer.Write(node.FromInclusive);
+                writer.Write(node.ToInclusive);
+                WriteBytes(writer, node.ValueRaw);
+                WriteBytes(writer, node.Value2Raw);
+                break;
+            case 1:
+            case 2: // and / or
+                writer.Write(node.Children!.Count);
+                foreach (var c in node.Children) WriteWireNode(writer, c);
+                break;
+            case 3: // not
+                WriteWireNode(writer, node.Child);
+                break;
+        }
+    }
+
+    private static WireNode? ReadWireNode(BinaryReader reader)
+    {
+        if (!reader.ReadBoolean()) return null;
+        var node = new WireNode { Kind = reader.ReadByte() };
+        switch (node.Kind)
+        {
+            case 0:
+                node.Member = reader.ReadString();
+                node.Op = reader.ReadByte();
+                node.FromInclusive = reader.ReadBoolean();
+                node.ToInclusive = reader.ReadBoolean();
+                node.ValueRaw = ReadBytes(reader);
+                node.Value2Raw = ReadBytes(reader);
+                break;
+            case 1:
+            case 2:
+                var count = reader.ReadInt32();
+                node.Children = new List<WireNode>(count);
+                for (var i = 0; i < count; i++) node.Children.Add(ReadWireNode(reader)!);
+                break;
+            case 3:
+                node.Child = ReadWireNode(reader);
+                break;
+        }
+        return node;
+    }
+
     private IndexQueryCommand ReadIndexQueryCommand(BinaryReader reader)
     {
-        var filterCount = reader.ReadInt32();
-        var filters = new List<WireFilter>(filterCount);
-        for (var i = 0; i < filterCount; i++)
-        {
-            filters.Add(new WireFilter
-            {
-                Member = reader.ReadString(),
-                Op = reader.ReadByte(),
-                FromInclusive = reader.ReadBoolean(),
-                ToInclusive = reader.ReadBoolean(),
-                ValueRaw = ReadBytes(reader),
-                Value2Raw = ReadBytes(reader),
-            });
-        }
+        var filterRoot = ReadWireNode(reader);
 
         var sortCount = reader.ReadInt32();
         var sorts = new List<WireSort>(sortCount);
@@ -1111,7 +1143,7 @@ public partial class CommandPersist
             sorts.Add(new WireSort { Member = member, Descending = reader.ReadBoolean() });
         }
 
-        var cmd = new IndexQueryCommand(filters, sorts)
+        var cmd = new IndexQueryCommand(filterRoot, sorts)
         {
             HasKeyFrom = reader.ReadBoolean(),
             KeyFromInclusive = reader.ReadBoolean(),

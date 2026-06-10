@@ -52,8 +52,8 @@ public class QueryBuilderTests : IDisposable
         var (table, all) = Seed();
 
         var rows = table.Query(q => q.City).Equal("nyc")
-            .Then(q => q.Age).AtLeast(5).AtMost(20)
-            .Then(q => q.Name).Equal("n2")
+            .And(q => q.Age).AtLeast(5).AtMost(20)
+            .And(q => q.Name).Equal("n2")
             .OrderBy(o => o.Age).ThenByDescending(o => o.Email)
             .ToList();
 
@@ -72,7 +72,7 @@ public class QueryBuilderTests : IDisposable
         var (table, all) = Seed();
 
         var keys = table.Query(q => q.City).Equal("london")
-            .Then(q => q.Age).Equal(10)
+            .And(q => q.Age).Equal(10)
             .Select(kv => kv.Key).OrderBy(k => k).ToList();
 
         var expected = all.Where(kv => kv.Value.City == "london" && kv.Value.Age == 10)
@@ -86,7 +86,7 @@ public class QueryBuilderTests : IDisposable
         var (table, all) = Seed();
 
         var expectedCount = all.Count(kv => kv.Value.City == "berlin" && kv.Value.Age >= 10);
-        table.Query(q => q.City).Equal("berlin").Then(q => q.Age).AtLeast(10).Count()
+        table.Query(q => q.City).Equal("berlin").And(q => q.Age).AtLeast(10).Count()
              .Should().Be(expectedCount);
 
         var top = table.Query(q => q.City).Equal("berlin").OrderByDescending(o => o.Age).Take(5)

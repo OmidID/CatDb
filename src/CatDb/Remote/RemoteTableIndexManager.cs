@@ -133,19 +133,7 @@ internal sealed class RemoteTableIndexManager : ITableIndexManager
 
     public IEnumerable<KeyValuePair<IData, IData>> ExecuteQuery(CatDb.Database.Querying.EngineQuery query)
     {
-        var filters = new List<WireFilter>(query.Filters.Count);
-        foreach (var f in query.Filters)
-        {
-            filters.Add(new WireFilter
-            {
-                Member = f.Member,
-                Op = (byte)f.Op,
-                FromInclusive = f.FromInclusive,
-                ToInclusive = f.ToInclusive,
-                ValueRaw = f.Value != null ? RemoteFieldCodec.Serialize(f.Value, f.FieldType) : null,
-                Value2Raw = f.Value2 != null ? RemoteFieldCodec.Serialize(f.Value2, f.FieldType) : null,
-            });
-        }
+        var filterRoot = ToWireNode(query.Filter);
 
         var sorts = query.Sorts
             .Select(s => new WireSort { Member = s.Member, Descending = s.Descending })
@@ -154,7 +142,7 @@ internal sealed class RemoteTableIndexManager : ITableIndexManager
         var keyType = _table.Descriptor.KeyType
                       ?? CatDb.Data.DataTypeUtils.BuildType(_table.Descriptor.KeyDataType);
 
-        var cmd = new IndexQueryCommand(filters, sorts)
+        var cmd = new IndexQueryCommand(filterRoot, sorts)
         {
             HasKeyFrom = query.HasKeyFrom,
             KeyFromInclusive = query.KeyFromInclusive,
@@ -169,5 +157,34 @@ internal sealed class RemoteTableIndexManager : ITableIndexManager
 
         _table.Execute(cmd);
         return cmd.Results ?? [];
+    }
+
+    private static WireNode? ToWireNode(CatDb.Database.Querying.FilterNode? node)
+    {
+        switch (node)
+        {
+            case null:
+                return null;
+            case CatDb.Database.Querying.PredicateNode p:
+                var f = p.Filter;
+                return new WireNode
+                {
+                    Kind = 0,
+                    Member = f.Member,
+                    Op = (byte)f.Op,
+                    FromInclusive = f.FromInclusive,
+                    ToInclusive = f.ToInclusive,
+                    ValueRaw = f.Value != null ? RemoteFieldCodec.Serialize(f.Value, f.FieldType) : null,
+                    Value2Raw = f.Value2 != null ? RemoteFieldCodec.Serialize(f.Value2, f.FieldType) : null,
+                };
+            case CatDb.Database.Querying.AndNode a:
+                return new WireNode { Kind = 1, Children = a.Children.Select(ToWireNode).Where(x => x != null).ToList()! };
+            case CatDb.Database.Querying.OrNode o:
+                return new WireNode { Kind = 2, Children = o.Children.Select(ToWireNode).Where(x => x != null).ToList()! };
+            case CatDb.Database.Querying.NotNode n:
+                return new WireNode { Kind = 3, Child = ToWireNode(n.Child) };
+            default:
+                throw new NotSupportedException($"Unknown filter node {node.GetType().Name}.");
+        }
     }
 }

@@ -46,13 +46,14 @@ public sealed class SortField
 }
 
 /// <summary>
-/// A complete structured query the engine executes itself: a set of field predicates (ANDed,
-/// resolved across multiple indexes with intersection), ORDER BY keys, and Skip/Take. Produced by
-/// the fluent builder; consumed by the engine's query executor.
+/// A complete structured query the engine plans and executes itself: a boolean predicate tree
+/// (<see cref="Filter"/>), ORDER BY keys, an optional primary-key range, and Skip/Take. Produced by
+/// the fluent builder; compiled by <c>QueryPlanner</c> into a streaming physical plan.
 /// </summary>
 public sealed class EngineQuery
 {
-    public List<FieldFilter> Filters { get; } = [];
+    /// <summary>Root of the WHERE predicate tree (null = no field predicate).</summary>
+    public FilterNode? Filter { get; set; }
     public List<SortField> Sorts { get; } = [];
     public int Skip { get; set; }
     public int? Take { get; set; }

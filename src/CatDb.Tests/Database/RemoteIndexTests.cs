@@ -224,8 +224,8 @@ public class RemoteIndexTests
             // The unified field builder now executes ON THE SERVER ENGINE over the wire:
             // City index ∩ Age index intersection + Name residual + ORDER BY, all server-side.
             var rows = table.Query(q => q.City).Equal("nyc")
-                .Then(q => q.Age).AtLeast(3).AtMost(9)
-                .Then(q => q.Name).Equal("n2")
+                .And(q => q.Age).AtLeast(3).AtMost(9)
+                .And(q => q.Name).Equal("n2")
                 .OrderBy(o => o.Age).ThenBy(o => o.Email)
                 .Select(kv => kv.Key).ToList();
 
@@ -237,7 +237,7 @@ public class RemoteIndexTests
             rows.Should().Equal(expected);
 
             // Filtered count over the wire.
-            table.Query(q => q.City).Equal("london").Then(q => q.Age).GreaterThan(5).Count()
+            table.Query(q => q.City).Equal("london").And(q => q.Age).GreaterThan(5).Count()
                  .Should().Be(all.Count(r => r.City == "london" && r.Age > 5));
 
             // Key-range + field sort over the wire.

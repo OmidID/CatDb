@@ -9,104 +9,215 @@ using CatDb.Database.Querying;
 
 namespace CatDb.Extensions;
 
+/// <summary>Extracts a simple member name from a selector (<c>q =&gt; q.Age</c>).</summary>
+internal static class QueryMember
+{
+    public static string Name<TRecord, TField>(Expression<Func<TRecord, TField>> selector)
+    {
+        var body = selector.Body;
+        if (body is UnaryExpression { NodeType: ExpressionType.Convert } u) body = u.Operand;
+        if (body is MemberExpression m) return m.Member.Name;
+        throw new ArgumentException("Selector must be a simple member access, e.g. q => q.Age.", nameof(selector));
+    }
+}
+
+/// <summary>Builds a boolean <see cref="FilterNode"/> tree left-to-right (AND default; Or flips next combine).</summary>
+internal sealed class FilterAccumulator
+{
+    private FilterNode? _root;
+    private bool _orPending;
+
+    public void SetAnd() => _orPending = false;
+    public void SetOr() => _orPending = true;
+
+    public void Add(FieldFilter filter, bool negate)
+    {
+        FilterNode node = FilterNode.Leaf(filter);
+        if (negate) node = FilterNode.Not(node);
+        Combine(node);
+    }
+
+    public void Combine(FilterNode node)
+    {
+        _root = _root is null ? node : (_orPending ? FilterNode.Or(_root, node) : FilterNode.And(_root, node));
+        _orPending = false;
+    }
+
+    public FilterNode? Build() => _root;
+}
+
 /// <summary>
-/// Fluent, field-oriented query builder — the single query surface. It accumulates a structured
-/// <see cref="EngineQuery"/> (field predicates + ORDER BY keys + Skip/Take) and hands it to the
-/// engine, which does <b>all</b> the work: index selection, multi-index AND intersection, residual
-/// evaluation and ordering. This type carries no filtering/sorting logic of its own.
-///
-/// <code>
-/// table.Query(q =&gt; q.Name).Equal("Omid")
-///      .Then(q =&gt; q.Age).AtLeast(30).AtMost(50)
-///      .Then(q =&gt; q.City).Equal("NYC")
-///      .OrderBy(o =&gt; o.Age).ThenByDescending(o =&gt; o.Name)
-///      .Take(20)
-/// </code>
+/// The single internal query builder. Implements both the top-level <see cref="IQuery{TKey,TRecord,TField}"/>
+/// and the grouping <see cref="IGroupOpQuery{TKey,TRecord,TField}"/> surfaces; the engine plans/executes
+/// the assembled <see cref="EngineQuery"/>. All public access is through the interfaces.
 /// </summary>
-public sealed class Query<TKey, TRecord> : IEnumerable<KeyValuePair<TKey, TRecord>>
+internal sealed class Query<TKey, TRecord, TField>
+    : IQuery<TKey, TRecord, TField>, IGroupOpQuery<TKey, TRecord, TField>, IOrderedSource<TKey, TRecord>
 {
     private readonly ITable<TKey, TRecord> _table;
-    internal readonly EngineQuery Spec = new();
+    private readonly EngineQuery _spec = new();
+    private readonly FilterAccumulator _filter = new();
+    private string? _member;
+    private Type? _memberType;   // the field's CLR type (from the selector) — values coerce to it
 
     private DataTransformer<TKey>? _keyTransform;
     private DataTransformer<TRecord>? _recordTransform;
 
-    internal Query(ITable<TKey, TRecord> table) => _table = table;
-
-    // ── Add another field predicate (AND) ─────────────────────────────────────
-
-    /// <summary>Switch to another field to add more predicates (ANDed with the rest).</summary>
-    public FieldCriteria<TKey, TRecord, TField> Then<TField>(Expression<Func<TRecord, TField>> selector)
-        => new(this, MemberName(selector));
-
-    // ── Ordering ──────────────────────────────────────────────────────────────
-    // OrderBy* establishes the primary sort key and moves into the OrderedQuery stage, where only
-    // ThenBy/ThenByDescending (lower-priority keys) + paging/terminal are available.
-
-    public OrderedQuery<TKey, TRecord> OrderBy<TOrder>(Expression<Func<TRecord, TOrder>> selector)
-        => Ordered(MemberName(selector), typeof(TOrder), descending: false);
-
-    public OrderedQuery<TKey, TRecord> OrderByDescending<TOrder>(Expression<Func<TRecord, TOrder>> selector)
-        => Ordered(MemberName(selector), typeof(TOrder), descending: true);
-
-    /// <summary>Order by the primary key.</summary>
-    public OrderedQuery<TKey, TRecord> OrderByKey() => Ordered(null, null, descending: false);
-
-    public OrderedQuery<TKey, TRecord> OrderByKeyDescending() => Ordered(null, null, descending: true);
-
-    private OrderedQuery<TKey, TRecord> Ordered(string? member, Type? fieldType, bool descending)
+    internal Query(ITable<TKey, TRecord> table, string? initialMember = null, Type? initialType = null)
     {
-        AddSort(member, fieldType, descending);
+        _table = table;
+        _member = initialMember;
+        _memberType = initialType;
+    }
+
+    // ── Core mutators (shared by both interfaces) ─────────────────────────────
+
+    private void DoAnd(string member, Type type) { _filter.SetAnd(); _member = member; _memberType = type; }
+    private void DoOr(string member, Type type) { _filter.SetOr(); _member = member; _memberType = type; }
+
+    private string Member()
+        => _member ?? throw new InvalidOperationException("No field selected; call And/Or(selector) first.");
+
+    private void DoLeaf<TSelect>(FilterOp op, TSelect value, bool negate)
+    {
+        var type = _memberType ?? typeof(TSelect);
+        _filter.Add(new FieldFilter { Member = Member(), Op = op, FieldType = type, Value = MakeData(type, value) }, negate);
+    }
+
+    private void DoBetween<TSelect>(TSelect from, TSelect to, bool fromIncl, bool toIncl, bool negate)
+    {
+        var type = _memberType ?? typeof(TSelect);
+        _filter.Add(new FieldFilter
+        {
+            Member = Member(), Op = FilterOp.Between, FieldType = type,
+            Value = MakeData(type, from), Value2 = MakeData(type, to),
+            FromInclusive = fromIncl, ToInclusive = toIncl,
+        }, negate);
+    }
+
+    /// <summary>Wraps a value as <c>Data&lt;type&gt;</c>, coercing (e.g. int literal → double field).</summary>
+    private static IData MakeData(Type type, object? value)
+    {
+        var target = Nullable.GetUnderlyingType(type) ?? type;
+        if (value is not null && value.GetType() != target && target != typeof(object))
+        {
+            try { value = System.Convert.ChangeType(value, target, System.Globalization.CultureInfo.InvariantCulture); }
+            catch { /* leave as-is; comparer will surface a clear error */ }
+        }
+        return (IData)Activator.CreateInstance(typeof(Data<>).MakeGenericType(type), value)!;
+    }
+
+    private void DoGroup(Action<IGroupOpQuery<TKey, TRecord, TField>> build)
+    {
+        var group = new Query<TKey, TRecord, TField>(_table);
+        build(group);
+        var node = group._filter.Build();
+        if (node is not null) _filter.Combine(node);
+    }
+
+    // ── IQueryBase (explicit per interface — return types differ) ──────────────
+
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.And<TSelect>(Expression<Func<TRecord, TSelect>> s) { DoAnd(QueryMember.Name(s), typeof(TSelect)); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.Or<TSelect>(Expression<Func<TRecord, TSelect>> s) { DoOr(QueryMember.Name(s), typeof(TSelect)); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.Equal<TSelect>(TSelect v) { DoLeaf(FilterOp.Equal, v, false); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.AtLeast<TSelect>(TSelect v) { DoLeaf(FilterOp.AtLeast, v, false); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.GreaterThan<TSelect>(TSelect v) { DoLeaf(FilterOp.GreaterThan, v, false); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.AtMost<TSelect>(TSelect v) { DoLeaf(FilterOp.AtMost, v, false); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.LessThan<TSelect>(TSelect v) { DoLeaf(FilterOp.LessThan, v, false); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.Between<TSelect>(TSelect f, TSelect t, bool fi, bool ti) { DoBetween(f, t, fi, ti, false); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.StartsWith<TSelect>(TSelect v) { DoLeaf(FilterOp.Prefix, v, false); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.NotEqual<TSelect>(TSelect v) { DoLeaf(FilterOp.Equal, v, true); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.NotAtLeast<TSelect>(TSelect v) { DoLeaf(FilterOp.AtLeast, v, true); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.NotGreaterThan<TSelect>(TSelect v) { DoLeaf(FilterOp.GreaterThan, v, true); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.NotAtMost<TSelect>(TSelect v) { DoLeaf(FilterOp.AtMost, v, true); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.NotLessThan<TSelect>(TSelect v) { DoLeaf(FilterOp.LessThan, v, true); return this; }
+    IQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IQuery<TKey, TRecord, TField>>.NotBetween<TSelect>(TSelect f, TSelect t, bool fi, bool ti) { DoBetween(f, t, fi, ti, true); return this; }
+
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.And<TSelect>(Expression<Func<TRecord, TSelect>> s) { DoAnd(QueryMember.Name(s), typeof(TSelect)); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.Or<TSelect>(Expression<Func<TRecord, TSelect>> s) { DoOr(QueryMember.Name(s), typeof(TSelect)); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.Equal<TSelect>(TSelect v) { DoLeaf(FilterOp.Equal, v, false); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.AtLeast<TSelect>(TSelect v) { DoLeaf(FilterOp.AtLeast, v, false); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.GreaterThan<TSelect>(TSelect v) { DoLeaf(FilterOp.GreaterThan, v, false); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.AtMost<TSelect>(TSelect v) { DoLeaf(FilterOp.AtMost, v, false); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.LessThan<TSelect>(TSelect v) { DoLeaf(FilterOp.LessThan, v, false); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.Between<TSelect>(TSelect f, TSelect t, bool fi, bool ti) { DoBetween(f, t, fi, ti, false); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.StartsWith<TSelect>(TSelect v) { DoLeaf(FilterOp.Prefix, v, false); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.NotEqual<TSelect>(TSelect v) { DoLeaf(FilterOp.Equal, v, true); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.NotAtLeast<TSelect>(TSelect v) { DoLeaf(FilterOp.AtLeast, v, true); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.NotGreaterThan<TSelect>(TSelect v) { DoLeaf(FilterOp.GreaterThan, v, true); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.NotAtMost<TSelect>(TSelect v) { DoLeaf(FilterOp.AtMost, v, true); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.NotLessThan<TSelect>(TSelect v) { DoLeaf(FilterOp.LessThan, v, true); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IQueryBase<TKey, TRecord, TField, IGroupOpQuery<TKey, TRecord, TField>>.NotBetween<TSelect>(TSelect f, TSelect t, bool fi, bool ti) { DoBetween(f, t, fi, ti, true); return this; }
+
+    // ── IQuery (top-level extras) ──────────────────────────────────────────────
+
+    public IQuery<TKey, TRecord, TField> GroupOp(Action<IGroupOpQuery<TKey, TRecord, TField>> build) { DoGroup(build); return this; }
+
+    public IQuery<TKey, TRecord, TField> KeyEqual(TKey key) => KeyFrom(key, true).KeyTo(key, true);
+    public IQuery<TKey, TRecord, TField> KeyAtLeast(TKey key) => KeyFrom(key, true);
+    public IQuery<TKey, TRecord, TField> KeyGreaterThan(TKey key) => KeyFrom(key, false);
+    public IQuery<TKey, TRecord, TField> KeyAtMost(TKey key) => KeyTo(key, true);
+    public IQuery<TKey, TRecord, TField> KeyLessThan(TKey key) => KeyTo(key, false);
+    public IQuery<TKey, TRecord, TField> KeyBetween(TKey from, TKey to, bool fromInclusive = true, bool toInclusive = true)
+        => KeyFrom(from, fromInclusive).KeyTo(to, toInclusive);
+
+    private Query<TKey, TRecord, TField> KeyFrom(TKey key, bool incl)
+    { _spec.KeyFrom = new Data<TKey>(key); _spec.HasKeyFrom = true; _spec.KeyFromInclusive = incl; return this; }
+    private Query<TKey, TRecord, TField> KeyTo(TKey key, bool incl)
+    { _spec.KeyTo = new Data<TKey>(key); _spec.HasKeyTo = true; _spec.KeyToInclusive = incl; return this; }
+
+    public IOrderedQuery<TKey, TRecord> OrderBy<TOrder>(Expression<Func<TRecord, TOrder>> s) => Ordered(QueryMember.Name(s), typeof(TOrder), false);
+    public IOrderedQuery<TKey, TRecord> OrderByDescending<TOrder>(Expression<Func<TRecord, TOrder>> s) => Ordered(QueryMember.Name(s), typeof(TOrder), true);
+    public IOrderedQuery<TKey, TRecord> OrderByKey() => Ordered(null, null, false);
+    public IOrderedQuery<TKey, TRecord> OrderByKeyDescending() => Ordered(null, null, true);
+
+    private IOrderedQuery<TKey, TRecord> Ordered(string? member, Type? type, bool desc)
+    {
+        AddSort(member, type, desc);
         return new OrderedQuery<TKey, TRecord>(this);
     }
 
-    internal void AddSort(string? member, Type? fieldType, bool descending)
-        => Spec.Sorts.Add(new SortField { Member = member, FieldType = fieldType, Descending = descending });
+    internal void AddSort(string? member, Type? type, bool desc)
+        => _spec.Sorts.Add(new SortField { Member = member, FieldType = type, Descending = desc });
 
-    // ── Primary-key range (engine key scan) ───────────────────────────────────
-
-    public Query<TKey, TRecord> KeyEqual(TKey key)       => KeyFrom(key, true).KeyTo(key, true);
-    public Query<TKey, TRecord> KeyAtLeast(TKey key)     => KeyFrom(key, true);
-    public Query<TKey, TRecord> KeyGreaterThan(TKey key) => KeyFrom(key, false);
-    public Query<TKey, TRecord> KeyAtMost(TKey key)      => KeyTo(key, true);
-    public Query<TKey, TRecord> KeyLessThan(TKey key)    => KeyTo(key, false);
-
-    public Query<TKey, TRecord> KeyBetween(TKey from, TKey to, bool fromInclusive = true, bool toInclusive = true)
-        => KeyFrom(from, fromInclusive).KeyTo(to, toInclusive);
-
-    private Query<TKey, TRecord> KeyFrom(TKey key, bool inclusive)
-    {
-        Spec.KeyFrom = new Data<TKey>(key); Spec.HasKeyFrom = true; Spec.KeyFromInclusive = inclusive;
-        return this;
-    }
-
-    private Query<TKey, TRecord> KeyTo(TKey key, bool inclusive)
-    {
-        Spec.KeyTo = new Data<TKey>(key); Spec.HasKeyTo = true; Spec.KeyToInclusive = inclusive;
-        return this;
-    }
-
-    // ── Paging ──────────────────────────────────────────────────────────────
-
-    public Query<TKey, TRecord> Take(int count) { Spec.Take = count; return this; }
-    public Query<TKey, TRecord> Skip(int count) { Spec.Skip = count; return this; }
-
-    // ── Terminal ──────────────────────────────────────────────────────────────
+    public IQuery<TKey, TRecord, TField> Take(int count) { _spec.Take = count; return this; }
+    public IQuery<TKey, TRecord, TField> Skip(int count) { _spec.Skip = count; return this; }
 
     public long Count() => this.LongCount();
-    public bool Any() { using var e = GetEnumerator(); return e.MoveNext(); }
-    /// <summary>True if any record matches (alias of <see cref="Any"/>).</summary>
-    public bool Exists() => Any();
+    public bool Exists() { using var e = GetEnumerator(); return e.MoveNext(); }
+
+    public string Explain()
+    {
+        _spec.Filter = _filter.Build();
+        return _table.Indexes is CatDb.Database.Indexing.TableIndexManager m
+            ? m.ExplainQuery(_spec)
+            : "EXPLAIN unavailable (remote table).";
+    }
+
+    // ── IGroupOpQuery (parameterless combinators + group) ─────────────────────
+
+    IGroupOpQuery<TKey, TRecord, TField> IGroupOpQuery<TKey, TRecord, TField>.And() { _filter.SetAnd(); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IGroupOpQuery<TKey, TRecord, TField>.Or() { _filter.SetOr(); return this; }
+    IGroupOpQuery<TKey, TRecord, TField> IGroupOpQuery<TKey, TRecord, TField>.GroupOp(Action<IGroupOpQuery<TKey, TRecord, TField>> build) { DoGroup(build); return this; }
+
+    // ── IOrderedSource (used by the ordering stage) ───────────────────────────
+
+    void IOrderedSource<TKey, TRecord>.AddSort(string? member, Type? type, bool desc) => AddSort(member, type, desc);
+    void IOrderedSource<TKey, TRecord>.SetTake(int count) => _spec.Take = count;
+    void IOrderedSource<TKey, TRecord>.SetSkip(int count) => _spec.Skip = count;
+
+    // ── Execution ──────────────────────────────────────────────────────────────
+
+    internal EngineQuery Spec { get { _spec.Filter = _filter.Build(); return _spec; } }
 
     public IEnumerator<KeyValuePair<TKey, TRecord>> GetEnumerator()
     {
-        foreach (var kv in _table.Indexes.ExecuteQuery(Spec))
+        _spec.Filter = _filter.Build();
+        foreach (var kv in _table.Indexes.ExecuteQuery(_spec))
             yield return Convert(kv);
     }
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-
-    // ── Internals ─────────────────────────────────────────────────────────────
 
     private KeyValuePair<TKey, TRecord> Convert(KeyValuePair<IData, IData> kv)
     {
@@ -118,139 +229,32 @@ public sealed class Query<TKey, TRecord> : IEnumerable<KeyValuePair<TKey, TRecor
             : (_recordTransform ??= new DataTransformer<TRecord>(_table.Descriptor.RecordType)).From(kv.Value);
         return new KeyValuePair<TKey, TRecord>(key, record);
     }
-
-    internal static string MemberName<TField>(Expression<Func<TRecord, TField>> selector)
-    {
-        var body = selector.Body;
-        if (body is UnaryExpression { NodeType: ExpressionType.Convert } u)
-            body = u.Operand;
-        if (body is MemberExpression m)
-            return m.Member.Name;
-        throw new ArgumentException("Selector must be a simple member access, e.g. q => q.Age.", nameof(selector));
-    }
 }
 
-/// <summary>
-/// Criteria stage for one field of a <see cref="Query{TKey,TRecord}"/>. Each operator adds a
-/// structured predicate and returns this stage, so several criteria can apply to the same field
-/// (e.g. <c>.AtLeast(30).AtMost(50)</c>). Navigation methods (<c>Then</c>/<c>OrderBy</c>/<c>Take</c>/
-/// enumeration) flow back to the parent query.
-/// </summary>
-public sealed class FieldCriteria<TKey, TRecord, TField> : IEnumerable<KeyValuePair<TKey, TRecord>>
+/// <summary>Non-generic-over-field hook the ordering stage uses to drive its parent query.</summary>
+internal interface IOrderedSource<TKey, TRecord> : IEnumerable<KeyValuePair<TKey, TRecord>>
 {
-    private readonly Query<TKey, TRecord> _query;
-    private readonly string _member;
-
-    internal FieldCriteria(Query<TKey, TRecord> query, string member)
-    {
-        _query = query;
-        _member = member;
-    }
-
-    // ── Field predicates (each ANDs into the spec, returns this for more on same field) ──
-
-    public FieldCriteria<TKey, TRecord, TField> Equal(TField value)        => Add(FilterOp.Equal, value);
-    public FieldCriteria<TKey, TRecord, TField> AtLeast(TField value)      => Add(FilterOp.AtLeast, value);
-    public FieldCriteria<TKey, TRecord, TField> GreaterThan(TField value)  => Add(FilterOp.GreaterThan, value);
-    public FieldCriteria<TKey, TRecord, TField> AtMost(TField value)       => Add(FilterOp.AtMost, value);
-    public FieldCriteria<TKey, TRecord, TField> LessThan(TField value)     => Add(FilterOp.LessThan, value);
-
-    public FieldCriteria<TKey, TRecord, TField> Between(
-        TField from, TField to, bool fromInclusive = true, bool toInclusive = true)
-    {
-        _query.Spec.Filters.Add(new FieldFilter
-        {
-            Member = _member, Op = FilterOp.Between, FieldType = typeof(TField),
-            Value = new Data<TField>(from), Value2 = new Data<TField>(to),
-            FromInclusive = fromInclusive, ToInclusive = toInclusive,
-        });
-        return this;
-    }
-
-    /// <summary>Prefix match (string fields): the field starts with <paramref name="value"/>.</summary>
-    public FieldCriteria<TKey, TRecord, TField> StartsWith(TField value) => Add(FilterOp.Prefix, value);
-
-    private FieldCriteria<TKey, TRecord, TField> Add(FilterOp op, TField value)
-    {
-        _query.Spec.Filters.Add(new FieldFilter
-        {
-            Member = _member, Op = op, FieldType = typeof(TField), Value = new Data<TField>(value),
-        });
-        return this;
-    }
-
-    // ── Navigation back to the query ────────────────────────────────────────────
-
-    public FieldCriteria<TKey, TRecord, TField2> Then<TField2>(Expression<Func<TRecord, TField2>> selector)
-        => _query.Then(selector);
-
-    public OrderedQuery<TKey, TRecord> OrderBy<TOrder>(Expression<Func<TRecord, TOrder>> selector) => _query.OrderBy(selector);
-    public OrderedQuery<TKey, TRecord> OrderByDescending<TOrder>(Expression<Func<TRecord, TOrder>> selector) => _query.OrderByDescending(selector);
-    public OrderedQuery<TKey, TRecord> OrderByKey() => _query.OrderByKey();
-    public OrderedQuery<TKey, TRecord> OrderByKeyDescending() => _query.OrderByKeyDescending();
-    public Query<TKey, TRecord> Take(int count) => _query.Take(count);
-    public Query<TKey, TRecord> Skip(int count) => _query.Skip(count);
-
-    public Query<TKey, TRecord> KeyEqual(TKey key) => _query.KeyEqual(key);
-    public Query<TKey, TRecord> KeyAtLeast(TKey key) => _query.KeyAtLeast(key);
-    public Query<TKey, TRecord> KeyGreaterThan(TKey key) => _query.KeyGreaterThan(key);
-    public Query<TKey, TRecord> KeyAtMost(TKey key) => _query.KeyAtMost(key);
-    public Query<TKey, TRecord> KeyLessThan(TKey key) => _query.KeyLessThan(key);
-    public Query<TKey, TRecord> KeyBetween(TKey from, TKey to, bool fromInclusive = true, bool toInclusive = true)
-        => _query.KeyBetween(from, to, fromInclusive, toInclusive);
-
-    public long Count() => _query.Count();
-    public bool Any() => _query.Any();
-    public bool Exists() => _query.Any();
-
-    public IEnumerator<KeyValuePair<TKey, TRecord>> GetEnumerator() => _query.GetEnumerator();
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    void AddSort(string? member, Type? type, bool desc);
+    void SetTake(int count);
+    void SetSkip(int count);
+    long Count();
+    bool Exists();
+    string Explain();
 }
 
-/// <summary>
-/// Ordering stage of a <see cref="Query{TKey,TRecord}"/>, entered by <c>OrderBy</c>/<c>OrderByDescending</c>.
-/// Exposes only lower-priority sort keys (<c>ThenBy</c>/<c>ThenByDescending</c>) plus paging and
-/// terminals — filter predicates are no longer addable here (the filter is fixed once ordering begins).
-/// </summary>
-public sealed class OrderedQuery<TKey, TRecord> : IEnumerable<KeyValuePair<TKey, TRecord>>
+/// <summary>Internal ordering stage delegating to its parent query.</summary>
+internal sealed class OrderedQuery<TKey, TRecord>(IOrderedSource<TKey, TRecord> source) : IOrderedQuery<TKey, TRecord>
 {
-    private readonly Query<TKey, TRecord> _query;
+    public IOrderedQuery<TKey, TRecord> ThenBy<TOrder>(Expression<Func<TRecord, TOrder>> s) { source.AddSort(QueryMember.Name(s), typeof(TOrder), false); return this; }
+    public IOrderedQuery<TKey, TRecord> ThenByDescending<TOrder>(Expression<Func<TRecord, TOrder>> s) { source.AddSort(QueryMember.Name(s), typeof(TOrder), true); return this; }
+    public IOrderedQuery<TKey, TRecord> ThenByKey() { source.AddSort(null, null, false); return this; }
+    public IOrderedQuery<TKey, TRecord> ThenByKeyDescending() { source.AddSort(null, null, true); return this; }
+    public IOrderedQuery<TKey, TRecord> Take(int count) { source.SetTake(count); return this; }
+    public IOrderedQuery<TKey, TRecord> Skip(int count) { source.SetSkip(count); return this; }
+    public long Count() => source.Count();
+    public bool Exists() => source.Exists();
+    public string Explain() => source.Explain();
 
-    internal OrderedQuery(Query<TKey, TRecord> query) => _query = query;
-
-    /// <summary>Append a lower-priority ascending sort key (tie-breaker for the keys before it).</summary>
-    public OrderedQuery<TKey, TRecord> ThenBy<TOrder>(Expression<Func<TRecord, TOrder>> selector)
-    {
-        _query.AddSort(Query<TKey, TRecord>.MemberName(selector), typeof(TOrder), descending: false);
-        return this;
-    }
-
-    public OrderedQuery<TKey, TRecord> ThenByDescending<TOrder>(Expression<Func<TRecord, TOrder>> selector)
-    {
-        _query.AddSort(Query<TKey, TRecord>.MemberName(selector), typeof(TOrder), descending: true);
-        return this;
-    }
-
-    /// <summary>Append the primary key as a lower-priority sort key.</summary>
-    public OrderedQuery<TKey, TRecord> ThenByKey()
-    {
-        _query.AddSort(null, null, descending: false);
-        return this;
-    }
-
-    public OrderedQuery<TKey, TRecord> ThenByKeyDescending()
-    {
-        _query.AddSort(null, null, descending: true);
-        return this;
-    }
-
-    public OrderedQuery<TKey, TRecord> Take(int count) { _query.Take(count); return this; }
-    public OrderedQuery<TKey, TRecord> Skip(int count) { _query.Skip(count); return this; }
-
-    public long Count() => _query.Count();
-    public bool Any() => _query.Any();
-    public bool Exists() => _query.Any();
-
-    public IEnumerator<KeyValuePair<TKey, TRecord>> GetEnumerator() => _query.GetEnumerator();
+    public IEnumerator<KeyValuePair<TKey, TRecord>> GetEnumerator() => source.GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }

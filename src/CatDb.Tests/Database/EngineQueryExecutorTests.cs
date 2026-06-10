@@ -45,20 +45,22 @@ public class EngineQueryExecutorTests : IDisposable
         return (table, table.Indexes, all);
     }
 
-    private static FieldFilter Eq<T>(string member, T value) =>
-        new() { Member = member, Op = FilterOp.Equal, FieldType = typeof(T), Value = new Data<T>(value) };
+    private static FilterNode Eq<T>(string member, T value) =>
+        FilterNode.Leaf(new FieldFilter { Member = member, Op = FilterOp.Equal, FieldType = typeof(T), Value = new Data<T>(value) });
 
+    private static FilterNode Leaf<T>(string member, FilterOp op, T value) =>
+        FilterNode.Leaf(new FieldFilter { Member = member, Op = op, FieldType = typeof(T), Value = new Data<T>(value) });
+
+    // No ORDER BY => engine returns rows in (unspecified) plan order; sort here to compare as a set.
     private List<int> Keys(ITableIndexManager idx, EngineQuery q) =>
-        idx.ExecuteQuery(q).Select(kv => ((Data<int>)kv.Key).Value).ToList();
+        idx.ExecuteQuery(q).Select(kv => ((Data<int>)kv.Key).Value).OrderBy(k => k).ToList();
 
     [Fact]
     public void TwoIndexes_AndIntersection_MatchesLinq()
     {
         var (_, idx, all) = Seed();
 
-        var q = new EngineQuery();
-        q.Filters.Add(Eq("City", "nyc"));
-        q.Filters.Add(new FieldFilter { Member = "Age", Op = FilterOp.AtLeast, FieldType = typeof(int), Value = new Data<int>(10) });
+        var q = new EngineQuery { Filter = FilterNode.And(Eq("City", "nyc"), Leaf("Age", FilterOp.AtLeast, 10)) };
 
         var got = Keys(idx, q);
         var expected = all.Where(kv => kv.Value.City == "nyc" && kv.Value.Age >= 10)
@@ -73,11 +75,9 @@ public class EngineQueryExecutorTests : IDisposable
     {
         var (_, idx, all) = Seed();
 
-        var q = new EngineQuery();
-        q.Filters.Add(Eq("City", "london"));                                  // indexed
-        q.Filters.Add(new FieldFilter { Member = "Age", Op = FilterOp.Between, FieldType = typeof(int),
-            Value = new Data<int>(5), Value2 = new Data<int>(15) });          // indexed (range)
-        q.Filters.Add(Eq("Name", "n2"));                                      // residual (no index)
+        var between = FilterNode.Leaf(new FieldFilter { Member = "Age", Op = FilterOp.Between, FieldType = typeof(int),
+            Value = new Data<int>(5), Value2 = new Data<int>(15) });
+        var q = new EngineQuery { Filter = FilterNode.All([Eq("City", "london"), between, Eq("Name", "n2")]) };
 
         var got = Keys(idx, q);
         var expected = all.Where(kv => kv.Value.City == "london"
@@ -89,12 +89,27 @@ public class EngineQueryExecutorTests : IDisposable
     }
 
     [Fact]
+    public void Or_OfTwoIndexes_UnionsMatchesLinq()
+    {
+        var (_, idx, all) = Seed();
+
+        // (City = 'nyc' OR City = 'berlin') AND Age >= 10
+        var cityOr = FilterNode.Or(Eq("City", "nyc"), Eq("City", "berlin"));
+        var q = new EngineQuery { Filter = FilterNode.And(cityOr, Leaf("Age", FilterOp.AtLeast, 10)) };
+
+        var got = Keys(idx, q);
+        var expected = all.Where(kv => (kv.Value.City == "nyc" || kv.Value.City == "berlin") && kv.Value.Age >= 10)
+                          .Select(kv => kv.Key).OrderBy(k => k).ToList();
+        got.Should().Equal(expected);
+        got.Should().NotBeEmpty();
+    }
+
+    [Fact]
     public void Sort_ByField_Descending_ThenTake()
     {
         var (_, idx, all) = Seed();
 
-        var q = new EngineQuery { Take = 5 };
-        q.Filters.Add(Eq("City", "nyc"));
+        var q = new EngineQuery { Take = 5, Filter = Eq("City", "nyc") };
         q.Sorts.Add(new SortField { Member = "Age", FieldType = typeof(int), Descending = true });
 
         var rows = idx.ExecuteQuery(q).Select(kv => ((Data<int>)kv.Key).Value).ToList();
@@ -111,8 +126,7 @@ public class EngineQueryExecutorTests : IDisposable
     {
         var (_, idx, all) = Seed();
 
-        var q = new EngineQuery();
-        q.Filters.Add(Eq("Name", "n3"));   // no index on Name → full scan + residual
+        var q = new EngineQuery { Filter = Eq("Name", "n3") };   // no index on Name → scan + residual
 
         var got = Keys(idx, q);
         var expected = all.Where(kv => kv.Value.Name == "n3").Select(kv => kv.Key).OrderBy(k => k).ToList();

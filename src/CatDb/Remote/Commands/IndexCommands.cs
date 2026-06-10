@@ -164,14 +164,21 @@ public class IndexListCommand : ICommand
 // Field values are opaque raw bytes (RemoteFieldCodec). The server resolves each field's type from
 // its member name, decodes the values, rebuilds the EngineQuery and runs it on its local engine.
 
-public struct WireFilter
+/// <summary>Wire form of a <c>FilterNode</c>: Kind 0=predicate, 1=And, 2=Or, 3=Not.</summary>
+public sealed class WireNode
 {
-    public string Member;
-    public byte Op;             // FilterOp
+    public byte Kind;
+    // Predicate (Kind 0):
+    public string? Member;
+    public byte Op;
     public bool FromInclusive;
     public bool ToInclusive;
     public byte[]? ValueRaw;
     public byte[]? Value2Raw;
+    // And/Or (Kind 1/2):
+    public List<WireNode>? Children;
+    // Not (Kind 3):
+    public WireNode? Child;
 }
 
 public struct WireSort
@@ -182,7 +189,7 @@ public struct WireSort
 
 public class IndexQueryCommand : ICommand
 {
-    public List<WireFilter> Filters;
+    public WireNode? FilterRoot;
     public List<WireSort> Sorts;
 
     public bool HasKeyFrom;
@@ -198,9 +205,9 @@ public class IndexQueryCommand : ICommand
 
     public List<KeyValuePair<IData, IData>>? Results;
 
-    public IndexQueryCommand(List<WireFilter> filters, List<WireSort> sorts)
+    public IndexQueryCommand(WireNode? filterRoot, List<WireSort> sorts)
     {
-        Filters = filters;
+        FilterRoot = filterRoot;
         Sorts = sorts;
     }
 

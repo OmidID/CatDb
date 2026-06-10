@@ -6,18 +6,19 @@ using CatDb.Database;
 
 namespace CatDb.Extensions;
 
-/// <summary>
-/// Entry points for the fluent <see cref="Query{TKey,TRecord}"/> builder.
-/// (Temporary name <c>Q</c> during the refactor; becomes <c>Query</c> once the old surface is removed.)
-/// </summary>
+/// <summary>Entry points for the fluent query builder (returns interfaces; impl is internal).</summary>
 public static class QueryEntryExtensions
 {
-    /// <summary>Begin a query with no field predicate (e.g. order all rows, or page by key).</summary>
-    public static Query<TKey, TRecord> Query<TKey, TRecord>(this ITable<TKey, TRecord> table)
-        => new(table);
+    /// <summary>Begin a query with no field selected (order all rows, page by key, or start a group).</summary>
+    public static IQuery<TKey, TRecord, TKey> Query<TKey, TRecord>(this ITable<TKey, TRecord> table)
+        => new Query<TKey, TRecord, TKey>(table);
 
     /// <summary>Begin a query on a record field: <c>table.Query(q =&gt; q.Name).Equal("Omid")…</c>.</summary>
-    public static FieldCriteria<TKey, TRecord, TField> Query<TKey, TRecord, TField>(
+    public static IQuery<TKey, TRecord, TField> Query<TKey, TRecord, TField>(
         this ITable<TKey, TRecord> table, Expression<Func<TRecord, TField>> selector)
-        => new Query<TKey, TRecord>(table).Then(selector);
+        => new Query<TKey, TRecord, TField>(table, QueryMember.Name(selector), typeof(TField));
+
+    /// <summary>Begin a top-level grouped expression.</summary>
+    public static IGroupOpQuery<TKey, TRecord, TKey> GroupOp<TKey, TRecord>(this ITable<TKey, TRecord> table)
+        => new Query<TKey, TRecord, TKey>(table);
 }

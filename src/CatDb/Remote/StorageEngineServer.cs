@@ -406,22 +406,8 @@ public sealed class StorageEngineServer
         {
             Skip = cmd.Skip,
             Take = cmd.HasTake ? cmd.Take : null,
+            Filter = RebuildFilterNode(cmd.FilterRoot, mgr),
         };
-
-        foreach (var f in cmd.Filters)
-        {
-            var fieldType = mgr.GetMemberType(f.Member);
-            query.Filters.Add(new CatDb.Database.Querying.FieldFilter
-            {
-                Member = f.Member,
-                Op = (CatDb.Database.Querying.FilterOp)f.Op,
-                FieldType = fieldType,
-                Value = f.ValueRaw != null ? RemoteFieldCodec.Deserialize(f.ValueRaw, fieldType) : null,
-                Value2 = f.Value2Raw != null ? RemoteFieldCodec.Deserialize(f.Value2Raw, fieldType) : null,
-                FromInclusive = f.FromInclusive,
-                ToInclusive = f.ToInclusive,
-            });
-        }
 
         foreach (var s in cmd.Sorts)
         {
@@ -445,7 +431,40 @@ public sealed class StorageEngineServer
         }
 
         var results = mgr.ExecuteQuery(query).ToList();
-        return new IndexQueryCommand(cmd.Filters, cmd.Sorts) { Results = results };
+        return new IndexQueryCommand(cmd.FilterRoot, cmd.Sorts) { Results = results };
+    }
+
+    private static CatDb.Database.Querying.FilterNode? RebuildFilterNode(
+        WireNode? node, CatDb.Database.Indexing.TableIndexManager mgr)
+    {
+        if (node is null) return null;
+        switch (node.Kind)
+        {
+            case 0: // predicate
+            {
+                var fieldType = mgr.GetMemberType(node.Member!);
+                return CatDb.Database.Querying.FilterNode.Leaf(new CatDb.Database.Querying.FieldFilter
+                {
+                    Member = node.Member!,
+                    Op = (CatDb.Database.Querying.FilterOp)node.Op,
+                    FieldType = fieldType,
+                    Value = node.ValueRaw != null ? RemoteFieldCodec.Deserialize(node.ValueRaw, fieldType) : null,
+                    Value2 = node.Value2Raw != null ? RemoteFieldCodec.Deserialize(node.Value2Raw, fieldType) : null,
+                    FromInclusive = node.FromInclusive,
+                    ToInclusive = node.ToInclusive,
+                });
+            }
+            case 1: // and
+                return CatDb.Database.Querying.FilterNode.All(
+                    node.Children!.Select(c => RebuildFilterNode(c, mgr)!).ToList());
+            case 2: // or
+                return CatDb.Database.Querying.FilterNode.Any(
+                    node.Children!.Select(c => RebuildFilterNode(c, mgr)!).ToList());
+            case 3: // not
+                return CatDb.Database.Querying.FilterNode.Not(RebuildFilterNode(node.Child, mgr)!);
+            default:
+                throw new NotSupportedException($"Unknown wire filter node kind {node.Kind}.");
+        }
     }
 
     private ICommand IndexExists(XTablePortable table, ICommand command)

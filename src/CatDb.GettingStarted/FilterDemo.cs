@@ -8,7 +8,7 @@ using CatDb.Extensions;
 
 /// <summary>
 /// Filtering demo — the single field-oriented query builder. Multiple predicates across different
-/// fields are chained with <c>.Then(...)</c> and ANDed; the <b>engine</b> resolves each to an index,
+/// fields are chained with <c>.And(...)</c> and ANDed; the <b>engine</b> resolves each to an index,
 /// intersects the indexes by primary key, evaluates non-indexed fields as a residual, and orders the
 /// result. Nothing is filtered in .NET after the fact.
 /// </summary>
@@ -53,7 +53,7 @@ static class FilterDemo
         Section("Multi-index AND: City='london' AND Age in [30..40] — first 8");
         sw.Restart();
         foreach (var kv in table.Query(q => q.City).Equal("london")
-                     .Then(q => q.Age).AtLeast(30).AtMost(40)
+                     .And(q => q.Age).AtLeast(30).AtMost(40)
                      .Take(8))
             Console.WriteLine($"   #{kv.Key}  city={kv.Value.City}  age={kv.Value.Age}");
         Console.WriteLine($"   (engine intersected two indexes in {sw.Elapsed.TotalMilliseconds:F1} ms)");
@@ -61,8 +61,8 @@ static class FilterDemo
         // 2) Three predicates: two indexed (City, Name) + one residual (Email prefix, no index).
         Section("Indexed ∩ indexed + residual: City='nyc' AND Name='cara' AND Email starts 'user000001'");
         foreach (var kv in table.Query(q => q.City).Equal("nyc")
-                     .Then(q => q.Name).Equal("cara")
-                     .Then(q => q.Email).StartsWith("user000001")
+                     .And(q => q.Name).Equal("cara")
+                     .And(q => q.Email).StartsWith("user000001")
                      .Take(8))
             Console.WriteLine($"   #{kv.Key}  {kv.Value.Email}  {kv.Value.Name}");
 
@@ -76,7 +76,7 @@ static class FilterDemo
         // 4) Filtered count — engine intersects then counts.
         Section("Filtered count: City='tokyo' AND Age in [25..35]");
         sw.Restart();
-        var cnt = table.Query(q => q.City).Equal("tokyo").Then(q => q.Age).AtLeast(25).AtMost(35).Count();
+        var cnt = table.Query(q => q.City).Equal("tokyo").And(q => q.Age).AtLeast(25).AtMost(35).Count();
         Console.WriteLine($"   {cnt:N0} matches  (in {sw.Elapsed.TotalMilliseconds:F1} ms)");
 
         // 5) Primary-key range + field sort.

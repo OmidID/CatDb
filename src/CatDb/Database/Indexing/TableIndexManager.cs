@@ -50,6 +50,7 @@ internal sealed partial class TableIndexManager : ITableIndexManager
         var def = new IndexDefinition(indexName, slotIndices, memberNames, type);
         var entry = BuildEntry(def);
         _indexes[indexName] = entry;
+        _planCache.Clear(); // index set changed → cached plans may now be stale
         return def;
     }
 
@@ -66,6 +67,7 @@ internal sealed partial class TableIndexManager : ITableIndexManager
         var def = new IndexDefinition(indexName, slotIndices, memberNames, type);
         var entry = BuildEntry(def);
         _indexes[indexName] = entry;
+        _planCache.Clear();
         return def;
     }
 
@@ -82,6 +84,7 @@ internal sealed partial class TableIndexManager : ITableIndexManager
         DeleteIndexTable(indexTableName);
 
         _indexes.Remove(indexName);
+        _planCache.Clear();
     }
 
     public IndexDefinition? GetIndex(string indexName)

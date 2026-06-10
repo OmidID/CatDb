@@ -2066,7 +2066,7 @@ public sealed class FilterStressService : BackgroundService
         var loStock = _rng.Next(0, 150);
         // Multi-index AND: Category index ∩ Stock index, engine-intersected.
         var rows = _items.Query(p => p.Category).Equal(cat)
-            .Then(p => p.Stock).AtLeast(loStock)
+            .And(p => p.Stock).AtLeast(loStock)
             .Take(256).ToList();
 
         foreach (var r in rows)
@@ -2085,7 +2085,7 @@ public sealed class FilterStressService : BackgroundService
         if (max <= 0) return;
         var cat = Categories[_rng.Next(Categories.Length)];
         var rows = _items.Query(p => p.Category).Equal(cat)
-            .Then(p => p.Stock).LessThan(100)
+            .And(p => p.Stock).LessThan(100)
             .KeyBetween(1, max)
             .Take(256).ToList();
 
@@ -2101,7 +2101,7 @@ public sealed class FilterStressService : BackgroundService
     private void ReadFilteredCount()
     {
         var cat = Categories[_rng.Next(Categories.Length)];
-        var filtered = _items.Query(p => p.Category).Equal(cat).Then(p => p.Stock).AtLeast(50).Count();
+        var filtered = _items.Query(p => p.Category).Equal(cat).And(p => p.Stock).AtLeast(50).Count();
         var recount = _items.Query(p => p.Category).Equal(cat).Count(kv => kv.Value.Stock >= 50);
         if (filtered != recount)
             Corrupt($"filtered count mismatch cat={cat}: where={filtered} recount={recount}");
@@ -2113,7 +2113,7 @@ public sealed class FilterStressService : BackgroundService
     {
         var cat = Categories[_rng.Next(Categories.Length)];
         var n = _items.Query(p => p.Category).Equal(cat)
-            .Then(p => p.Price).GreaterThan(500)
+            .And(p => p.Price).GreaterThan(500)
             .Take(128).Count();
         Hit($"mutable-filter cat={cat} n={n}");
     }
