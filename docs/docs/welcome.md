@@ -17,7 +17,6 @@ You can use CatDb in three shapes:
 ## What CatDb is good at
 
 - Ordered key-value tables where keys are naturally searchable or range-scanned.
-- High write volume, especially random-key writes that would punish a plain B-tree.
 - Local persistence with explicit commits and a crash-safe write-ahead log by default.
 - Simple server-side browsing and administration over HTTP.
 

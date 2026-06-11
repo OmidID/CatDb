@@ -7,7 +7,7 @@ using FluentAssertions;
 namespace CatDb.Tests.Data;
 
 /// <summary>
-/// Tests for Comparer&lt;T&gt; — the Expression-tree-compiled comparers used as B-tree key comparers.
+/// Tests for Comparer&lt;T&gt; — the Expression-tree-compiled comparers used as W-tree key comparers.
 /// These were a source of crashes when types with string/decimal/byte[] fields were used.
 /// </summary>
 public class ComparerTests

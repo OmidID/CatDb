@@ -108,7 +108,7 @@ internal static class SlotAccessor
     /// <summary>
     /// Builds the DataType for a non-unique index table key:
     /// Slots(indexed_field_types..., primary_key_type).
-    /// The primary key is appended to ensure uniqueness in the B-tree.
+    /// The primary key is appended to ensure uniqueness in the W-tree.
     /// </summary>
     internal static DataType BuildNonUniqueIndexKeyDataType(DataType recordDataType, int[] slotIndices, DataType primaryKeyDataType)
     {

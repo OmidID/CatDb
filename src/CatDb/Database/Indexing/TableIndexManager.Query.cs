@@ -42,6 +42,20 @@ internal sealed partial class TableIndexManager : IQueryEngineContext
     string? IQueryEngineContext.ResolveIndex(string member)
         => ResolveSingleFieldIndex(member)?.Definition.Name;
 
+    string? IQueryEngineContext.ResolveCoveringIndex(IReadOnlyList<string> members)
+    {
+        foreach (var entry in _indexes.Values)
+        {
+            var m = entry.Definition.MemberNames;
+            if (m is null || m.Length != members.Count) continue;
+            var match = true;
+            for (var i = 0; i < m.Length; i++)
+                if (!string.Equals(m[i], members[i], StringComparison.Ordinal)) { match = false; break; }
+            if (match) return entry.Definition.Name;
+        }
+        return null;
+    }
+
     // Value-independent (plan-cache friendly): unique index is maximally selective; others rank lower.
     long IQueryEngineContext.IndexSelectivity(string indexName)
         => _indexes.TryGetValue(indexName, out var e) && e.Definition.Type == IndexType.Unique ? 1 : 1000;

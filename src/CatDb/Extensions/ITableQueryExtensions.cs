@@ -7,7 +7,7 @@ namespace CatDb.Extensions;
 
 /// <summary>
 /// Low-level primary-key helpers over the engine's native <see cref="ITable{TKey,TRecord}.Scan"/>
-/// (B-tree ordered range scan + cursor paging). These are the "make life easier" wrappers around the
+/// (W-tree ordered range scan + cursor paging). These are the "make life easier" wrappers around the
 /// engine key scan — distinct from the field-oriented <see cref="Query{TKey,TRecord}"/> builder,
 /// which is the single way to filter/sort by record fields and across indexes.
 ///

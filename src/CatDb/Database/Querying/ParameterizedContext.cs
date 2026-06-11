@@ -16,6 +16,7 @@ internal sealed class ParameterizedContext(IQueryEngineContext inner, IData[] pa
     public IData Parameter(int slot) => parameters[slot];
 
     public string? ResolveIndex(string member) => inner.ResolveIndex(member);
+    public string? ResolveCoveringIndex(IReadOnlyList<string> members) => inner.ResolveCoveringIndex(members);
     public long IndexSelectivity(string indexName) => inner.IndexSelectivity(indexName);
     public IEnumerable<IData> SeekEqual(string indexName, IData value) => inner.SeekEqual(indexName, value);
 

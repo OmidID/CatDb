@@ -12,7 +12,7 @@ const features = [
   },
   {
     title: 'Waterfall Tree engine',
-    text: 'Writes are buffered and cascaded through a WTree, a write-optimized B-tree variant designed for random-key workloads.',
+    text: 'Writes are buffered and cascaded through a WTree, a write-optimized W-tree variant designed for random-key workloads.',
   },
   {
     title: 'Embedded or server',

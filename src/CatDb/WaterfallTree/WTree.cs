@@ -14,6 +14,7 @@ public partial class WTree : IDisposable
 {
     private int _internalNodeMinBranches = 2; //default values
     private int _internalNodeMaxBranches = 64;
+    private long _cacheSizeBytes = 0;
     private int _internalNodeMaxOperationsInRoot = 4 * 1024;
     private int _internalNodeMinOperations = 4 * 1024;
     private int _internalNodeMaxOperations = 8 * 1024;
@@ -64,6 +65,10 @@ public partial class WTree : IDisposable
             _leafNodeMaxRecords = options.MaxRecordsPerLeaf;
             _cacheSize = options.CacheSize;
         }
+
+        // Runtime memory knob (not persisted in the DB header) — apply for new and existing DBs.
+        if (options != null)
+            _cacheSizeBytes = options.CacheSizeBytes;
 
         if (heap.Exists(HANDLE_SETTINGS))
         {
@@ -135,6 +140,9 @@ public partial class WTree : IDisposable
             throw new ObjectDisposedException("WTree");
 
         _rootBranch.SyncRoot.Enter();
+#if PERFORMANCE_CHECK
+        var holdStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
         try
         {
             if (!_isRootCacheLoaded)
@@ -147,6 +155,9 @@ public partial class WTree : IDisposable
         }
         finally
         {
+#if PERFORMANCE_CHECK
+            General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.execute.hold", holdStart);
+#endif
             _rootBranch.SyncRoot.Exit();
         }
     }
@@ -328,6 +339,9 @@ public partial class WTree : IDisposable
         }
 
         _rootBranch.SyncRoot.Enter();
+#if PERFORMANCE_CHECK
+        var commitHoldStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
         try
         {
             if (!_isRootCacheLoaded)
@@ -361,10 +375,17 @@ public partial class WTree : IDisposable
             // so evicted nodes can be safely unloaded without data loss.
             EvictCache();
 
+#if PERFORMANCE_CHECK
+            General.Diagnostics.PerformanceCheck.Observe("gc.heap.mb", GC.GetTotalMemory(false) / (1024 * 1024));
+#endif
+
             _heap.Commit();
         }
         finally
         {
+#if PERFORMANCE_CHECK
+            General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.commit.hold", commitHoldStart);
+#endif
             _rootBranch.SyncRoot.Exit();
         }
     }
@@ -464,11 +485,82 @@ public partial class WTree : IDisposable
     /// <summary>
     /// Evicts cold nodes from the cache. Called synchronously during Commit
     /// (already under root lock) — no background thread, no races.
+    ///
+    /// Default policy is a <b>byte budget</b> (<see cref="DatabaseOptions.CacheSizeBytes"/>): WaterfallTree
+    /// internal nodes carry message buffers and range from tens of KB to over a MB, so a fixed node
+    /// <i>count</i> lets the managed heap — and GC pause time — grow without bound, which surfaces as
+    /// throughput that decays the longer the process runs. Bounding by total bytes keeps the heap flat.
+    /// A zero budget falls back to the legacy node-count policy.
     /// </summary>
     private void EvictCache()
     {
-        if (_cache.Count <= _cacheSize)
+        var marked = _cacheSizeBytes > 0 ? MarkColdByBytes() : MarkColdByCount();
+
+#if PERFORMANCE_CHECK
+        General.Diagnostics.PerformanceCheck.Observe("wtree.cache.count", _cache.Count);
+#endif
+        if (!marked)
             return;
+
+        // CacheFlush walk — already under root lock from Commit.
+        // DoFall will Store+Unload each IsExpiredFromCache node.
+        var token = new Token(CancellationToken.None);
+        var param = new Params(WalkMethod.CascadeButOnlyLoaded, WalkAction.CacheFlush, null, false);
+        _rootBranch.Fall(_depth + 1, token, param);
+    }
+
+    // A node's live managed footprint (deserialized op-collections, boxed Data, dictionaries) is several
+    // times its serialized size; this factor turns the serialized estimate into an approximate-RAM figure
+    // so CacheSizeBytes can be expressed in real memory terms.
+    private const long InMemoryOverheadFactor = 8;
+
+    /// <summary>Marks coldest nodes for eviction until the estimated cache RAM falls under the budget.</summary>
+    private bool MarkColdByBytes()
+    {
+        long totalSerialized = 0;
+        var count = 0;
+        foreach (var kv in _cache)
+        {
+            if (kv.Value.IsRoot) continue;
+            totalSerialized += kv.Value.ApproxByteSize;
+            count++;
+        }
+
+        var totalRam = totalSerialized * InMemoryOverheadFactor;
+
+#if PERFORMANCE_CHECK
+        General.Diagnostics.PerformanceCheck.Observe("wtree.cache.bytes.mb", totalRam / (1024 * 1024));
+#endif
+        if (totalRam <= _cacheSizeBytes || count == 0)
+            return false;
+
+        // Sort coldest-first and evict until under budget (only when over — no alloc on the common path).
+        var nodes = new (long TouchId, Node Node, long Ram)[count];
+        var i = 0;
+        foreach (var kv in _cache)
+        {
+            if (kv.Value.IsRoot) continue;
+            nodes[i++] = (kv.Value.TouchId, kv.Value, kv.Value.ApproxByteSize * InMemoryOverheadFactor);
+        }
+        Array.Sort(nodes, static (a, b) => a.TouchId.CompareTo(b.TouchId));
+
+        long freed = 0;
+        var marked = 0;
+        foreach (var (_, node, ram) in nodes)
+        {
+            if (totalRam - freed <= _cacheSizeBytes) break;
+            node.IsExpiredFromCache = true;
+            freed += ram;
+            marked++;
+        }
+        return marked > 0;
+    }
+
+    /// <summary>Legacy node-count eviction (used when the byte budget is disabled).</summary>
+    private bool MarkColdByCount()
+    {
+        if (_cache.Count <= _cacheSize)
+            return false;
 
         var evictCount = _cache.Count - _cacheSize;
 
@@ -499,10 +591,8 @@ public partial class WTree : IDisposable
             }
             else if (touchId < maxCandidateTouchId)
             {
-                // Replace the warmest candidate with this colder node
                 candidates[maxCandidateIdx] = (touchId, node);
 
-                // Rescan for new max (small array, fits in L1 cache)
                 maxCandidateTouchId = long.MinValue;
                 for (var i = 0; i < evictCount; i++)
                 {
@@ -518,11 +608,7 @@ public partial class WTree : IDisposable
         for (var i = 0; i < candidateCount; i++)
             candidates[i].Node.IsExpiredFromCache = true;
 
-        // CacheFlush walk — already under root lock from Commit.
-        // DoFall will Store+Unload each IsExpiredFromCache node.
-        var token = new Token(CancellationToken.None);
-        var param = new Params(WalkMethod.CascadeButOnlyLoaded, WalkAction.CacheFlush, null, false);
-        _rootBranch.Fall(_depth + 1, token, param);
+        return candidateCount > 0;
     }
 
     #endregion

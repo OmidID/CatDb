@@ -788,7 +788,13 @@ public class XTablePortable : ITable<IData, IData>
         long rowCount = 0;
 #endif
 
+#if PERFORMANCE_CHECK
+        var lockStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
         SyncRoot.Enter();
+#if PERFORMANCE_CHECK
+        global::CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("xtable.scan.lockwait", lockStart);
+#endif
         try
         {
             var keyComparer = Locator.KeyComparer;
@@ -800,7 +806,13 @@ public class XTablePortable : ITable<IData, IData>
                 if (cmp == 0 && (fromExclusive || toExclusive)) yield break;
             }
 
+#if PERFORMANCE_CHECK
+            var flushStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
             Flush();
+#if PERFORMANCE_CHECK
+            global::CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("xtable.scan.flush", flushStart);
+#endif
 
             if (maxRows <= 0)
                 yield break;
@@ -940,7 +952,13 @@ public class XTablePortable : ITable<IData, IData>
         long rowCount = 0;
 #endif
 
+#if PERFORMANCE_CHECK
+        var lockStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
         SyncRoot.Enter();
+#if PERFORMANCE_CHECK
+        global::CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("xtable.scan.lockwait", lockStart);
+#endif
         try
         {
             var keyComparer = Locator.KeyComparer;
@@ -952,7 +970,13 @@ public class XTablePortable : ITable<IData, IData>
                 if (cmp == 0 && (fromExclusive || toExclusive)) yield break;
             }
 
+#if PERFORMANCE_CHECK
+            var flushStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
             Flush();
+#if PERFORMANCE_CHECK
+            global::CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("xtable.scan.flush", flushStart);
+#endif
 
             if (maxRows <= 0)
                 yield break;

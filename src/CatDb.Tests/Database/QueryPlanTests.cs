@@ -85,6 +85,27 @@ public class QueryPlanTests : IDisposable
     }
 
     [Fact]
+    public void OrderByIndexedField_NoFilter_StreamsIndex_NoSort()
+    {
+        var table = Seed();
+        table.CreateIndex("CityAge", new[] { "City", "Age" }, IndexType.NonUnique);
+
+        // key range + ORDER BY (City, Age) covered by composite → ordered index scan, no Sort, no full buffer.
+        var plan = table.Query().KeyBetween(1, 200)
+            .OrderBy(o => o.City).ThenBy(o => o.Age).Take(8).Explain();
+        plan.Should().Contain("IndexOrderedScan");
+        plan.Should().NotContain("Sort");
+    }
+
+    [Fact]
+    public void OrderBySingleIndexedField_StreamsIndex()
+    {
+        var plan = Seed().Query().OrderBy(o => o.Age).Take(5).Explain();
+        plan.Should().Contain("IndexOrderedScan(idx=Age");
+        plan.Should().NotContain("Sort");
+    }
+
+    [Fact]
     public void GroupedOr_AndIndexed_PlansCorrectly()
     {
         // (City='nyc' OR City='london') AND Age >= 5  → Union under Intersect.

@@ -47,6 +47,16 @@ internal sealed class IndexRangeSeek(
     public override string Explain(int indent) => $"{Pad(indent)}IndexRangeSeek({member}, idx={indexName})";
 }
 
+/// <summary>Streams every primary key of an index in field order (forward = ascending, backward =
+/// descending). Used to serve ORDER BY straight from an index — no buffering, no Sort node.</summary>
+internal sealed class IndexOrderedScan(string indexName, bool backward) : PkPlan
+{
+    public override IEnumerable<IData> Execute(IQueryEngineContext ctx)
+        => ctx.SeekRange(indexName, null, false, true, null, false, true, backward);
+    public override string Explain(int indent)
+        => $"{Pad(indent)}IndexOrderedScan(idx={indexName}{(backward ? ", backward" : "")})";
+}
+
 /// <summary>AND of pk streams — smaller (more selective) sides hashed, the largest streamed.</summary>
 internal sealed class IntersectPk(IReadOnlyList<PkPlan> inputs) : PkPlan
 {

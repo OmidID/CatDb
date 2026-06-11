@@ -11,6 +11,11 @@ public partial class WTree
         public bool IsModified { get; protected set; }
         public Branch Branch;
         public volatile bool IsExpiredFromCache;
+
+        /// <summary>Last known serialized size — used as the in-memory footprint estimate for the
+        /// byte-budgeted cache. Internal (buffer-laden) nodes are far larger than leaves, so the cache
+        /// must bound by bytes, not node count, to keep the managed heap (and GC pauses) flat.</summary>
+        public long ApproxByteSize;
 #if DEBUG
 #pragma warning disable CS0649
         public volatile int TaskId;
@@ -75,6 +80,7 @@ public partial class WTree
 
             using var stream = new MemoryStream();
             Store(stream);
+            ApproxByteSize = stream.Length;
 
 #if PERFORMANCE_CHECK
             CatDb.General.Diagnostics.PerformanceCheck.Observe("wtree.node.store.bytes", stream.Length);
@@ -110,6 +116,7 @@ public partial class WTree
         {
             var heap = Branch.Tree._heap;
             var buffer = heap.Read(Branch.NodeHandle);
+            ApproxByteSize = buffer.Length;
             Load(new MemoryStream(buffer));
         }
 

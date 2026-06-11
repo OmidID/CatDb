@@ -60,9 +60,22 @@ public sealed class DatabaseOptions
     /// <summary>
     /// Number of nodes to keep in the in-memory cache.
     /// Larger = fewer disk reads, more memory usage.
+    /// Used only when <see cref="CacheSizeBytes"/> is 0.
     /// Default: 4096.
     /// </summary>
     public int CacheSize { get; set; } = 4096;
+
+    /// <summary>
+    /// Memory budget (bytes) for the in-memory node cache. Because write-buffered WTree nodes vary
+    /// enormously in size (tens of KB to over a MB), a fixed node <i>count</i> makes the managed heap —
+    /// and therefore GC pause time — unpredictable and ever-growing, which shows up as throughput that
+    /// decays the longer the process runs (a restart clears it). Bounding the cache by bytes keeps the
+    /// heap flat and performance steady regardless of database size. Raise it on memory-rich servers for
+    /// more cache (higher throughput); 0 falls back to <see cref="CacheSize"/>.
+    /// Default: 512&#160;MB. Eviction keeps the working set bounded (no throughput decay) at any value;
+    /// lower it to trade throughput for a smaller heap, raise it for more cache on memory-rich servers.
+    /// </summary>
+    public long CacheSizeBytes { get; set; }
 
     /// <summary>
     /// Default options suitable for most workloads.

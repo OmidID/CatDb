@@ -8,7 +8,12 @@ If you change architecture, core behavior, build/test flow, or public query/inde
 ## Project Overview
 
 CatDb is a high-performance embedded database engine in C# targeting .NET 10.
-Its core structure is the Waterfall Tree (WTree), a write-buffered B-tree variant.
+Its core structure is the Waterfall Tree (WTree).
+
+> **Before touching any WTree code, read [docs/WaterfallTree.md](docs/WaterfallTree.md).**
+> It covers the interval-model theory (from Tronkov ICEST 2016), the buffer-cascade write path,
+> Fall/DoFall invariants, Maintenance split/merge, multi-locator design, locking model, and
+> all critical invariants. Violating any invariant causes data corruption or throughput collapse.
 
 ## Current Status (2026-05)
 
@@ -75,7 +80,7 @@ leading drive → buffered**.
 
 1. **Pre-ordered stream (no buffer)** — the engine already emits the requested order:
    - `OrderByKey`/`OrderByKeyDescending` on a primary-key query → `Scan`/`ScanBackward`.
-   - `OrderBy`/`OrderByDescending` **on the index query's own field** → the index B-tree is read in
+   - `OrderBy`/`OrderByDescending` **on the index query's own field** → the index W-tree is read in
      order (`backward` = descending). Also `IndexQuery.Backward()`.
 2. **Composite prefix scan (streaming, no residual)** — `WHERE a = v ORDER BY b[,c…]` (same
    direction) where a composite `(a, b[, c…])` index exists. Scans that index restricted to the
@@ -149,6 +154,14 @@ Lock strategy:
 2. Maintenance must be exception-safe and always rebuild branch collections.
 3. EvictCache runs synchronously inside `Commit` under root lock.
 4. BroadcastFall stays sequential (no `Parallel.ForEach`).
+5. **Optional byte-budget cache** (`DatabaseOptions.CacheSizeBytes`, default 0 = legacy count cache).
+   When >0, EvictCache bounds the cache to `Σ ApproxByteSize × 8 ≤ CacheSizeBytes` (managed-RAM estimate)
+   instead of node count — useful on memory-bound hosts. NOTE: enabling it adds per-commit eviction work
+   under the root lock; it does NOT fix the throughput decay (that is commit-time node serialisation under
+   the global root lock — see Debugging Shortcuts).
+6. **CacheFlush must descend into cold subtrees.** In `DoFall`, an expired node still runs
+   `BroadcastFall` (which skips unloaded children) before storing+unloading itself — do NOT switch to
+   `WalkMethod.Current` on eviction or marked descendants orphan in `_cache` and the cache never shrinks.
 
 ## Recent Reliability Fixes (2026-05)
 
@@ -190,6 +203,12 @@ Lock strategy:
 
 - `IndexOutOfRangeException` in WTree: verify branch/range cache consistency and maintenance rebuilds.
 - "No such handle": check WAL pending write/read ordering and released handle references.
+- **Throughput decay (50k→6k over minutes, restart on same big DB → fast again):** the global root lock
+  (`WTree._rootBranch.SyncRoot`). `Commit` holds it ~40 ms (max ~1 s) serialising+storing every dirty node
+  (`_rootBranch.Fall` → `node.Store`); reads (`Forward`/`Backward`) hold it for their WHOLE traverse. As the
+  loaded working set grows, commit hold grows → `xtable.scan.lockwait` climbs → decay. Diagnose with
+  `wtree.commit.hold` / `wtree.execute.hold` / `xtable.scan.lockwait` (split from `scan.flush`). Fix
+  direction: move node serialise+I/O out of the root lock; release root per-leaf during scans; finer locks.
 - Throughput collapse: look for parallelism introduced in locked tree paths, and for any `lock()`/
   `Monitor` on shared objects (must be `ReentrantLock` — locking `this`/Branch objects inflates sync
   blocks and degrades over time).

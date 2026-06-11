@@ -2,8 +2,7 @@
 
 [<img src="https://raw.githubusercontent.com/OmidID/CatDb/master/images/nuget.png" align="left" width="128">](https://github.com/OmidID/CatDb/)
 
-CatDb is an embedded ordered key-value database for .NET, built around the Waterfall Tree (WTree):
-a write-buffered B-tree variant optimized for high write throughput with ordered scans.
+CatDb is an embedded ordered key-value database for .NET, built around the Waterfall Tree (WTree): https://ieeexplore.ieee.org/document/6857846.
 
 CatDb started from STSdb4, but this project has evolved substantially and now differs significantly in architecture, behavior, and public API.
 

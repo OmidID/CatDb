@@ -38,17 +38,26 @@ internal static class QueryCompiler
         var sortByKeyOnly = q.Sorts.Count == 0 || (q.Sorts.Count == 1 && q.Sorts[0].Member is null);
 
         RowPlan rows;
-        var streamingOrder = false;
-        if (pk is null)
+        var streamingOrder = false;   // source already emits the requested order → skip Sort
+
+        if (pk is not null)
+        {
+            // A selective index filter already fixes the candidate set → fetch then sort (small).
+            rows = new Fetch(pk);
+        }
+        else if (!sortByKeyOnly && TryResolveOrderedIndex(q.Sorts, ctx, out var orderedIndex, out var orderedDesc))
+        {
+            // No index filter, but the ORDER BY is served by an index → stream it in order (no Sort,
+            // no full-table buffer; Take stops early). Replaces the growing TableScan+Sort.
+            rows = new Fetch(new IndexOrderedScan(orderedIndex, orderedDesc));
+            streamingOrder = true;
+        }
+        else
         {
             var descending = q.Sorts.Count == 1 && q.Sorts[0].Descending;
             var backward = sortByKeyOnly && residual is null && descending;
             rows = new TableScan(keyFromSlot, q.HasKeyFrom, keyToSlot, q.HasKeyTo, backward);
             streamingOrder = sortByKeyOnly && residual is null;
-        }
-        else
-        {
-            rows = new Fetch(pk);
         }
 
         if (residual is not null || keyPredicate is not null)
@@ -150,6 +159,27 @@ internal static class QueryCompiler
         var v = slots.Next++;
         var v2 = f.Op == FilterOp.Between ? slots.Next++ : -1;
         return (v, v2);
+    }
+
+    /// <summary>
+    /// True when every ORDER BY key is a record field with the same direction and an index covers them
+    /// in order (single-field for one key, composite for many) — so the scan can stream that index.
+    /// </summary>
+    private static bool TryResolveOrderedIndex(List<SortField> sorts, IQueryEngineContext ctx, out string index, out bool descending)
+    {
+        index = string.Empty;
+        descending = sorts[0].Descending;
+        var members = new string[sorts.Count];
+        for (var i = 0; i < sorts.Count; i++)
+        {
+            if (sorts[i].Member is not { } m || sorts[i].Descending != descending)
+                return false; // key sort, or mixed direction → not a single ordered scan
+            members[i] = m;
+        }
+        var name = ctx.ResolveCoveringIndex(members);
+        if (name is null) return false;
+        index = name;
+        return true;
     }
 
     private static bool Indexable(FieldFilter f, IQueryEngineContext ctx)

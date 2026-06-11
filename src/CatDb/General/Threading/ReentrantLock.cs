@@ -11,7 +11,12 @@ namespace CatDb.General.Threading;
 /// </summary>
 public sealed class ReentrantLock
 {
-    private readonly object _sync = new();
+    // System.Threading.Lock (.NET 9+) keeps its state in dedicated fields — it does NOT use the object
+    // header's sync block like Monitor does. Under the WTree's heavy lock contention, Monitor inflates a
+    // sync-block entry per contended object and those entries accumulate for the process lifetime,
+    // slowing every Enter/Exit globally as the table grows — the throughput decay that only a restart
+    // cleared. Lock has no such table, so performance stays flat.
+    private readonly System.Threading.Lock _sync = new();
     private Thread? _owner;
     private int _depth;
 
@@ -29,8 +34,8 @@ public sealed class ReentrantLock
             return;
         }
 
-        Monitor.Enter(_sync);
-        // Memory barrier from Monitor.Enter ensures _owner / _depth writes
+        _sync.Enter();
+        // The acquire barrier from Lock.Enter ensures _owner / _depth writes
         // done by the previous holder are visible here.
         _owner = current;
         _depth = 1;
@@ -45,7 +50,7 @@ public sealed class ReentrantLock
         if (--_depth == 0)
         {
             _owner = null;
-            Monitor.Exit(_sync);
+            _sync.Exit();
         }
     }
 

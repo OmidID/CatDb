@@ -15,6 +15,10 @@ internal interface IQueryEngineContext
     /// <summary>Name of a single-field index on <paramref name="member"/>, or null if none.</summary>
     string? ResolveIndex(string member);
 
+    /// <summary>Name of an index whose member list equals <paramref name="members"/> in order (covers the
+    /// sort/ORDER BY), or null. A single-member list matches a single-field index.</summary>
+    string? ResolveCoveringIndex(IReadOnlyList<string> members);
+
     /// <summary>
     /// Cheap, value-independent selectivity rank for an index (smaller = more selective). Used to order
     /// an intersection's branches without touching data — so it is plan-cache friendly.

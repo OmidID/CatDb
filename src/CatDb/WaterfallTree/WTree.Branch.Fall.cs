@@ -67,34 +67,37 @@ public partial class WTree
                 ((InternalNode)node).Maintenance(level, token);
             NodeState = node.State;
 
-            if (node.IsExpiredFromCache && (param.WalkAction & WalkAction.CacheFlush) == WalkAction.CacheFlush)
-            {
-                // Upgrade to Store|Unload for this node only.
-                // Use WalkMethod.Current so BroadcastFall is NOT called — children stay in cache
-                // with their current state. The InternalNode.Store() below serialises child branch
-                // caches, preserving all pending operations on disk.
-                param = new Params(WalkMethod.Current, WalkAction.Store | WalkAction.Unload, param.WalkParams, param.Sink);
-            }
+            // Is this node being evicted by a CacheFlush walk?
+            var cacheFlushEvict = node.IsExpiredFromCache
+                && (param.WalkAction & WalkAction.CacheFlush) == WalkAction.CacheFlush;
 
-            if (node.Type == NodeType.Internal)
-            {
-                if (param.WalkMethod != WalkMethod.Current)
-                {
-                    //broadcast
-                    ((InternalNode)node).BroadcastFall(level, token, param);
-                }
-            }
+            // Descend first. For CacheFlush we KEEP cascading into loaded children (BroadcastFall skips
+            // unloaded ones) even when this node is itself being evicted — so a cold subtree is reclaimed
+            // top-to-bottom in one pass. The old code switched to WalkMethod.Current here, which stopped
+            // the descent and orphaned marked descendants in the cache: the cache never shrank under load,
+            // the managed heap grew unbounded, and throughput decayed until the process was restarted.
+            if (node.Type == NodeType.Internal && param.WalkMethod != WalkMethod.Current)
+                ((InternalNode)node).BroadcastFall(level, token, param);
 
-            if ((param.WalkAction & WalkAction.Store) == WalkAction.Store)
+            if (cacheFlushEvict)
             {
+                // Store (serialises child branch caches → pending operations are preserved on disk),
+                // then unload this node from the cache.
                 if (node.IsModified)
                     node.Store();
-            }
-
-            if ((param.WalkAction & WalkAction.Unload) == WalkAction.Unload)
-            {
                 Node = null;
                 Tree.Exclude(NodeHandle);
+            }
+            else
+            {
+                if ((param.WalkAction & WalkAction.Store) == WalkAction.Store && node.IsModified)
+                    node.Store();
+
+                if ((param.WalkAction & WalkAction.Unload) == WalkAction.Unload)
+                {
+                    Node = null;
+                    Tree.Exclude(NodeHandle);
+                }
             }
         }
 
