@@ -3,6 +3,7 @@
 
 using CatDb.StressTest;
 using CatDb.Database;
+using CatDb.Storage;
 using Database = CatDb.Database;
 
 // ─── Parse command-line arguments ─────────────────────────────────────────
@@ -49,7 +50,12 @@ IStorageEngine OpenEngine()
     }
 
     //if (File.Exists(DB_FILE)) File.Delete(DB_FILE);
-    return Database.CatDb.FromFile(DB_FILE);
+    return Database.CatDb.FromFile(
+        DB_FILE,
+        new DatabaseOptions {
+            CommitMode = CommitMode.WriteAheadLog,
+            CommitDurability = CommitDurability.AsyncDeferred
+        });
 }
 #pragma warning restore CS0162
 

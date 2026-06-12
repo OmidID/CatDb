@@ -15,6 +15,7 @@ public partial class WTree : IDisposable
     private int _internalNodeMinBranches = 2; //default values
     private int _internalNodeMaxBranches = 64;
     private long _cacheSizeBytes = 0;
+    private readonly ICommitStrategy _commitStrategy;
     private int _internalNodeMaxOperationsInRoot = 4 * 1024;
     private int _internalNodeMinOperations = 4 * 1024;
     private int _internalNodeMaxOperations = 8 * 1024;
@@ -52,6 +53,7 @@ public partial class WTree : IDisposable
             throw new NullReferenceException("heap");
 
         _heap = heap;
+        _commitStrategy = CreateCommitStrategy(options);
 
         // Apply options for NEW databases (existing DBs load settings from header)
         if (options != null && !heap.Exists(HANDLE_SETTINGS))
@@ -338,6 +340,10 @@ public partial class WTree : IDisposable
             }
         }
 
+        // Before the root lock: a deferred strategy waits for its previous background checkpoint here, so
+        // this commit's Fall never mutates a node that is still being serialised.
+        _commitStrategy.BeginCommit();
+
         _rootBranch.SyncRoot.Enter();
 #if PERFORMANCE_CHECK
         var commitHoldStart = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -379,7 +385,7 @@ public partial class WTree : IDisposable
             General.Diagnostics.PerformanceCheck.Observe("gc.heap.mb", GC.GetTotalMemory(false) / (1024 * 1024));
 #endif
 
-            _heap.Commit();
+            _commitStrategy.FinalizeCommit(_heap);
         }
         finally
         {
@@ -622,6 +628,10 @@ public partial class WTree : IDisposable
             if (disposing)
             {
                 _workingFallCount.Wait();
+
+                // Flush any in-flight background checkpoint (and join its worker) before closing the heap,
+                // so a clean close is always fully durable even under CommitDurability.AsyncDeferred.
+                _commitStrategy.Dispose();
 
                 _heap.Close();
             }

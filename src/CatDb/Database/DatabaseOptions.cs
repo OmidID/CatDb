@@ -17,6 +17,13 @@ public sealed class DatabaseOptions
     public CommitMode CommitMode { get; set; } = CommitMode.WriteAheadLog;
 
     /// <summary>
+    /// How a commit persists dirty nodes (selects an <c>ICommitStrategy</c>). <see cref="CommitDurability.Synchronous"/>
+    /// (default) stores them inline under the root lock; <see cref="CommitDurability.Deferred"/> hands them to a
+    /// background checkpoint to remove the commit-time lock hold (requires <see cref="CommitMode.WriteAheadLog"/>).
+    /// </summary>
+    public CommitDurability CommitDurability { get; set; } = CommitDurability.Synchronous;
+
+    /// <summary>
     /// Maximum number of branches (children) per internal node.
     /// Controls tree fan-out. Higher = shallower tree, larger nodes.
     /// Default: 64.

@@ -209,6 +209,10 @@ Lock strategy:
   loaded working set grows, commit hold grows → `xtable.scan.lockwait` climbs → decay. Diagnose with
   `wtree.commit.hold` / `wtree.execute.hold` / `xtable.scan.lockwait` (split from `scan.flush`). Fix
   direction: move node serialise+I/O out of the root lock; release root per-leaf during scans; finer locks.
+  Partial fix shipped — `DatabaseOptions.CommitDurability` strategy (`Storage/CommitDurability.cs`,
+  `WTree.Commit.cs`, `General/Threading/ParallelExecutor.cs`): `Synchronous` (default) = old inline store;
+  `ParallelCheckpoint` = parallel node store on dedicated threads (commit.hold 40→25 ms, ~2×, full durability);
+  `AsyncDeferred` reserved (throws). Residual hold = the sequential `Fall` traversal → needs finer locking.
 - Throughput collapse: look for parallelism introduced in locked tree paths, and for any `lock()`/
   `Monitor` on shared objects (must be `ReentrantLock` — locking `this`/Branch objects inflates sync
   blocks and degrades over time).

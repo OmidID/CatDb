@@ -91,7 +91,7 @@ public partial class WTree
             else
             {
                 if ((param.WalkAction & WalkAction.Store) == WalkAction.Store && node.IsModified)
-                    node.Store();
+                    Tree._commitStrategy.Persist(node);
 
                 if ((param.WalkAction & WalkAction.Unload) == WalkAction.Unload)
                 {
