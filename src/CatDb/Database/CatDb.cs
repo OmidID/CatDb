@@ -37,6 +37,14 @@ public static class CatDb
             return new StorageEngine(walHeap, options);
         }
 
+        if (options.CommitMode == CommitMode.TransactionLog)
+        {
+            // Plain heap (atomic header) + an append-only op-log. Commit = log fsync; the background
+            // checkpoint flushes nodes to the heap and truncates the log. No WalHeap needed.
+            var log = new OperationLog(fileName + ".oplog");
+            return new StorageEngine(heap, options, log);
+        }
+
         return new StorageEngine(heap, options);
     }
 

@@ -53,8 +53,8 @@ IStorageEngine OpenEngine()
     return Database.CatDb.FromFile(
         DB_FILE,
         new DatabaseOptions {
-            CommitMode = CommitMode.WriteAheadLog,
-            CommitDurability = CommitDurability.AsyncDeferred
+            CommitMode = CommitMode.TransactionLog,
+            CommitDurability = CommitDurability.ParallelCheckpoint
         });
 }
 #pragma warning restore CS0162

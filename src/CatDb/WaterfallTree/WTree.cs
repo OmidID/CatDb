@@ -16,6 +16,17 @@ public partial class WTree : IDisposable
     private int _internalNodeMaxBranches = 64;
     private long _cacheSizeBytes = 0;
     private readonly ICommitStrategy _commitStrategy;
+
+    // ── TransactionLog mode (CommitMode.TransactionLog) ───────────────────────
+    // Logical redo log: commit appends ops + fsyncs (cheap); dirty nodes flush at an occasional
+    // background/inline checkpoint, which then truncates the log. Null in InPlace/WriteAheadLog modes.
+    private readonly Storage.OperationLog? _operationLog;
+    private long _lsn;            // monotonic op LSN (incremented under the root lock in Execute)
+    private long _checkpointLsn;  // last checkpointed LSN — persisted in Settings v2, recovery boundary
+    private bool _replaying;      // true while replaying the log on open (suppresses re-append)
+    private int _checkpointIntervalMs = 10_000;
+    private long _checkpointLogSizeBytes = 64L * 1024 * 1024;
+    private long _lastCheckpointTicks;
     private int _internalNodeMaxOperationsInRoot = 4 * 1024;
     private int _internalNodeMinOperations = 4 * 1024;
     private int _internalNodeMaxOperations = 8 * 1024;
@@ -47,13 +58,20 @@ public partial class WTree : IDisposable
     private readonly Scheme _scheme;
     private readonly IHeap _heap;
 
-    public WTree(IHeap heap, DatabaseOptions? options = null)
+    public WTree(IHeap heap, DatabaseOptions? options = null, Storage.OperationLog? operationLog = null)
     {
         if (heap == null)
             throw new NullReferenceException("heap");
 
         _heap = heap;
+        _operationLog = operationLog;
         _commitStrategy = CreateCommitStrategy(options);
+
+        if (options != null)
+        {
+            _checkpointIntervalMs = options.CheckpointIntervalMs;
+            _checkpointLogSizeBytes = options.CheckpointLogSizeBytes;
+        }
 
         // Apply options for NEW databases (existing DBs load settings from header)
         if (options != null && !heap.Exists(HANDLE_SETTINGS))
@@ -72,7 +90,8 @@ public partial class WTree : IDisposable
         if (options != null)
             _cacheSizeBytes = options.CacheSizeBytes;
 
-        if (heap.Exists(HANDLE_SETTINGS))
+        var existingDb = heap.Exists(HANDLE_SETTINGS);
+        if (existingDb)
         {
             //create root branch with dummy handle
             _rootBranch = new Branch(this, NodeType.Leaf, 0);
@@ -114,6 +133,42 @@ public partial class WTree : IDisposable
 
             _isRootCacheLoaded = true;
         }
+
+        _lastCheckpointTicks = Environment.TickCount64;
+
+        if (_operationLog != null)
+        {
+            if (existingDb)
+                // Heap reflects state ≤ _checkpointLsn; replay the log tail (> that).
+                RecoverFromLog();
+            else
+                // New DB: write an initial (empty) checkpoint so the heap structure (settings/scheme/root)
+                // exists for reopen — subsequent commits are cheap log fsyncs.
+                CheckpointToHeap(CancellationToken.None);
+        }
+    }
+
+    /// <summary>Replays committed op-log records with LSN &gt; the persisted checkpoint LSN, re-applying
+    /// them in memory (without re-logging) so the tree resumes the last committed state.</summary>
+    private void RecoverFromLog()
+    {
+        _replaying = true;
+        try
+        {
+            if (!_isRootCacheLoaded)
+                LoadRootCache();
+
+            _lsn = _checkpointLsn;
+            _operationLog!.Recover(_checkpointLsn, (lsn, reader) =>
+            {
+                ReplayLogRecord(reader);
+                _lsn = lsn;
+            });
+        }
+        finally
+        {
+            _replaying = false;
+        }
     }
 
     private void LoadRootCache()
@@ -152,6 +207,9 @@ public partial class WTree : IDisposable
 
             _rootBranch.ApplyToCache(operations);
 
+            if (_operationLog != null && !_replaying)
+                AppendToLog(operations.Locator, operations);
+
             if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
                 Sink();
         }
@@ -177,6 +235,13 @@ public partial class WTree : IDisposable
 
             _rootBranch.ApplyToCache(locator, operation);
 
+            if (_operationLog != null && !_replaying)
+            {
+                var single = locator.OperationCollectionFactory.Create(1);
+                single.Add(operation);
+                AppendToLog(locator, single);
+            }
+
             if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
                 Sink();
         }
@@ -184,6 +249,46 @@ public partial class WTree : IDisposable
         {
             _rootBranch.SyncRoot.Exit();
         }
+    }
+
+    // ── TransactionLog: append / replay / checkpoint ──────────────────────────
+
+    private readonly HashSet<long> _loggedLocators = []; // locator ids persisted to the heap scheme
+
+    /// <summary>Appends one applied op-batch to the redo log (under the root lock; LSN = apply order).</summary>
+    private void AppendToLog(Locator locator, IOperationCollection operations)
+    {
+        // Ensure the locator's schema is durable in the heap before its ops are logged, so replay can
+        // resolve the id even after a crash before the next checkpoint. Rare (once per table/index).
+        if (_loggedLocators.Add(locator.Id))
+            PersistScheme();
+
+        var lsn = ++_lsn;
+        _operationLog!.Append(lsn, w =>
+        {
+            SerializeLocator(w, locator);
+            locator.OperationsPersist.Write(w, operations);
+        });
+    }
+
+    /// <summary>Decodes and re-applies one log record during recovery (no re-logging — <c>_replaying</c>).</summary>
+    private void ReplayLogRecord(BinaryReader reader)
+    {
+        var locator = DeserializeLocator(reader);
+        var operations = locator.OperationsPersist.Read(reader);
+        Execute(operations);
+    }
+
+    /// <summary>Persists the current scheme (table/index definitions) to the heap and hardens it, so the
+    /// op-log's locator ids always resolve on recovery. Called when a new locator is first logged.</summary>
+    private void PersistScheme()
+    {
+        using (var ms = new MemoryStream())
+        {
+            _scheme.Serialize(new BinaryWriter(ms));
+            _heap.Write(HANDLE_SCHEME, ms.GetBuffer(), 0, (int)ms.Length);
+        }
+        _heap.Commit();
     }
 
     /// <summary>
@@ -324,6 +429,28 @@ public partial class WTree : IDisposable
         if (_disposed)
             throw new ObjectDisposedException("WTree");
 
+        if (_operationLog != null)
+        {
+            // TransactionLog: the durable commit is a cheap sequential log fsync — NO node serialisation
+            // under the root lock. Dirty nodes flush to the heap only at the occasional checkpoint.
+            _operationLog.Commit(Volatile.Read(ref _lsn));
+            if (CheckpointDue())
+                CheckpointToHeap(cancellationToken, locator, hasLocator, fromKey, toKey);
+            return;
+        }
+
+        CheckpointToHeap(cancellationToken, locator, hasLocator, fromKey, toKey);
+    }
+
+    private bool CheckpointDue()
+        => Environment.TickCount64 - _lastCheckpointTicks >= _checkpointIntervalMs
+           || _operationLog!.SizeBytes >= _checkpointLogSizeBytes;
+
+    /// <summary>Serialises all dirty nodes to the heap and hardens it (the only place nodes hit disk). For
+    /// TransactionLog this is the occasional checkpoint that advances the recovery boundary and truncates
+    /// the log; for InPlace/WriteAheadLog it is every commit (historical behaviour).</summary>
+    private void CheckpointToHeap(CancellationToken cancellationToken, Locator locator = default(Locator), bool hasLocator = false, IData fromKey = null, IData toKey = null)
+    {
         Params param;
         if (!hasLocator)
             param = new Params(WalkMethod.CascadeButOnlyLoaded, WalkAction.Store, null, false);
@@ -348,13 +475,29 @@ public partial class WTree : IDisposable
 #if PERFORMANCE_CHECK
         var commitHoldStart = System.Diagnostics.Stopwatch.GetTimestamp();
 #endif
+        // Capture the checkpoint boundary under the lock: every op with lsn ≤ cpLsn will be reflected in
+        // the nodes stored below, so recovery can replay strictly after it. Persisted via Settings v2.
+        long cpLsn = 0;
+
         try
         {
             if (!_isRootCacheLoaded)
                 LoadRootCache();
 
+            if (_operationLog != null)
+            {
+                cpLsn = Volatile.Read(ref _lsn);
+                _checkpointLsn = cpLsn;
+            }
+
             var token = new Token(cancellationToken);
+#if PERFORMANCE_CHECK
+            var fallStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
             _rootBranch.Fall(_depth + 1, token, param);
+#if PERFORMANCE_CHECK
+            General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.cp.fallstore", fallStart);
+#endif
 
             //write settings
             using (var ms = new MemoryStream())
@@ -379,13 +522,20 @@ public partial class WTree : IDisposable
 
             // Evict cold nodes AFTER storing — all dirty nodes are now on disk,
             // so evicted nodes can be safely unloaded without data loss.
-            EvictCache();
-
 #if PERFORMANCE_CHECK
+            var evictStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
+            EvictCache();
+#if PERFORMANCE_CHECK
+            General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.cp.evict", evictStart);
             General.Diagnostics.PerformanceCheck.Observe("gc.heap.mb", GC.GetTotalMemory(false) / (1024 * 1024));
+            var finStart = System.Diagnostics.Stopwatch.GetTimestamp();
 #endif
 
             _commitStrategy.FinalizeCommit(_heap);
+#if PERFORMANCE_CHECK
+            General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.cp.heapcommit", finStart);
+#endif
         }
         finally
         {
@@ -393,6 +543,14 @@ public partial class WTree : IDisposable
             General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.commit.hold", commitHoldStart);
 #endif
             _rootBranch.SyncRoot.Exit();
+        }
+
+        // After the heap is durable (header swapped, incl. the new checkpoint LSN), drop the now-redundant
+        // log prefix. Done outside the root lock — it touches only the log file.
+        if (_operationLog != null)
+        {
+            _operationLog.Truncate(cpLsn);
+            _lastCheckpointTicks = Environment.TickCount64;
         }
     }
 
@@ -634,6 +792,7 @@ public partial class WTree : IDisposable
                 _commitStrategy.Dispose();
 
                 _heap.Close();
+                _operationLog?.Dispose();
             }
 
             _disposed = true;

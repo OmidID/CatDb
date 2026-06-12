@@ -155,11 +155,18 @@ public partial class WTree
         }
     }
 
-    private ICommitStrategy CreateCommitStrategy(DatabaseOptions? options) =>
-        options?.CommitDurability switch
+    private ICommitStrategy CreateCommitStrategy(DatabaseOptions? options)
+    {
+        // TransactionLog already removes per-commit node serialisation (commit = log fsync); its checkpoint
+        // is occasional, so a simple synchronous store keeps the truncate-after-heap-commit ordering exact.
+        if (options?.CommitMode == CommitMode.TransactionLog)
+            return new ParallelCheckpointCommitStrategy(Environment.ProcessorCount);
+
+        return options?.CommitDurability switch
         {
             CommitDurability.ParallelCheckpoint => new ParallelCheckpointCommitStrategy(Environment.ProcessorCount),
             CommitDurability.AsyncDeferred => new AsyncDeferredCommitStrategy(this, Environment.ProcessorCount),
             _ => new SynchronousCommitStrategy(),
         };
+    }
 }

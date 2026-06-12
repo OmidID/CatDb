@@ -10,7 +10,7 @@ public partial class WTree
         public static void Serialize(WTree tree, Stream stream)
         {
             var writer = new BinaryWriter(stream);
-            const int version = 1;
+            const int version = 2;
             writer.Write(version);
 
             writer.Write(tree.GlobalVersion);
@@ -24,6 +24,7 @@ public partial class WTree
             writer.Write(tree._internalNodeMaxOperations);
             writer.Write(tree._leafNodeMinRecords);
             writer.Write(tree._leafNodeMaxRecords);
+            writer.Write(tree._checkpointLsn); // v2: TransactionLog recovery boundary
         }
 
         public static void Deserialize(WTree tree, Stream stream)
@@ -46,6 +47,7 @@ public partial class WTree
                     break;
 
                 case 1:
+                case 2:
                     tree.GlobalVersion               = reader.ReadInt64();
                     tree._rootBranch.NodeHandle      = reader.ReadInt64();
                     tree._rootBranch.NodeType        = (NodeType)reader.ReadByte();
@@ -57,6 +59,7 @@ public partial class WTree
                     tree._internalNodeMaxOperations  = reader.ReadInt32();
                     tree._leafNodeMinRecords         = reader.ReadInt32();
                     tree._leafNodeMaxRecords         = reader.ReadInt32();
+                    tree._checkpointLsn              = version >= 2 ? reader.ReadInt64() : 0;
                     break;
 
                 default:

@@ -209,7 +209,17 @@ Lock strategy:
   loaded working set grows, commit hold grows → `xtable.scan.lockwait` climbs → decay. Diagnose with
   `wtree.commit.hold` / `wtree.execute.hold` / `xtable.scan.lockwait` (split from `scan.flush`). Fix
   direction: move node serialise+I/O out of the root lock; release root per-leaf during scans; finer locks.
-  Partial fix shipped — `DatabaseOptions.CommitDurability` strategy (`Storage/CommitDurability.cs`,
+  **Best fix shipped — `CommitMode.TransactionLog`** (SQL-Server logical-log; WTree algorithm UNCHANGED,
+  additive). Commit = append ops to `Storage/OperationLog.cs` + fsync (cheap, no node store under the lock);
+  dirty nodes flush at an occasional checkpoint (`WTree.CheckpointToHeap`, trigger `CheckpointDue` =
+  `DatabaseOptions.CheckpointIntervalMs`/`CheckpointLogSizeBytes`) which advances the Settings-v2
+  `_checkpointLsn`, then `OperationLog.Truncate`s. Reopen replays log records > checkpoint LSN via
+  `WTree.RecoverFromLog` (Execute under `_replaying`). New DB writes an initial checkpoint (else reopen
+  throws "Logical error"); `PersistScheme` heap-commits the scheme on first log of a new locator so replay
+  resolves ids. Stress: ~21k ops/s sustained, 0 corruption, memory bounded (checkpoint evicts). Residual:
+  the checkpoint stores the accumulated dirty set under the root lock → periodic multi-second `commit.hold`
+  spikes; next opt = bounded-dirty-set (incremental) checkpoints.
+  Partial fix — `DatabaseOptions.CommitDurability` strategy (`Storage/CommitDurability.cs`,
   `WTree.Commit.cs`, `General/Threading/ParallelExecutor.cs`): `Synchronous` (default) = old inline store;
   `ParallelCheckpoint` = parallel node store on dedicated threads (commit.hold 40→25 ms, ~2×, full durability);
   `AsyncDeferred` reserved (throws). Residual hold = the sequential `Fall` traversal → needs finer locking.

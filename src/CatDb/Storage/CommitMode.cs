@@ -20,5 +20,14 @@ public enum CommitMode
     /// WAL entries are discarded (transaction never happened) and complete
     /// entries are checkpointed into the main file. Crash-safe.
     /// </summary>
-    WriteAheadLog
+    WriteAheadLog,
+
+    /// <summary>
+    /// Logical transaction log (SQL-Server model). Each commit appends the applied operations to an
+    /// append-only log and fsyncs it — cheap and sequential, with NO node serialisation under the root
+    /// lock (the cause of throughput decay). Dirty nodes are flushed to the heap by an occasional
+    /// background checkpoint, which then truncates the log and bounds the in-memory cache. On reopen the
+    /// heap (state up to the last checkpoint) is loaded and the log tail is replayed. Crash-safe.
+    /// </summary>
+    TransactionLog
 }

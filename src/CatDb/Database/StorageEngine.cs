@@ -18,7 +18,8 @@ public class StorageEngine : WTree, IStorageEngine
 
     private readonly record struct TransformerCacheKey(Type ObjectType, Type DataType);
 
-    public StorageEngine(IHeap heap, DatabaseOptions? options = null) : base(heap, options)
+    public StorageEngine(IHeap heap, DatabaseOptions? options = null, Storage.OperationLog? operationLog = null)
+        : base(heap, options, operationLog)
     {
         foreach (var locator in GetAllLocators())
         {

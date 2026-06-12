@@ -12,16 +12,30 @@ public sealed class DatabaseOptions
 {
     /// <summary>
     /// How commits are persisted to disk.
-    /// Default: WriteAheadLog (crash-safe).
+    /// Default: TransactionLog (crash-safe, incremental checkpoints).
     /// </summary>
-    public CommitMode CommitMode { get; set; } = CommitMode.WriteAheadLog;
+    public CommitMode CommitMode { get; set; } = CommitMode.TransactionLog;
 
     /// <summary>
     /// How a commit persists dirty nodes (selects an <c>ICommitStrategy</c>). <see cref="CommitDurability.Synchronous"/>
     /// (default) stores them inline under the root lock; <see cref="CommitDurability.Deferred"/> hands them to a
-    /// background checkpoint to remove the commit-time lock hold (requires <see cref="CommitMode.WriteAheadLog"/>).
+    /// background checkpoint to remove the commit-time lock hold (requires <see cref="CommitMode.TransactionLog"/>).
     /// </summary>
-    public CommitDurability CommitDurability { get; set; } = CommitDurability.Synchronous;
+    public CommitDurability CommitDurability { get; set; } = CommitDurability.ParallelCheckpoint;
+
+    /// <summary>
+    /// (<see cref="CommitMode.TransactionLog"/> only) Run a checkpoint when this many milliseconds have
+    /// elapsed since the last one. Smaller = more frequent, smaller checkpoints (shorter store stalls) but
+    /// more total node I/O. Bounds crash-recovery replay time. Default: 2 s.
+    /// </summary>
+    public int CheckpointIntervalMs { get; set; } = 2_000;
+
+    /// <summary>
+    /// (<see cref="CommitMode.TransactionLog"/> only) Run a checkpoint when the operation log grows past
+    /// this many bytes since the last one. Lower = smaller dirty-node sets per checkpoint → shorter
+    /// root-lock stalls, at the cost of more frequent node flushes. Default: 8&#160;MB.
+    /// </summary>
+    public long CheckpointLogSizeBytes { get; set; } = 8L * 1024 * 1024;
 
     /// <summary>
     /// Maximum number of branches (children) per internal node.
