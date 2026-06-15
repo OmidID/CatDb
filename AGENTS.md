@@ -198,6 +198,31 @@ Lock strategy:
    and caused throughput to fall ~50% after minutes (restored only by restart). Each `Branch` now has a
    dedicated `ReentrantLock SyncRoot`; ~2x throughput, 190/190 tests pass. Use `using (x.Lock())` for
    block-scoped acquisition.
+10. **Incremental checkpoint (opt-in) + Forward-scan race fix (2026-06):** `DatabaseOptions.IncrementalCheckpoint`
+   (default **false**) + `CheckpointMaxNodes` (default 64). Each TransactionLog checkpoint flushes only the
+   coldest N dirty leaves + root + dirty internals + every NeverStored split product (so no parent persists a
+   dangling child handle), then truncates the log. Design (see `docs/WaterfallTree.md` §10A):
+   `SelectIncrementalCheckpoint` MARKS `ToCheckpoint` before the Store-fall; the gate (`WTree.Branch.Fall.cs`)
+   stores `ToCheckpoint || NeverStored`; **`ComputeIncrementalRecoveryLsn` computes cpLsn AFTER the fall** =
+   (min `MinDirtyLsn` over still-dirty non-flushed nodes) − 1. Recovery = **idempotent in-order replay of ALL
+   ops > cpLsn, NO redo-skip** (the planned PageLsn skip was UNSOUND — waterfall ops sink to leaves out of LSN
+   order, so `PageLsn ≥ op` does NOT prove op applied; skipping would silently drop data — the user's prod
+   data-loss fear). Per-op `Lsn` stamped in `Execute`; `Node.MinDirtyLsn`/`PageLsn`/`NeverStored` in `WTree.Node.cs`.
+   Tests: `IncrementalCheckpointTests` (5) + `IncrementalCheckpointCrashTests` (out-of-process `CatDb.CrashWriter`
+   killed mid-write at 4 depths). **DO NOT add `NoMaintenance` to the checkpoint Store-fall** — an earlier
+   attempt did, which stopped buffer draining → 16k-op nodes → 8.6 GB DB + 4 GB heap + GC-thrash FREEZE
+   (looked like a hang, 318 ops/s). Maintenance must run (it drains buffers); cpLsn-after-fall keeps it safe.
+   Result: steady-state `commit.hold` **2.3 ms avg, 14–32 ms max** (full checkpoint = 2.9 s); a cold-start spike
+   on the first checkpoint after a bulk-load burst is GC pressure (4 GB alloc/20 s), not the checkpoint — see GC
+   metrics below. 280 tests, 0 corruption.
+   **Forward-scan race (pre-existing, exposed by incremental's ~30× more frequent eviction):** `XTablePortable.Forward`
+   pages leaf-by-leaf releasing the WTree root lock between pages; a concurrent split/merge or checkpoint
+   eviction+reload between pages could regress the cursor → out-of-order keys → **infinite loop on an unbounded
+   scan (a hang = "stress test won't stop")**. `Backward` already had a `prevFirstKey` monotonicity guard +
+   same-leaf `ReferenceEquals` break; **`Forward` was missing it**. Fixed by mirroring the guard into ALL four
+   forward paged loops (`Forward`/`ScanCount`/`ScanDirect`/`ScanSegments`: `prevLastKey`/`prevScanLastKey`/
+   `prevSegLastKey`; stop at a correctly-ordered prefix on regression). Non-snapshot scans may now return a
+   consistent PREFIX under heavy concurrent writes — same contract Backward always had.
 
 ## Debugging Shortcuts
 
@@ -227,3 +252,16 @@ Lock strategy:
   `Monitor` on shared objects (must be `ReentrantLock` — locking `this`/Branch objects inflates sync
   blocks and degrades over time).
 - Suspected deadlock: inspect lock acquisition order for strict top-down traversal.
+- **"Stress test won't stop" / hang:** an unbounded forward scan looping on a regressed cursor — see the
+  Forward-scan monotonicity guard (fix #10). If it returns, check `XTablePortable` forward paged loops still
+  carry the `prev*Key` guard.
+- **Memory/throughput grows then freezes (multi-GB DB, GB managed heap, ops/s → hundreds):** buffered ops not
+  draining — a checkpoint/eviction path running with Maintenance suppressed. Maintenance drains buffers; never
+  `NoMaintenance` on the checkpoint Store-fall (fix #10). Diagnose with `wtree.maintenance.sink.initial.ops`
+  vs `.final.ops` (≈ equal = NOT draining) and `wtree.node.store.bytes` (multi-MB = bloated nodes).
+- **commit.hold spike — is it GC or checkpoint I/O?** Per-window GC deltas now in `PerformanceCheck.FlushUnsafe`:
+  `rt.gc.pause.ms.window`, `rt.gc.alloc.mb.window`, `rt.gc.gen0/1/2.window` (via `GC.GetTotalPauseDuration`/
+  `GetTotalAllocatedBytes`/`CollectionCount`). Compare a window's `wtree.commit.hold` max against its
+  `rt.gc.pause.ms` + alloc — a big hold with high GC pause/alloc = GC, not checkpoint (`cp.fallstore`/
+  `cp.heapcommit`/`node.store.us` localise the checkpoint side). Bulk-load cold-start spikes are GC pressure
+  (alloc storm), not the checkpoint.

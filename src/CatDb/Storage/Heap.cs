@@ -345,9 +345,18 @@ public class Heap : IHeap
         _syncRoot.Enter();
         try
         {
+#if PERFORMANCE_CHECK
+            var t = Stopwatch.GetTimestamp();
+#endif
             Stream.Flush();
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("heap.commit.flush1", t); t = Stopwatch.GetTimestamp();
+#endif
 
             FreeOldVersions();
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("heap.commit.freeold", t); t = Stopwatch.GetTimestamp();
+#endif
 
             using (var ms = new MemoryStream())
             {
@@ -355,6 +364,9 @@ public class Heap : IHeap
                     _space.Free(_header.SystemData);
 
                 Serialize(new BinaryWriter(ms));
+#if PERFORMANCE_CHECK
+                CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("heap.commit.serialize", t); t = Stopwatch.GetTimestamp();
+#endif
 
                 var ptr = _space.Alloc(ms.Length);
                 Stream.Seek(ptr.Position, SeekOrigin.Begin);
@@ -368,12 +380,21 @@ public class Heap : IHeap
                 if (ptr.PositionPlusSize > _maxPositionPlusSize)
                     _maxPositionPlusSize = ptr.PositionPlusSize;
             }
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("heap.commit.writemeta", t); t = Stopwatch.GetTimestamp();
+#endif
 
             Stream.Flush();
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("heap.commit.flush2", t); t = Stopwatch.GetTimestamp();
+#endif
 
             //try to truncate the stream
             if (Stream.Length > _maxPositionPlusSize)
                 Stream.SetLength(_maxPositionPlusSize);
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("heap.commit.setlength", t);
+#endif
 
 #if PERFORMANCE_CHECK
             CatDb.General.Diagnostics.PerformanceCheck.Observe("heap.commit.used.count", _used.Count);

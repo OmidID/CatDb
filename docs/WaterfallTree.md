@@ -243,6 +243,16 @@ FindData(originalLocator, locator, key, direction)
 `nearFullKey` / `hasNearFullKey` are out-params that give the caller the next branch boundary
 — used by range scanners to page across leaf nodes without re-entering from the root.
 
+**Paged-scan monotonicity guard (critical).** `FindData` returns ONE leaf and releases the lock; the
+enumerator (`XTablePortable.Forward`/`Backward`/`ScanCount`/`ScanDirect`/`ScanSegments`) calls it again per
+leaf, releasing the WTree root lock **between pages**. So a scan is not isolated: a concurrent split/merge or a
+checkpoint eviction+reload between pages can make the next descent land on a leaf whose first key ≤ the last
+key already yielded — the cursor jumps **backward**. Unchecked, that yields out-of-order keys and, on an
+unbounded scan, **loops forever** (re-reading the same range = a hang). Every forward loop therefore tracks the
+last-yielded key and, if the next page regresses (`first ≤ prev`, or the same leaf is returned), **stops at a
+correctly-ordered prefix**. Backward loops do the symmetric check (`prevFirstKey`). This is not snapshot
+isolation — under heavy concurrent writes a scan may return a prefix — but it is always ordered and terminates.
+
 ---
 
 ## 10. Commit (Durability)
@@ -263,6 +273,70 @@ On next open, pending operations that never made it to leaves are restored — n
 **LRU eviction**: O(N) partial-select to find `evictCount` coldest nodes by `TouchId` without
 a full sort. Root is never evicted. After marking expired nodes, a `CacheFlush` walk stores and
 unloads each one.
+
+The flow above is `CommitMode.InPlace`/`WriteAheadLog` (and the TransactionLog *checkpoint*). The default
+`CommitMode.TransactionLog` decouples commit from node storage — see §10A.
+
+---
+
+## 10A. TransactionLog Commit + Checkpoint + Recovery (default)
+
+`CommitMode.TransactionLog` (default) makes a commit cheap and keeps latency flat: it does **not** serialize
+nodes under the root lock. Instead:
+
+```
+Commit()  (TransactionLog)
+├─ append this commit's ops to OperationLog (Storage/OperationLog.cs) + fsync   ← the whole durable cost
+└─ if CheckpointDue() → CheckpointToHeap()      ← occasional, not every commit
+```
+
+`CheckpointDue` = `CheckpointIntervalMs` elapsed **or** log `SizeBytes ≥ CheckpointLogSizeBytes`.
+
+### Checkpoint
+
+A checkpoint is the §10 flow (Fall→Store, write SETTINGS/SCHEME/ROOT, EvictCache, heap.Commit) plus: it
+advances the persisted recovery boundary `_checkpointLsn` (Settings v2) and then `OperationLog.Truncate`s the
+log prefix that is now durable in the heap. **Maintenance runs during the checkpoint Store-fall** — it drains
+buffered ops down the tree; skipping it lets buffers pile into single multi-MB nodes (heap + managed-heap
+bloat → GC-thrash freeze), so it must stay on.
+
+### Incremental checkpoint (opt-in, `IncrementalCheckpoint`, default off)
+
+A full checkpoint stores every dirty node. Incremental stores only a **bounded** subset per pass:
+
+```
+SelectIncrementalCheckpoint()   (before the Store-fall — MARK only)
+  mark ToCheckpoint: root + every dirty internal + coldest CheckpointMaxNodes dirty leaves (by MinDirtyLsn)
+Store-fall (Maintenance ON)
+  gate stores a node iff  ToCheckpoint || NeverStored        (NeverStored = a split product with no image yet,
+                                                              incl. ones this fall's Maintenance just created)
+ComputeIncrementalRecoveryLsn()  (after the Store-fall — tree has settled)
+  cpLsn = (min MinDirtyLsn over still-dirty, non-flushed nodes) − 1 ; clear the ToCheckpoint marks
+```
+
+Per-node LSN tracking (`Node.MinDirtyLsn` = oldest unflushed op; `PageLsn` = max applied, persisted but
+advisory; `NeverStored`) lives in `WTree.Node.cs`; each op carries a transient `Lsn` stamped in `Execute`.
+Computing `cpLsn` **after** the fall is what makes it safe: Maintenance may move an op to a different node
+during the fall, and the post-fall `MinDirtyLsn` reflects that, so no op ≤ `cpLsn` can be left non-durable.
+
+### Recovery (reopen)
+
+```
+RecoverFromLog():  heap loaded (state ≤ _checkpointLsn) → replay every OperationLog record with lsn > _checkpointLsn,
+                   in LSN order, via Execute under _replaying
+```
+
+Replay is **idempotent in-order** — there is deliberately **no redo-skip**. A waterfall sinks ops to leaves
+*out of LSN order*, so a node's `PageLsn ≥ op` does **not** prove that op was applied; skipping ops on that
+basis would silently drop data. Replaying the whole `> cpLsn` suffix in order reproduces the committed state
+regardless of which subset of nodes the last checkpoint had flushed (Replace = last-writer, Delete = set-state).
+A new database writes one initial checkpoint on create (so a no-write reopen finds heap structure); a split
+product is always given an on-disk image in the same checkpoint, so no persisted parent ever references a
+dangling child handle.
+
+> Status: incremental steady-state checkpoint hold is single-digit–low-tens of ms (vs multi-second for a full
+> checkpoint of a large dirty set). A cold-start spike can occur on the first checkpoint after a bulk-load
+> burst — it is GC pressure from the workload's allocation rate, not the checkpoint logic.
 
 ---
 
@@ -308,7 +382,19 @@ separate object; Branch sync blocks stay flat.
 | `_internalNodeMinOperations` | 4 096 | Sink stops here |
 | `_leafNodeMaxRecords` | 8 192 | Leaf split threshold |
 | `_leafNodeMinRecords` | 4 096 | Leaf merge threshold |
-| `_cacheSize` | 4 096 nodes | In-process LRU node cache size |
+| `_cacheSize` | 4 096 nodes | In-process LRU node cache size (used when `CacheSizeBytes`=0) |
+
+Durability / checkpoint options (`DatabaseOptions`):
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `CommitMode` | `TransactionLog` | `TransactionLog` (log-append commit + checkpoint), `WriteAheadLog`, `InPlace` |
+| `CommitDurability` | `ParallelCheckpoint` | `ParallelCheckpoint` (parallel node store), `Synchronous` (inline) |
+| `CheckpointIntervalMs` | `2000` | Time-based checkpoint trigger |
+| `CheckpointLogSizeBytes` | `8 MB` | Log-size checkpoint trigger |
+| `IncrementalCheckpoint` | `false` | Flush only the coldest `CheckpointMaxNodes` dirty leaves per checkpoint |
+| `CheckpointMaxNodes` | `64` | Bounded dirty-leaf flush count per incremental checkpoint |
+| `CacheSizeBytes` | `0` | Byte-budget node cache (0 = count-based `_cacheSize`) |
 
 Depth formula (`GetMinimumlWTreeDepth`):
 ```
@@ -328,3 +414,11 @@ depth = ⌈ log_b( ((N - r)(b-1) + b·I) / (l·(b-1) + I) ) + 1 ⌉
 6. `CacheFlush` walk skips Maintenance — no disk I/O cascades during eviction.
 7. Lock on Branch = `ReentrantLock`; never `lock(this)` or any Monitor on Branch/tree objects.
 8. `MaintenanceHelper` runs right-to-left so right neighbor is fully resolved before merge check.
+9. **Maintenance MUST run during the checkpoint Store-fall** (drains buffered ops down the tree). Skipping it
+   bloats nodes → multi-GB DB + GC-thrash freeze.
+10. **Incremental `cpLsn` is computed AFTER the Store-fall**, not before — the post-fall `MinDirtyLsn` reflects
+    any op Maintenance moved, so no op ≤ `cpLsn` is left non-durable.
+11. **Recovery replay is idempotent in-order with NO redo-skip** — a waterfall sinks ops out of LSN order, so
+    `PageLsn ≥ op` does not prove the op was applied; skipping would silently drop data.
+12. **Paged forward scans carry a monotonicity guard** (last-yielded key; stop on regression) — without it a
+    concurrent split/eviction between pages makes an unbounded scan loop forever.

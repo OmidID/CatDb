@@ -38,6 +38,21 @@ public sealed class DatabaseOptions
     public long CheckpointLogSizeBytes { get; set; } = 8L * 1024 * 1024;
 
     /// <summary>
+    /// (<see cref="CommitMode.TransactionLog"/> only) Incremental (ARIES-style) checkpoint: each checkpoint
+    /// flushes only the coldest <see cref="CheckpointMaxNodes"/> dirty nodes and advances the recovery
+    /// boundary just past what became durable, replaying the rest from the log on open. Bounds the
+    /// per-checkpoint root-lock stall. <b>Default false</b> — the full checkpoint (a consistent cut) is the
+    /// proven-safe path; enable only where the shorter stall is worth the (crash-tested) recovery machinery.
+    /// </summary>
+    public bool IncrementalCheckpoint { get; set; }
+
+    /// <summary>
+    /// (<see cref="IncrementalCheckpoint"/>) Max dirty nodes flushed per incremental checkpoint (whole
+    /// structural groups count together). Smaller = shorter stalls, more frequent checkpoints. Default: 64.
+    /// </summary>
+    public int CheckpointMaxNodes { get; set; } = 64;
+
+    /// <summary>
     /// Maximum number of branches (children) per internal node.
     /// Controls tree fan-out. Higher = shallower tree, larger nodes.
     /// Default: 64.

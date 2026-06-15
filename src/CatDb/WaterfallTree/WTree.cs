@@ -27,6 +27,9 @@ public partial class WTree : IDisposable
     private int _checkpointIntervalMs = 10_000;
     private long _checkpointLogSizeBytes = 64L * 1024 * 1024;
     private long _lastCheckpointTicks;
+    private bool _incrementalCheckpoint;
+    private int _checkpointMaxNodes = 64;
+    private bool _incrementalActiveCheckpoint;  // true only inside an incremental CheckpointToHeap pass
     private int _internalNodeMaxOperationsInRoot = 4 * 1024;
     private int _internalNodeMinOperations = 4 * 1024;
     private int _internalNodeMaxOperations = 8 * 1024;
@@ -71,6 +74,8 @@ public partial class WTree : IDisposable
         {
             _checkpointIntervalMs = options.CheckpointIntervalMs;
             _checkpointLogSizeBytes = options.CheckpointLogSizeBytes;
+            _incrementalCheckpoint = options.IncrementalCheckpoint;
+            _checkpointMaxNodes = options.CheckpointMaxNodes;
         }
 
         // Apply options for NEW databases (existing DBs load settings from header)
@@ -161,7 +166,7 @@ public partial class WTree : IDisposable
             _lsn = _checkpointLsn;
             _operationLog!.Recover(_checkpointLsn, (lsn, reader) =>
             {
-                ReplayLogRecord(reader);
+                ReplayLogRecord(lsn, reader);
                 _lsn = lsn;
             });
         }
@@ -205,10 +210,16 @@ public partial class WTree : IDisposable
             if (!_isRootCacheLoaded)
                 LoadRootCache();
 
-            _rootBranch.ApplyToCache(operations);
-
+            // Stamp + log BEFORE applying to the cache so the buffered ops already carry their LSN
+            // (the incremental checkpoint reads op LSNs out of the cache/leaves).
             if (_operationLog != null && !_replaying)
-                AppendToLog(operations.Locator, operations);
+            {
+                var lsn = ++_lsn;
+                StampLsn(operations, lsn);
+                AppendToLog(operations.Locator, operations, lsn);
+            }
+
+            _rootBranch.ApplyToCache(operations);
 
             if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
                 Sink();
@@ -233,14 +244,16 @@ public partial class WTree : IDisposable
             if (!_isRootCacheLoaded)
                 LoadRootCache();
 
-            _rootBranch.ApplyToCache(locator, operation);
-
             if (_operationLog != null && !_replaying)
             {
+                var lsn = ++_lsn;
+                operation.Lsn = lsn;
                 var single = locator.OperationCollectionFactory.Create(1);
                 single.Add(operation);
-                AppendToLog(locator, single);
+                AppendToLog(locator, single, lsn);
             }
+
+            _rootBranch.ApplyToCache(locator, operation);
 
             if (_rootBranch.Cache.OperationCount > _internalNodeMaxOperationsInRoot)
                 Sink();
@@ -256,14 +269,13 @@ public partial class WTree : IDisposable
     private readonly HashSet<long> _loggedLocators = []; // locator ids persisted to the heap scheme
 
     /// <summary>Appends one applied op-batch to the redo log (under the root lock; LSN = apply order).</summary>
-    private void AppendToLog(Locator locator, IOperationCollection operations)
+    private void AppendToLog(Locator locator, IOperationCollection operations, long lsn)
     {
         // Ensure the locator's schema is durable in the heap before its ops are logged, so replay can
         // resolve the id even after a crash before the next checkpoint. Rare (once per table/index).
         if (_loggedLocators.Add(locator.Id))
             PersistScheme();
 
-        var lsn = ++_lsn;
         _operationLog!.Append(lsn, w =>
         {
             SerializeLocator(w, locator);
@@ -271,11 +283,21 @@ public partial class WTree : IDisposable
         });
     }
 
-    /// <summary>Decodes and re-applies one log record during recovery (no re-logging — <c>_replaying</c>).</summary>
-    private void ReplayLogRecord(BinaryReader reader)
+    /// <summary>Stamps every op in a batch with its append LSN (transient; for incremental-checkpoint tracking).</summary>
+    private static void StampLsn(IOperationCollection operations, long lsn)
+    {
+        for (var i = 0; i < operations.Count; i++)
+            operations[i].Lsn = lsn;
+    }
+
+    /// <summary>Decodes and re-applies one log record during recovery (no re-logging — <c>_replaying</c>).
+    /// Stamps the batch's LSN onto the ops so leaves rebuild their PageLsn (and the incremental-checkpoint
+    /// redo-skip works) exactly as during normal operation.</summary>
+    private void ReplayLogRecord(long lsn, BinaryReader reader)
     {
         var locator = DeserializeLocator(reader);
         var operations = locator.OperationsPersist.Read(reader);
+        StampLsn(operations, lsn);
         Execute(operations);
     }
 
@@ -442,6 +464,68 @@ public partial class WTree : IDisposable
         CheckpointToHeap(cancellationToken, locator, hasLocator, fromKey, toKey);
     }
 
+    /// <summary>Incremental-checkpoint selection (under the root lock, BEFORE the Store-fall). Only MARKS the
+    /// nodes to flush this round — the root, every dirty internal node (few, high fan-out), and the coldest
+    /// <see cref="_checkpointMaxNodes"/> dirty leaves (smallest MinDirtyLsn). NeverStored split products are
+    /// flushed by the Store-fall gate directly (they always need an initial image), including ones the fall's
+    /// Maintenance creates. The recovery LSN is computed AFTER the fall (see <see cref="ComputeIncrementalRecoveryLsn"/>)
+    /// because Maintenance runs during the fall (it drains buffered ops down the tree — skipping it bloats
+    /// nodes and freezes throughput) and can move ops between nodes, so a pre-fall LSN would be unsafe.</summary>
+    private void SelectIncrementalCheckpoint()
+    {
+        List<Node> dirtyLeaves = null;
+
+        foreach (var kv in _cache)
+        {
+            var node = kv.Value;
+            if (!node.IsModified)
+                continue;
+            if (node.IsRoot || node.Type == NodeType.Internal)
+                node.ToCheckpoint = true;   // root + internals are few — always flush (cheap, advances cpLsn)
+            else
+                (dirtyLeaves ??= new List<Node>()).Add(node);
+        }
+
+        if (dirtyLeaves != null)
+        {
+            // Flush the coldest CheckpointMaxNodes (oldest unflushed → advances the boundary most); the
+            // remainder stay dirty and pin cpLsn just below their oldest unflushed op.
+            if (dirtyLeaves.Count > _checkpointMaxNodes)
+                dirtyLeaves.Sort(static (a, b) => a.MinDirtyLsn.CompareTo(b.MinDirtyLsn));
+            for (var i = 0; i < dirtyLeaves.Count && i < _checkpointMaxNodes; i++)
+                dirtyLeaves[i].ToCheckpoint = true;
+        }
+
+#if PERFORMANCE_CHECK
+        if (dirtyLeaves != null)
+            General.Diagnostics.PerformanceCheck.Observe("wtree.cp.incr.dirtyleaves", dirtyLeaves.Count);
+#endif
+    }
+
+    /// <summary>Computes the incremental recovery boundary AFTER the Store-fall (Maintenance has settled and
+    /// moved ops to their final nodes) and clears the per-pass ToCheckpoint marks. A node flushed this pass
+    /// (ToCheckpoint, or NeverStored → stored by the gate) becomes durable, so it does not constrain the
+    /// boundary; every other still-dirty node pins it. cpLsn = (min MinDirtyLsn over the still-non-durable
+    /// dirty nodes) − 1, so every op ≤ cpLsn is durable (it lives only in flushed/clean nodes) and recovery
+    /// replays strictly after it (idempotently). Safe regardless of how Maintenance reshaped the tree,
+    /// because it reads the post-fall MinDirtyLsn (which reflects any sink that lowered a node's oldest op).</summary>
+    private long ComputeIncrementalRecoveryLsn()
+    {
+        var recoveryLsn = long.MaxValue;
+        foreach (var kv in _cache)
+        {
+            var node = kv.Value;
+            if (node.ToCheckpoint || node.NeverStored)
+            {
+                node.ToCheckpoint = false;   // will be durable after FinalizeCommit — clear the per-pass mark
+                continue;
+            }
+            if (node.IsModified && node.MinDirtyLsn < recoveryLsn)
+                recoveryLsn = node.MinDirtyLsn;
+        }
+        return recoveryLsn == long.MaxValue ? Volatile.Read(ref _lsn) : recoveryLsn - 1;
+    }
+
     private bool CheckpointDue()
         => Environment.TickCount64 - _lastCheckpointTicks >= _checkpointIntervalMs
            || _operationLog!.SizeBytes >= _checkpointLogSizeBytes;
@@ -451,19 +535,26 @@ public partial class WTree : IDisposable
     /// the log; for InPlace/WriteAheadLog it is every commit (historical behaviour).</summary>
     private void CheckpointToHeap(CancellationToken cancellationToken, Locator locator = default(Locator), bool hasLocator = false, IData fromKey = null, IData toKey = null)
     {
+        _incrementalActiveCheckpoint = _incrementalCheckpoint && _operationLog != null;
+
+        // Maintenance MUST run during the Store-fall (both full and incremental): it drains buffered ops down
+        // the tree. Skipping it (an earlier incremental experiment) left ops piling into single nodes — 16k+
+        // ops/node, ~1 MB nodes, multi-GB DB, 4 GB heap, GC-thrash freeze. So no NoMaintenance here; the
+        // incremental recovery LSN is instead computed AFTER the fall, when the tree has settled.
+        const WalkAction storeAction = WalkAction.Store;
         Params param;
         if (!hasLocator)
-            param = new Params(WalkMethod.CascadeButOnlyLoaded, WalkAction.Store, null, false);
+            param = new Params(WalkMethod.CascadeButOnlyLoaded, storeAction, null, false);
         else
         {
             if (fromKey == null)
-                param = new Params(WalkMethod.CascadeButOnlyLoaded, WalkAction.Store, null, false, locator);
+                param = new Params(WalkMethod.CascadeButOnlyLoaded, storeAction, null, false, locator);
             else
             {
                 if (toKey == null)
-                    param = new Params(WalkMethod.CascadeButOnlyLoaded, WalkAction.Store, null, false, locator, fromKey);
+                    param = new Params(WalkMethod.CascadeButOnlyLoaded, storeAction, null, false, locator, fromKey);
                 else
-                    param = new Params(WalkMethod.CascadeButOnlyLoaded, WalkAction.Store, null, false, locator, fromKey, toKey);
+                    param = new Params(WalkMethod.CascadeButOnlyLoaded, storeAction, null, false, locator, fromKey, toKey);
             }
         }
 
@@ -486,8 +577,16 @@ public partial class WTree : IDisposable
 
             if (_operationLog != null)
             {
-                cpLsn = Volatile.Read(ref _lsn);
-                _checkpointLsn = cpLsn;
+                // Full checkpoint stores every dirty node → the whole log up to _lsn becomes durable.
+                // Incremental flushes only a bounded subset: SelectIncrementalCheckpoint MARKS that subset
+                // (ToCheckpoint) before the fall; the boundary is computed AFTER the fall (below).
+                if (_incrementalActiveCheckpoint)
+                    SelectIncrementalCheckpoint();
+                else
+                {
+                    cpLsn = Volatile.Read(ref _lsn);
+                    _checkpointLsn = cpLsn;
+                }
             }
 
             var token = new Token(cancellationToken);
@@ -498,6 +597,13 @@ public partial class WTree : IDisposable
 #if PERFORMANCE_CHECK
             General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.cp.fallstore", fallStart);
 #endif
+
+            if (_incrementalActiveCheckpoint)
+            {
+                // Post-fall: Maintenance has settled; flushed (ToCheckpoint/NeverStored) nodes are durable.
+                cpLsn = ComputeIncrementalRecoveryLsn();
+                _checkpointLsn = cpLsn;
+            }
 
             //write settings
             using (var ms = new MemoryStream())
@@ -542,6 +648,7 @@ public partial class WTree : IDisposable
 #if PERFORMANCE_CHECK
             General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.commit.hold", commitHoldStart);
 #endif
+            _incrementalActiveCheckpoint = false;
             _rootBranch.SyncRoot.Exit();
         }
 

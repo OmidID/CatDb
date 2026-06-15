@@ -12,6 +12,40 @@ public partial class WTree
         public Branch Branch;
         public volatile bool IsExpiredFromCache;
 
+        // ── Incremental-checkpoint LSN tracking (TransactionLog) ──────────────
+        // MinDirtyLsn = oldest applied-but-unflushed op LSN (long.MaxValue when clean) — pins how far the
+        // checkpoint LSN may advance (recovery replays strictly after min(MinDirtyLsn) over loaded dirty
+        // nodes). PageLsn = max op LSN reflected in this node's image (persisted but currently advisory:
+        // recovery uses idempotent in-order replay, NOT a redo-skip, because waterfall ops sink to leaves
+        // out of LSN order so PageLsn≥op does NOT prove op is applied). All inert unless TransactionLog +
+        // IncrementalCheckpoint.
+        public long MinDirtyLsn = long.MaxValue;
+        public long PageLsn;
+        public long StructuralLsn;
+
+        /// <summary>True until this node has been written to the heap at least once. A split creates a node
+        /// with a fresh handle and no image yet; the incremental checkpoint must store every NeverStored node
+        /// so no flushed parent ever references a non-existent child image (recovery would fail to load it).</summary>
+        public bool NeverStored = true;
+
+        /// <summary>Transient per-checkpoint flag: set by the incremental checkpoint's selection pass for the
+        /// nodes it will flush this round (dirty internals + new nodes + the coldest dirty leaves); the
+        /// Store-fall persists only flagged nodes and clears it. Always false outside an incremental flush.</summary>
+        public bool ToCheckpoint;
+
+        /// <summary>Folds an applied op-batch's LSNs into MinDirtyLsn (oldest unflushed) and PageLsn (max
+        /// reflected). Called from Apply under the branch lock. No-op for unstamped (lsn 0) ops.</summary>
+        protected void TrackAppliedLsn(IOperationCollection operations)
+        {
+            for (var i = 0; i < operations.Count; i++)
+            {
+                var l = operations[i].Lsn;
+                if (l == 0) continue;
+                if (l < MinDirtyLsn) MinDirtyLsn = l;
+                if (l > PageLsn) PageLsn = l;
+            }
+        }
+
         /// <summary>Last known serialized size — used as the in-memory footprint estimate for the
         /// byte-budgeted cache. Internal (buffer-laden) nodes are far larger than leaves, so the cache
         /// must bound by bytes, not node count, to keep the managed heap (and GC pauses) flat.</summary>
@@ -106,6 +140,7 @@ public partial class WTree
             //Console.WriteLine("{0} {1}, Records {2}, Size {3} MB", type, Branch.NodeHandle, recordCount, sizeInMB);
 
             Branch.Tree._heap.Write(Branch.NodeHandle, stream.GetBuffer(), 0, (int)stream.Length);
+            NeverStored = false;  // now has an on-disk image — safe for a parent to reference its handle
 
 #if PERFORMANCE_CHECK
             CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.node.store", perfStart);
@@ -118,6 +153,7 @@ public partial class WTree
             var buffer = heap.Read(Branch.NodeHandle);
             ApproxByteSize = buffer.Length;
             Load(new MemoryStream(buffer));
+            NeverStored = false;  // loaded from an existing on-disk image
         }
 
         public static Node Create(Branch branch)

@@ -18,4 +18,11 @@ public interface IOperation
     OperationScope Scope   { get; }
     IData          FromKey { get; }
     IData          ToKey   { get; }
+
+    /// <summary>
+    /// The op-log LSN of the batch this operation belongs to. Stamped at append time (TransactionLog mode),
+    /// transient (lives only while the op is buffered; never serialised). The incremental checkpoint uses it
+    /// to track each node's oldest-unflushed and max-applied LSN. 0 when not in TransactionLog mode.
+    /// </summary>
+    long Lsn { get; set; }
 }

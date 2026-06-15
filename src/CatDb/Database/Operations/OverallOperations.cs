@@ -13,6 +13,7 @@ public abstract class OverallOperation(int action) : IOperation
     public OperationScope Scope   => OperationScope.Overall;
     public IData          FromKey => null;
     public IData          ToKey   => null;
+    public long           Lsn     { get; set; }
 }
 
 public class ClearOperation() : OverallOperation(OperationCode.CLEAR)

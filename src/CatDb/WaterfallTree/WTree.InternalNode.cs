@@ -12,7 +12,8 @@ public partial class WTree
 {
     private sealed partial class InternalNode : Node
     {
-        private const byte VERSION = 40;
+        private const byte VERSION = 41;     // v41 adds persisted PageLsn after the version byte
+        private const byte VERSION_V40 = 40;  // pre-PageLsn images (PageLsn defaults to 0 → full replay)
 
         private readonly BranchesOptimizator _optimizator = new();
 
@@ -115,6 +116,7 @@ public partial class WTree
             {
                 SequentialApply(operations); //sequential mode optimization
                 IsModified = true;
+                TrackAppliedLsn(operations);
                 return;
             }
 
@@ -166,6 +168,7 @@ public partial class WTree
             }
 
             IsModified = true;
+            TrackAppliedLsn(operations);
         }
 
         public override Node Split()
@@ -308,6 +311,7 @@ public partial class WTree
         {
             var writer = new BinaryWriter(stream);
             writer.Write(VERSION);
+            writer.Write(PageLsn); // v41: max op LSN reflected (incremental-checkpoint redo-skip)
 
             CountCompression.Serialize(writer, checked((ulong)Branch.NodeHandle));
 
@@ -315,13 +319,17 @@ public partial class WTree
             Branches.Store(Branch.Tree, writer);
 
             IsModified = false;
+            MinDirtyLsn = long.MaxValue;
         }
 
         public override void Load(Stream stream)
         {
             var reader = new BinaryReader(stream);
-            if (reader.ReadByte() != VERSION)
+            var version = reader.ReadByte();
+            if (version != VERSION && version != VERSION_V40)
                 throw new Exception("Invalid InternalNode version.");
+
+            PageLsn = version >= VERSION ? reader.ReadInt64() : 0;
 
             var id = (long)CountCompression.Deserialize(reader);
             if (id != Branch.NodeHandle)

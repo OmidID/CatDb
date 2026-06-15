@@ -13,6 +13,7 @@ public abstract class PointOperation(int action, IData key) : IOperation
     public OperationScope Scope   => OperationScope.Point;
     public IData          FromKey => key;
     public IData          ToKey   => key;
+    public long           Lsn     { get; set; }
     public override string ToString() => ToKey.ToString();
 }
 

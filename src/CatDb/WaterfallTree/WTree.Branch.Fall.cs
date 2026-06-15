@@ -90,8 +90,20 @@ public partial class WTree
             }
             else
             {
-                if ((param.WalkAction & WalkAction.Store) == WalkAction.Store && node.IsModified)
-                    Tree._commitStrategy.Persist(node);
+                // NeverStored nodes (split products, possibly created by THIS fall's Maintenance) must always
+                // get an on-disk image so no flushed parent references a dangling child handle — even if not
+                // flagged IsModified.
+                if ((param.WalkAction & WalkAction.Store) == WalkAction.Store
+                    && (node.IsModified || (Tree._incrementalActiveCheckpoint && node.NeverStored)))
+                {
+                    // Incremental checkpoint: persist only the nodes the selection chose this round
+                    // (ToCheckpoint) plus every NeverStored node. Unselected dirty leaves stay in memory and
+                    // pin the recovery LSN (computed post-fall); their ops remain in the log for replay. The
+                    // ToCheckpoint mark is cleared post-fall in ComputeIncrementalRecoveryLsn, NOT here, so the
+                    // post-fall pass can tell which nodes were flushed. Full checkpoint stores every dirty node.
+                    if (!Tree._incrementalActiveCheckpoint || node.ToCheckpoint || node.NeverStored)
+                        Tree._commitStrategy.Persist(node);
+                }
 
                 if ((param.WalkAction & WalkAction.Unload) == WalkAction.Unload)
                 {

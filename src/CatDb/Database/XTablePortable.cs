@@ -325,6 +325,16 @@ public class XTablePortable : ITable<IData, IData>
                 records = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key, Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
             }
 
+            // prevLastKey: maximum key of the most-recently yielded leaf. Symmetric to the Backward scan's
+            // prevFirstKey guard. A Forward scan pages leaf-by-leaf, RELEASING the WTree root lock between
+            // pages (FindData is hand-over-hand). Between pages a concurrent split/merge or a checkpoint
+            // eviction+reload can land the next descent on a leaf whose first key is <= the last key we
+            // already yielded — a backward jump. Unchecked, that yields out-of-order keys and, on an
+            // unbounded scan, loops forever (re-reading the same range = a hang). The guard (checked under
+            // the next page's read lock, atomic with the foreach) detects the regression and stops the scan
+            // at a correctly-ordered prefix instead. (Forward previously lacked this; only Backward had it.)
+            IData prevLastKey = null;
+
             while (records is not null)
             {
                 IOrderedSet<IData, IData> recs = null;
@@ -340,17 +350,34 @@ public class XTablePortable : ITable<IData, IData>
                     finally { records.Lock.ExitRead(); }
                 }
 
+                var guardFailed = false;
                 records.Lock.EnterRead();
                 try
                 {
-                    foreach (var record in records.Forward(from, hasFrom, to, hasTo))
-                        yield return record;
+                    // A concurrent insert/split must not have placed a key <= prevLastKey into this page,
+                    // which would regress the forward scan. Blocked from racing by our shared read lock.
+                    if (prevLastKey != null && records.Count > 0 &&
+                        keyComparer.Compare(records.First.Key, prevLastKey) <= 0)
+                    {
+                        guardFailed = true;
+                    }
+                    else
+                    {
+                        if (records.Count > 0)
+                            prevLastKey = records.Last.Key;
+                        foreach (var record in records.Forward(from, hasFrom, to, hasTo))
+                            yield return record;
+                    }
                 }
                 finally { records.Lock.ExitRead(); }
 
                 // Sequential fetch of the next page — no background prefetch / Task.Wait.
                 if (hasNearFullKey && nearFullKey.Locator.Equals(Locator))
                     recs = Tree.FindData(Locator, nearFullKey.Locator, nearFullKey.Key, Direction.Forward, out nearFullKey, out hasNearFullKey, ref lastVisitedFullKey);
+
+                if (guardFailed) break;
+                if (recs is null) break;
+                if (ReferenceEquals(recs, records)) break;
 
                 records = recs;
             }
@@ -511,6 +538,9 @@ public class XTablePortable : ITable<IData, IData>
 
             bool hasFromActive    = hasFrom;
             bool fromExclActive   = fromExclusive;
+            // Forward paging regresses cursor under concurrent split/eviction (see Forward()): guard against
+            // re-counting an earlier leaf / looping forever by stopping when the cursor stops advancing.
+            IData prevScanLastKey = null;
 
             while (records is not null)
             {
@@ -536,6 +566,12 @@ public class XTablePortable : ITable<IData, IData>
                 records.Lock.EnterRead();
                 try
                 {
+                    if (prevScanLastKey != null && records.Count > 0 &&
+                        keyComparer.Compare(records.First.Key, prevScanLastKey) <= 0)
+                        break;  // cursor regressed — stop at a consistent prefix (finally releases the lock)
+                    if (records.Count > 0)
+                        prevScanLastKey = records.Last.Key;
+
                     // If neither from nor to applies to this leaf, the whole leaf counts.
                     // "from" only constrains the first leaf; "to" constrains the last.
                     // After the first leaf we clear hasFromActive, so only first leaf has it.
@@ -597,6 +633,7 @@ public class XTablePortable : ITable<IData, IData>
                 hasFromActive  = false;
                 fromExclActive = false;
 
+                if (ReferenceEquals(recs, records)) break;  // no progress — avoid spinning on the same leaf
                 records = recs;
             }
 
@@ -672,6 +709,8 @@ public class XTablePortable : ITable<IData, IData>
 
             bool hasFromActive    = hasFrom;
             bool fromExclActive   = fromExclusive;
+            // Same forward-paging regression guard as Forward()/ScanCount: stop if the cursor stops advancing.
+            IData prevScanLastKey = null;
 
             while (records is not null)
             {
@@ -698,27 +737,38 @@ public class XTablePortable : ITable<IData, IData>
                 records.Lock.EnterRead();
                 try
                 {
-                    if (records.TryGetSortedRange(
-                            from, hasFromActive, fromExclActive,
-                            to, hasTo, toExclusive,
-                            out var si, out var ei))
+                    if (prevScanLastKey != null && records.Count > 0 &&
+                        keyComparer.Compare(records.First.Key, prevScanLastKey) <= 0)
                     {
-                        // Zero-copy fast path: callback reads the internal list directly
-                        continueScanning = callback(records.InternalList!, si, ei);
-                    }
-                    else if (records.InternalList == null && records.Count > 0)
-                    {
-                        // Slow path: materialize to temp list for non-list-mode leaves
-                        var temp = new List<KeyValuePair<IData, IData>>();
-                        foreach (var kv in records.ForwardExclusive(
-                                     from, hasFromActive, fromExclActive,
-                                     to, hasTo, toExclusive))
-                            temp.Add(kv);
-                        continueScanning = temp.Count == 0 || callback(temp, 0, temp.Count - 1);
+                        continueScanning = false;  // cursor regressed — stop at a consistent prefix
                     }
                     else
                     {
-                        continueScanning = true;
+                        if (records.Count > 0)
+                            prevScanLastKey = records.Last.Key;  // advance the regression cursor
+
+                        if (records.TryGetSortedRange(
+                                from, hasFromActive, fromExclActive,
+                                to, hasTo, toExclusive,
+                                out var si, out var ei))
+                        {
+                            // Zero-copy fast path: callback reads the internal list directly
+                            continueScanning = callback(records.InternalList!, si, ei);
+                        }
+                        else if (records.InternalList == null && records.Count > 0)
+                        {
+                            // Slow path: materialize to temp list for non-list-mode leaves
+                            var temp = new List<KeyValuePair<IData, IData>>();
+                            foreach (var kv in records.ForwardExclusive(
+                                         from, hasFromActive, fromExclActive,
+                                         to, hasTo, toExclusive))
+                                temp.Add(kv);
+                            continueScanning = temp.Count == 0 || callback(temp, 0, temp.Count - 1);
+                        }
+                        else
+                        {
+                            continueScanning = true;
+                        }
                     }
                 }
                 finally { records.Lock.ExitRead(); }
@@ -728,6 +778,7 @@ public class XTablePortable : ITable<IData, IData>
                 hasFromActive  = false;
                 fromExclActive = false;
 
+                if (ReferenceEquals(recs, records)) break;  // no progress — avoid spinning on the same leaf
                 records = recs;
             }
         }
@@ -836,6 +887,7 @@ public class XTablePortable : ITable<IData, IData>
             bool hasFromActive    = hasFrom;
             bool fromExclActive   = fromExclusive;
             IData fromActive      = from;
+            IData prevSegLastKey  = null;  // forward-paging regression guard (see Forward())
 
             while (records is not null)
             {
@@ -865,45 +917,59 @@ public class XTablePortable : ITable<IData, IData>
                 }
 
                 int segCount = 0;
+                var guardFailed = false;
                 records.Lock.EnterRead();
                 try
                 {
-                    // ── Fast path: direct list access + Array.Copy ────────────────
-                    if (records.TryGetSortedRange(
-                            fromActive, hasFromActive, fromExclActive,
-                            to, hasTo, toExclusive,
-                            out var si, out var ei))
+                    if (prevSegLastKey != null && records.Count > 0 &&
+                        keyComparer.Compare(records.First.Key, prevSegLastKey) <= 0)
                     {
-                        segCount = ei - si + 1;
-                        if (segCount > remaining)
-                            segCount = remaining;
-                        if (buffer.Length < segCount)
-                            buffer = new KeyValuePair<IData, IData>[Math.Max(segCount, 4096)];
-                        records.InternalList!.CopyTo(si, buffer, 0, segCount);
+                        guardFailed = true;  // cursor regressed — stop at a consistent prefix
                     }
-                    else if (records.InternalList == null && records.Count > 0)
+                    else
                     {
-                        // ── Slow path: SortedSet / dictionary mode — materialize ──
-                        var temp = new List<KeyValuePair<IData, IData>>();
-                        foreach (var kv in records.ForwardExclusive(
-                                     fromActive, hasFromActive, fromExclActive,
-                                     to, hasTo, toExclusive))
-                        {
-                            temp.Add(kv);
-                            if (temp.Count >= remaining)
-                                break;
-                        }
+                        if (records.Count > 0)
+                            prevSegLastKey = records.Last.Key;
 
-                        segCount = temp.Count;
-                        if (segCount > 0)
+                        // ── Fast path: direct list access + Array.Copy ────────────────
+                        if (records.TryGetSortedRange(
+                                fromActive, hasFromActive, fromExclActive,
+                                to, hasTo, toExclusive,
+                                out var si, out var ei))
                         {
+                            segCount = ei - si + 1;
+                            if (segCount > remaining)
+                                segCount = remaining;
                             if (buffer.Length < segCount)
                                 buffer = new KeyValuePair<IData, IData>[Math.Max(segCount, 4096)];
-                            temp.CopyTo(buffer);
+                            records.InternalList!.CopyTo(si, buffer, 0, segCount);
+                        }
+                        else if (records.InternalList == null && records.Count > 0)
+                        {
+                            // ── Slow path: SortedSet / dictionary mode — materialize ──
+                            var temp = new List<KeyValuePair<IData, IData>>();
+                            foreach (var kv in records.ForwardExclusive(
+                                         fromActive, hasFromActive, fromExclActive,
+                                         to, hasTo, toExclusive))
+                            {
+                                temp.Add(kv);
+                                if (temp.Count >= remaining)
+                                    break;
+                            }
+
+                            segCount = temp.Count;
+                            if (segCount > 0)
+                            {
+                                if (buffer.Length < segCount)
+                                    buffer = new KeyValuePair<IData, IData>[Math.Max(segCount, 4096)];
+                                temp.CopyTo(buffer);
+                            }
                         }
                     }
                 }
                 finally { records.Lock.ExitRead(); }
+
+                if (guardFailed) break;
 
                 if (segCount > 0)
                 {
@@ -918,6 +984,7 @@ public class XTablePortable : ITable<IData, IData>
                 hasFromActive  = false;
                 fromExclActive = false;
 
+                if (ReferenceEquals(recs, records)) break;  // no progress — avoid spinning on the same leaf
                 records = recs;
             }
         }

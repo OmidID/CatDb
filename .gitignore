@@ -2,3 +2,4 @@
 *.log
 src/.DS_Store
 .DS_Store
+*.oplog

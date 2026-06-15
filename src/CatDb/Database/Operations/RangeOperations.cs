@@ -22,6 +22,7 @@ public abstract class RangeOperation : IOperation
     public OperationScope Scope   => OperationScope.Range;
     public IData          FromKey { get; }
     public IData          ToKey   { get; }
+    public long           Lsn     { get; set; }
 }
 
 public class DeleteRangeOperation(IData from, IData to)
