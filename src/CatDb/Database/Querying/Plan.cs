@@ -106,6 +106,18 @@ internal sealed class UnionPk(IReadOnlyList<PkPlan> inputs) : PkPlan
 internal abstract class RowPlan : PlanNode
 {
     public abstract IEnumerable<Row> Execute(IQueryEngineContext ctx);
+
+    /// <summary>Count rows WITHOUT materializing records, when the shape allows it; returns null when a
+    /// count requires actually producing rows (e.g. a residual predicate over the record). Lets
+    /// <c>Query(...).Count()</c> avoid one main-table heap point-lookup PER matching row — the difference
+    /// between O(matches) random reads and a pure index-key count on a large table.</summary>
+    public virtual long? CountFast(IQueryEngineContext ctx) => null;
+
+    protected static long Clamp(long n, int skip, int? take)
+    {
+        var afterSkip = Math.Max(0, n - skip);
+        return take.HasValue ? Math.Min(afterSkip, take.Value) : afterSkip;
+    }
 }
 
 internal sealed class Fetch(PkPlan source) : RowPlan
@@ -115,6 +127,16 @@ internal sealed class Fetch(PkPlan source) : RowPlan
         foreach (var pk in source.Execute(ctx))
             if (ctx.TryFetch(pk, out var record))
                 yield return new Row(pk, record);
+    }
+
+    // Count the primary keys the index produced — no per-row TryFetch. Index maintenance keeps index
+    // entries in step with the records under the table locks, so the pk count equals the row count
+    // (same semantics as the engine's native CountByIndex, which also counts keys without fetching).
+    public override long? CountFast(IQueryEngineContext ctx)
+    {
+        long n = 0;
+        foreach (var _ in source.Execute(ctx)) n++;
+        return n;
     }
 
     public override string Explain(int indent) => $"{Pad(indent)}Fetch\n{source.Explain(indent + 1)}";
@@ -144,6 +166,12 @@ internal sealed class Filter(RowPlan input, RowPredicate? recordPredicate, RowPr
         }
     }
 
+    // Only safe to count without materializing when there is NO residual predicate — both a record
+    // predicate (needs the record) and a key predicate (needs each row's key, which only Fetch produces)
+    // force row production. Otherwise defer to the child.
+    public override long? CountFast(IQueryEngineContext ctx)
+        => (recordPredicate == null && keyPredicate == null) ? input.CountFast(ctx) : null;
+
     public override string Explain(int indent) => $"{Pad(indent)}Filter\n{input.Explain(indent + 1)}";
 }
 
@@ -152,6 +180,13 @@ internal sealed class Sort(RowPlan input, Comparison<Row> comparison, int skip, 
 {
     public override IEnumerable<Row> Execute(IQueryEngineContext ctx)
         => take.HasValue ? TopK(ctx) : FullSort(ctx);
+
+    // Ordering is irrelevant to a count; defer to the child and apply skip/take.
+    public override long? CountFast(IQueryEngineContext ctx)
+    {
+        var c = input.CountFast(ctx);
+        return c.HasValue ? Clamp(c.Value, skip, take) : null;
+    }
 
     private IEnumerable<Row> FullSort(IQueryEngineContext ctx)
     {
@@ -215,6 +250,12 @@ internal sealed class Limit(RowPlan input, int skip, int? take) : RowPlan
         if (skip > 0) rows = rows.Skip(skip);
         if (take.HasValue) rows = rows.Take(take.Value);
         return rows;
+    }
+
+    public override long? CountFast(IQueryEngineContext ctx)
+    {
+        var c = input.CountFast(ctx);
+        return c.HasValue ? Clamp(c.Value, skip, take) : null;
     }
 
     public override string Explain(int indent)

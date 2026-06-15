@@ -208,6 +208,13 @@ public partial class WTree
                 finally { branch.SyncRoot.Exit(); }
                 branch.NodeState = branch.Node.State;
 
+                // Drop the merged-away node from the live cache BEFORE freeing its handle. It is no longer in
+                // the tree, so the tree-walk eviction (EvictCache → CacheFlush) can never reach it again — if
+                // we leave it in _cache it is immortal: a slow unbounded memory leak (and the handle could be
+                // reused by a new node, leaving a stale entry). This is the root of the "memory grows + ops/s
+                // collapses over minutes" decay under delete-heavy load.
+                node.Branch.Tree.Exclude(node.Branch.NodeHandle);
+
                 //release node space
                 node.Branch.Tree._heap.Release(node.Branch.NodeHandle);
             }

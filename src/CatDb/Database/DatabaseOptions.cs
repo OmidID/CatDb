@@ -110,8 +110,11 @@ public sealed class DatabaseOptions
     /// more cache (higher throughput); 0 falls back to <see cref="CacheSize"/>.
     /// Default: 512&#160;MB. Eviction keeps the working set bounded (no throughput decay) at any value;
     /// lower it to trade throughput for a smaller heap, raise it for more cache on memory-rich servers.
+    /// Set to 0 to fall back to the legacy fixed <see cref="CacheSize"/> node-count cache (NOT recommended:
+    /// WTree nodes vary from KB to over a MB, so a node count makes the managed heap unbounded — it grows
+    /// until the count cap, which can be multiple GB, then GC-thrashes; that is the slow throughput collapse).
     /// </summary>
-    public long CacheSizeBytes { get; set; }
+    public long CacheSizeBytes { get; set; } = 512L * 1024 * 1024;
 
     /// <summary>
     /// Default options suitable for most workloads.

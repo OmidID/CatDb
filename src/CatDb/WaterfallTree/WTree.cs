@@ -70,6 +70,21 @@ public partial class WTree : IDisposable
         _operationLog = operationLog;
         _commitStrategy = CreateCommitStrategy(options);
 
+#if PERFORMANCE_CHECK
+        // Leak-hunting gauges — current size of every structure that could grow without bound. Watch which
+        // climbs window-over-window while throughput falls. Sampled once per flush, off the hot path.
+        General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.wtree.cachesizebytes.mb", () => _cacheSizeBytes / (1024 * 1024));
+        General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.wtree.cache.count", () => _cache.Count);
+        General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.wtree.cache.bytes.mb", () =>
+        {
+            long total = 0;
+            foreach (var n in _cache.Values) total += n.ApproxByteSize;
+            return total / (1024 * 1024);
+        });
+        if (_operationLog != null)
+            General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.oplog.size.mb", () => _operationLog.SizeBytes / (1024 * 1024));
+#endif
+
         if (options != null)
         {
             _checkpointIntervalMs = options.CheckpointIntervalMs;
@@ -824,6 +839,9 @@ public partial class WTree : IDisposable
             freed += ram;
             marked++;
         }
+#if PERFORMANCE_CHECK
+        General.Diagnostics.PerformanceCheck.Observe("wtree.evict.marked", marked);
+#endif
         return marked > 0;
     }
 

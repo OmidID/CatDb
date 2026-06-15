@@ -131,6 +131,15 @@ residual/prefix, so it buffers. `string` (and other types lacking a max sentinel
 slot disables the upper-bound seek for that case (filtered-scan fallback). Mixed-direction multi-key
 sorts still run-buffer the leading group rather than streaming.
 
+**`Query(...).Count()` is fetch-free** (2026-06): `Count()` routes through `TableIndexManager.TryCountFast` →
+`PlanNode.CountFast`, which counts index keys WITHOUT a per-row main-table heap point-lookup (the `Fetch`
+node's `TryFetch`). It strips the order-irrelevant `Sort`, honours `Skip`/`Take` (clamp), and falls back to
+full enumeration only when a residual record/key predicate needs materialized rows. Before this, `Count()` =
+`LongCount()` over the record-producing plan = O(matches) random reads that grow with the table → index/sort
+query throughput "fell like crazy" under load (IndexStress 161→2334 ops/s after the fix). Counts match the
+native `CountByIndex` semantics (index entries stay in step with records under the table locks). Covered by
+`CountFastTests` (count == enumeration across equality/range/AND/OR/ORDER BY/Take/Skip/residual/deletes).
+
 Guidelines:
 
 - Prefer fluent builders in demos/tests/new code.
@@ -154,11 +163,12 @@ Lock strategy:
 2. Maintenance must be exception-safe and always rebuild branch collections.
 3. EvictCache runs synchronously inside `Commit` under root lock.
 4. BroadcastFall stays sequential (no `Parallel.ForEach`).
-5. **Optional byte-budget cache** (`DatabaseOptions.CacheSizeBytes`, default 0 = legacy count cache).
-   When >0, EvictCache bounds the cache to `Σ ApproxByteSize × 8 ≤ CacheSizeBytes` (managed-RAM estimate)
-   instead of node count — useful on memory-bound hosts. NOTE: enabling it adds per-commit eviction work
-   under the root lock; it does NOT fix the throughput decay (that is commit-time node serialisation under
-   the global root lock — see Debugging Shortcuts).
+5. **Byte-budget cache** (`DatabaseOptions.CacheSizeBytes`, **default 512 MB**). EvictCache bounds the cache
+   to `Σ ApproxByteSize × 8 ≤ CacheSizeBytes` (managed-RAM estimate) instead of node count. This is the
+   DEFAULT because WTree nodes vary KB→>1 MB, so the legacy fixed `CacheSize`=4096-NODE cache (selected by
+   setting `CacheSizeBytes`=0) makes the managed heap multi-GB and unpredictable. Eviction only works if cold
+   nodes are actually reachable by the tree-walk `CacheFlush` — see the stranded-`_cache`-node leak in
+   Debugging Shortcuts (merged nodes must be `Exclude`d from `_cache`).
 6. **CacheFlush must descend into cold subtrees.** In `DoFall`, an expired node still runs
    `BroadcastFall` (which skips unloaded children) before storing+unloading itself — do NOT switch to
    `WalkMethod.Current` on eviction or marked descendants orphan in `_cache` and the cache never shrinks.
@@ -259,6 +269,19 @@ Lock strategy:
   draining — a checkpoint/eviction path running with Maintenance suppressed. Maintenance drains buffers; never
   `NoMaintenance` on the checkpoint Store-fall (fix #10). Diagnose with `wtree.maintenance.sink.initial.ops`
   vs `.final.ops` (≈ equal = NOT draining) and `wtree.node.store.bytes` (multi-MB = bloated nodes).
+- **Memory + throughput leak over MINUTES (heap grows unbounded, ops/s 20k→200, restart fixes, delete-heavy):**
+  nodes stranded in `WTree._cache`. `MaintenanceHelper.Merge` must call `Tree.Exclude(handle)` before
+  `_heap.Release(handle)` — a merged-away node freed from the heap but left in `_cache` is IMMORTAL because
+  eviction is a **tree walk** (`EvictCache`→`CacheFlush`) that can't reach a node no longer in the tree.
+  Diagnose with `wtree.evict.marked` vs `wtree.evict.excluded`: **marked>0 but excluded==0 ⇒ eviction is a
+  no-op ⇒ nodes stranded** (the cache grows even though cold nodes are "marked"). Also: `DatabaseOptions.CacheSizeBytes`
+  defaults to 512 MB (byte-budget cache) — if set to 0 it falls back to the legacy 4096-NODE count cache, and
+  WTree nodes are huge/variable so a node count makes the heap multi-GB (keep the byte budget).
+- **Leak hunting — the gauge tool:** `PerformanceCheck.RegisterGauge(name, () => structure.Count)` samples a
+  structure's current SIZE once per 20 s window (off the hot path; ALWAYS inside `#if PERFORMANCE_CHECK`).
+  Registered: `gauge.wtree.cache.count`/`cache.bytes.mb`/`cachesizebytes.mb`/`oplog.size.mb` (WTree ctor),
+  `gauge.heap.used.count`/`reserved.count` (Heap ctor). Watch which climbs while throughput falls = the leak.
+  Plus `rt.proc.workingset.mb` (RSS, catches native growth) and `rt.gc.*` per-window deltas.
 - **commit.hold spike — is it GC or checkpoint I/O?** Per-window GC deltas now in `PerformanceCheck.FlushUnsafe`:
   `rt.gc.pause.ms.window`, `rt.gc.alloc.mb.window`, `rt.gc.gen0/1/2.window` (via `GC.GetTotalPauseDuration`/
   `GetTotalAllocatedBytes`/`CollectionCount`). Compare a window's `wtree.commit.hold` max against its

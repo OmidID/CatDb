@@ -183,7 +183,15 @@ internal sealed class Query<TKey, TRecord, TField>
     public IQuery<TKey, TRecord, TField> Take(int count) { _spec.Take = count; return this; }
     public IQuery<TKey, TRecord, TField> Skip(int count) { _spec.Skip = count; return this; }
 
-    public long Count() => this.LongCount();
+    public long Count()
+    {
+        _spec.Filter = _filter.Build();
+        // Count is order-independent and, when no residual record/key predicate is involved, needs only the
+        // index keys — not the records. Take that fast path; otherwise materialize and count.
+        if (_table.Indexes is CatDb.Database.Indexing.TableIndexManager m && m.TryCountFast(_spec) is { } n)
+            return n;
+        return this.LongCount();
+    }
     public bool Exists() { using var e = GetEnumerator(); return e.MoveNext(); }
 
     public string Explain()

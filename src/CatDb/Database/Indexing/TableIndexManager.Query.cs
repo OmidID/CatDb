@@ -29,6 +29,19 @@ internal sealed partial class TableIndexManager : IQueryEngineContext
         return compiled.Plan.Execute(new ParameterizedContext(this, values));
     }
 
+    /// <summary>Counts a query's matching rows WITHOUT fetching records when the plan allows (e.g. an index
+    /// seek/scan with no record-level residual). Returns null when the count needs materialized rows, so the
+    /// caller falls back to enumeration. Avoids one main-table heap point-lookup per matching row — the
+    /// difference between a cheap index-key count and O(matches) random reads on a large table.</summary>
+    public long? TryCountFast(EngineQuery query)
+    {
+        _table.Flush();
+        var signature = QueryCompiler.Signature(query);
+        var compiled = _planCache.GetOrAdd(signature, _ => QueryCompiler.Compile(query, this));
+        var values = QueryCompiler.Collect(query);
+        return compiled.Plan.CountFast(new ParameterizedContext(this, values));
+    }
+
     /// <summary>Returns the human-readable physical plan for a query (EXPLAIN).</summary>
     internal string ExplainQuery(EngineQuery query)
     {

@@ -87,6 +87,9 @@ public partial class WTree
                     node.Store();
                 Node = null;
                 Tree.Exclude(NodeHandle);
+#if PERFORMANCE_CHECK
+                CatDb.General.Diagnostics.PerformanceCheck.Increment("wtree.evict.excluded");
+#endif
             }
             else
             {

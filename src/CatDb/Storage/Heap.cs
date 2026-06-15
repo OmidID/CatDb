@@ -77,6 +77,14 @@ public class Heap : IHeap
         Strategy = strategy;
 
         _currentVersion++;
+
+#if PERFORMANCE_CHECK
+        // Leak gauges: handle metadata. If splits allocate handles that merges/frees never reclaim, these grow
+        // without bound — and they are re-serialized into the heap header on every commit, so growth here both
+        // leaks memory AND slows every commit (the classic slow-decay signature). Sampled once per flush.
+        General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.heap.used.count", () => _used.Count);
+        General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.heap.reserved.count", () => _reserved.Count);
+#endif
     }
 
     public Heap(string fileName, bool useCompression = false, AllocationStrategy strategy = AllocationStrategy.FromTheCurrentBlock)
