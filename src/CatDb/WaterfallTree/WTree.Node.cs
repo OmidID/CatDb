@@ -106,41 +106,54 @@ public partial class WTree
             }
         }
 
+        // Per-thread reusable serialization buffer. A node image is large (KB→MB); a fresh MemoryStream per
+        // Store allocates a large byte[] that churns the (non-compacting) LOH → base-memory creep + GC
+        // sawtooth. When the heap copies the buffer out on Write (plain Heap), we reuse this stream across
+        // stores instead — bounded to (threads × max node size), no per-store allocation. ParallelCheckpoint
+        // stores on several threads, so [ThreadStatic] keeps each thread's buffer private. Not used when the
+        // heap RETAINS the buffer (WAL pending queue / remote wire) — there each store gets a fresh array.
+        [ThreadStatic] private static MemoryStream? _storeBuffer;
+
         public void Store()
         {
 #if PERFORMANCE_CHECK
             var perfStart = Stopwatch.GetTimestamp();
 #endif
+            var heap = Branch.Tree._heap;
+            var reuse = !heap.RetainsWrittenBuffer;
 
-            using var stream = new MemoryStream();
-            Store(stream);
-            ApproxByteSize = stream.Length;
+            MemoryStream stream;
+            if (reuse)
+            {
+                stream = _storeBuffer ??= new MemoryStream();
+                stream.Position = 0;
+                stream.SetLength(0);
+            }
+            else
+            {
+                stream = new MemoryStream();
+            }
+
+            try
+            {
+                Store(stream);
+                ApproxByteSize = stream.Length;
 
 #if PERFORMANCE_CHECK
-            CatDb.General.Diagnostics.PerformanceCheck.Observe("wtree.node.store.bytes", stream.Length);
-            if (Type == NodeType.Internal)
-                CatDb.General.Diagnostics.PerformanceCheck.Increment("wtree.node.store.internal");
-            else
-                CatDb.General.Diagnostics.PerformanceCheck.Increment("wtree.node.store.leaf");
+                CatDb.General.Diagnostics.PerformanceCheck.Observe("wtree.node.store.bytes", stream.Length);
+                if (Type == NodeType.Internal)
+                    CatDb.General.Diagnostics.PerformanceCheck.Increment("wtree.node.store.internal");
+                else
+                    CatDb.General.Diagnostics.PerformanceCheck.Increment("wtree.node.store.leaf");
 #endif
 
-            //int recordCount = 0;
-            //string type = "";
-            //if (this is InternalNode)
-            //{
-            //    recordCount = ((InternalNode)this).Branch.Cache.OperationCount;
-            //    type = "Internal";
-            //}
-            //else
-            //{
-            //    recordCount = ((LeafNode)this).RecordCount;
-            //    type = "Leaf";
-            //}
-            //double sizeInMB = Math.Round(stream.Length / (1024.0 * 1024), 2);
-            //Console.WriteLine("{0} {1}, Records {2}, Size {3} MB", type, Branch.NodeHandle, recordCount, sizeInMB);
-
-            Branch.Tree._heap.Write(Branch.NodeHandle, stream.GetBuffer(), 0, (int)stream.Length);
-            NeverStored = false;  // now has an on-disk image — safe for a parent to reference its handle
+                heap.Write(Branch.NodeHandle, stream.GetBuffer(), 0, (int)stream.Length);
+                NeverStored = false;  // now has an on-disk image — safe for a parent to reference its handle
+            }
+            finally
+            {
+                if (!reuse) stream.Dispose();   // reused stream is kept (thread-static) for the next store
+            }
 
 #if PERFORMANCE_CHECK
             CatDb.General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.node.store", perfStart);
@@ -150,9 +163,28 @@ public partial class WTree
         public void Load()
         {
             var heap = Branch.Tree._heap;
-            var buffer = heap.Read(Branch.NodeHandle);
-            ApproxByteSize = buffer.Length;
-            Load(new MemoryStream(buffer));
+            // Read into a POOLED buffer when the heap can lend one (plain Heap) — node images are large
+            // (KB→MB) and a fresh byte[] per load churns the (non-compacting) LOH → the slow base-memory
+            // creep + GC sawtooth. Deserialization copies values out (BinaryReader-based), so the buffer is
+            // safe to return to the pool once Load completes.
+            if (heap.TryReadPooled(Branch.NodeHandle, System.Buffers.ArrayPool<byte>.Shared, out var rented, out var length))
+            {
+                try
+                {
+                    ApproxByteSize = length;
+                    Load(new MemoryStream(rented, 0, length, writable: false));
+                }
+                finally
+                {
+                    System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+                }
+            }
+            else
+            {
+                var buffer = heap.Read(Branch.NodeHandle);
+                ApproxByteSize = buffer.Length;
+                Load(new MemoryStream(buffer));
+            }
             NeverStored = false;  // loaded from an existing on-disk image
         }
 

@@ -84,6 +84,9 @@ public class Heap : IHeap
         // leaks memory AND slows every commit (the classic slow-decay signature). Sampled once per flush.
         General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.heap.used.count", () => _used.Count);
         General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.heap.reserved.count", () => _reserved.Count);
+        // Free-chunk list: with hole-reuse + fragmentation this can grow without bound (memory AND the
+        // first-fit scan cost that drags throughput down — "memory up + perf down together").
+        General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.heap.free.chunks", () => _space.FreeChunkCount);
 #endif
     }
 
@@ -339,6 +342,35 @@ public class Heap : IHeap
 #endif
 
             return buffer;
+        }
+        finally { _syncRoot.Exit(); }
+    }
+
+    // Write() copies the buffer into the file stream and keeps no reference → caller may reuse/pool it.
+    public bool RetainsWrittenBuffer => false;
+
+    public bool TryReadPooled(long handle, System.Buffers.ArrayPool<byte> pool, out byte[] rented, out int length)
+    {
+        // Compressed reads must allocate the decompressed buffer; only the raw path can read straight into a
+        // pooled buffer with no allocation.
+        if (UseCompression) { rented = System.Array.Empty<byte>(); length = 0; return false; }
+
+        _syncRoot.Enter();
+        try
+        {
+            if (!_used.TryGetValue(handle, out var pointer))
+                throw new ArgumentException("No such handle or data exists.");
+
+            var size = (int)pointer.Ptr.Size;
+            rented = pool.Rent(size);
+            Stream.Seek(pointer.Ptr.Position, SeekOrigin.Begin);
+            Stream.ReadExactly(rented, 0, size);
+            length = size;
+
+#if PERFORMANCE_CHECK
+            CatDb.General.Diagnostics.PerformanceCheck.Observe("heap.read.bytes", size);
+#endif
+            return true;
         }
         finally { _syncRoot.Exit(); }
     }

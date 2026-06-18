@@ -415,6 +415,18 @@ public class OrderedSet<TKey, TValue> : IOrderedSet<TKey, TValue>
         Reset();
     }
 
+    public void TrimExcess()
+    {
+        // Only the List backing over-allocates (Capacity doubles, never shrinks). After a big bulk-load/sink
+        // then a split or deletes, a leaf's List can sit at e.g. 65536 capacity while ~7% full — a ~1 MB LOH
+        // array that's mostly empty. Shrinking it to Count moves it off the LOH (Count*16B < 85 KB) and stops
+        // it churning the non-compacting LOH. Only trim when meaningfully over-allocated to avoid pointless
+        // reallocation. Dictionary/SortedSet modes don't expose a cheap shrink and aren't the offender.
+        var list = List;
+        if (list != null && list.Capacity > 256 && list.Count < list.Capacity / 2)
+            list.TrimExcess();
+    }
+
     public bool IsInternallyOrdered => _dictionary == null;
 
     public IEnumerable<KeyValuePair<TKey, TValue>> InternalEnumerate()

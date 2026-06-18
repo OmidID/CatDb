@@ -19,8 +19,19 @@ public interface IHeap
     /// Write data at the specified handle.
     void Write(long handle, byte[] buffer, int index, int count);
 
+    /// True if <see cref="Write"/> KEEPS a reference to the caller's buffer past the call (e.g. a WAL pending
+    /// queue). When false the caller may safely REUSE/pool the buffer it passed to Write after the call
+    /// returns (the heap copied it out), avoiding a large byte[] allocation per store that churns the LOH.
+    bool RetainsWrittenBuffer { get; }
+
     /// Read the data stored at the handle.
     byte[] Read(long handle);
+
+    /// Read into a buffer rented from <paramref name="pool"/> — the caller MUST return it after use. Returns
+    /// false when the implementation can't safely lend a pooled buffer (e.g. it would expose a live internal
+    /// buffer, like a WAL pending write); the caller then falls back to <see cref="Read"/>. Lets the node-load
+    /// path reuse buffers instead of allocating a large byte[] per read that churns the LOH.
+    bool TryReadPooled(long handle, System.Buffers.ArrayPool<byte> pool, out byte[] rented, out int length);
 
     /// Atomically commit ALL changes (all or nothing).
     void Commit();

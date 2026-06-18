@@ -26,6 +26,12 @@ public interface IOrderedSet<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
 
     void Clear();
 
+    /// <summary>Releases over-allocated backing capacity. The List backing doubles and never shrinks, so
+    /// after a big bulk-load/sink followed by a split or deletes the backing array stays huge and mostly
+    /// empty — a &gt;85&#160;KB Large Object Heap object that wastes memory and churns the (non-compacting) LOH.
+    /// No-op when not badly over-allocated.</summary>
+    void TrimExcess();
+
     bool IsInternallyOrdered { get; }
     IEnumerable<KeyValuePair<TKey, TValue>> InternalEnumerate();
 

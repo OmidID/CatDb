@@ -131,8 +131,33 @@ public static class PerformanceCheck
     private static long _lastGcAllocBytes;
     private static int _lastGen0, _lastGen1, _lastGen2;
 
+    // Crash-survivable log: every flush is also appended (and flushed) to a file, so a hard crash / OOM that
+    // kills the process — or even the whole machine — still leaves every window on disk for post-mortem. Path
+    // from CATDB_PERFLOG, else ./catdb_perf.log. Opened once, lazily.
+    private static StreamWriter? _logWriter;
+    private static bool _logInit;
+
+    private static StreamWriter? LogWriter()
+    {
+        if (_logInit) return _logWriter;
+        _logInit = true;
+        try
+        {
+            var path = System.Environment.GetEnvironmentVariable("CATDB_PERFLOG");
+            if (string.IsNullOrEmpty(path)) path = "catdb_perf.log";
+            // AutoFlush so a crash never loses the last (most interesting) window.
+            _logWriter = new System.IO.StreamWriter(path, append: true) { AutoFlush = true };
+            _logWriter.WriteLine($"=== PERFORMANCE_CHECK session start {System.DateTime.Now:O} pid={System.Environment.ProcessId} ===");
+        }
+        catch { _logWriter = null; }
+        return _logWriter;
+    }
+
     private static void FlushUnsafe(string trigger, long now)
     {
+        var log = LogWriter();
+        void Emit(string s) { Console.Error.WriteLine(s); log?.WriteLine(s); }
+
         List<System.Collections.Generic.KeyValuePair<string, Aggregate>> snapshot;
         long eventCount;
 
@@ -153,9 +178,9 @@ public static class PerformanceCheck
         snapshot.Sort((x, y) => string.CompareOrdinal(x.Key, y.Key));
 
         var uptime = (now - StartedAt) * 1000.0 / Stopwatch.Frequency;
-        Console.Error.WriteLine();
-        Console.Error.WriteLine($"[PERFORMANCE_CHECK] grouped metrics | trigger={trigger} | uptimeMs={uptime:F0} | events={eventCount}");
-        Console.Error.WriteLine("metric,count,sum,avg,max");
+        Emit("");
+        Emit($"[PERFORMANCE_CHECK] grouped metrics | trigger={trigger} | uptimeMs={uptime:F0} | events={eventCount}");
+        Emit("metric,count,sum,avg,max");
 
         foreach (var metric in snapshot)
         {
@@ -165,7 +190,7 @@ public static class PerformanceCheck
             var max = metric.Value.Max == long.MinValue ? 0 : metric.Value.Max;
             var sumText = Math.Round(sum).ToString(CultureInfo.InvariantCulture);
             var avgText = avg.ToString("F2", CultureInfo.InvariantCulture);
-            Console.Error.WriteLine($"{metric.Key},{count},{sumText},{avgText},{max}");
+            Emit($"{metric.Key},{count},{sumText},{avgText},{max}");
         }
 
         // Per-window GC deltas — emitted as plain "metric,delta" lines (not aggregates). Compare these against
@@ -174,18 +199,34 @@ public static class PerformanceCheck
         var gcPauseMs = GC.GetTotalPauseDuration().TotalMilliseconds;
         var gcAllocBytes = GC.GetTotalAllocatedBytes();
         int gen0 = GC.CollectionCount(0), gen1 = GC.CollectionCount(1), gen2 = GC.CollectionCount(2);
-        Console.Error.WriteLine($"rt.gc.pause.ms.window,{(gcPauseMs - _lastGcPauseMs):F1}");
-        Console.Error.WriteLine($"rt.gc.alloc.mb.window,{(gcAllocBytes - _lastGcAllocBytes) / (1024 * 1024)}");
-        Console.Error.WriteLine($"rt.gc.gen0.window,{gen0 - _lastGen0}");
-        Console.Error.WriteLine($"rt.gc.gen1.window,{gen1 - _lastGen1}");
-        Console.Error.WriteLine($"rt.gc.gen2.window,{gen2 - _lastGen2}");
+        Emit($"rt.gc.pause.ms.window,{(gcPauseMs - _lastGcPauseMs):F1}");
+        Emit($"rt.gc.alloc.mb.window,{(gcAllocBytes - _lastGcAllocBytes) / (1024 * 1024)}");
+        Emit($"rt.gc.gen0.window,{gen0 - _lastGen0}");
+        Emit($"rt.gc.gen1.window,{gen1 - _lastGen1}");
+        Emit($"rt.gc.gen2.window,{gen2 - _lastGen2}");
         _lastGcPauseMs = gcPauseMs;
         _lastGcAllocBytes = gcAllocBytes;
         _lastGen0 = gen0; _lastGen1 = gen1; _lastGen2 = gen2;
 
-        // Process RSS (catches unmanaged/native growth the managed gc.heap.mb misses) + every registered gauge.
+        // ── Absolute memory snapshot (these are the LEAK detectors — watch any one climb every window) ──
+        // Split managed vs native so we know WHICH side leaks:
+        //   rt.gc.* = managed heap detail (incl. LOH/POH — large byte[]/pinned buffers, a classic node-store leak)
+        //   rt.proc.privatebytes = total committed incl. UNMANAGED (a native leak grows here but not in gc.heap)
+        var mi = GC.GetGCMemoryInfo();
+        Emit($"rt.gc.heapsize.mb,{mi.HeapSizeBytes / (1024 * 1024)}");
+        Emit($"rt.gc.committed.mb,{mi.TotalCommittedBytes / (1024 * 1024)}");
+        Emit($"rt.gc.fragmented.mb,{mi.FragmentedBytes / (1024 * 1024)}");
+        var gi = mi.GenerationInfo;                       // [0]=gen0 [1]=gen1 [2]=gen2 [3]=LOH [4]=POH
+        if (gi.Length > 2) Emit($"rt.gc.gen2.size.mb,{gi[2].SizeAfterBytes / (1024 * 1024)}");
+        if (gi.Length > 3) Emit($"rt.gc.loh.size.mb,{gi[3].SizeAfterBytes / (1024 * 1024)}");
+        if (gi.Length > 4) Emit($"rt.gc.poh.size.mb,{gi[4].SizeAfterBytes / (1024 * 1024)}");
+        Emit($"rt.gc.pinned.count,{mi.PinnedObjectsCount}");
+
         using (var proc = Process.GetCurrentProcess())
-            Console.Error.WriteLine($"rt.proc.workingset.mb,{proc.WorkingSet64 / (1024 * 1024)}");
+        {
+            Emit($"rt.proc.workingset.mb,{proc.WorkingSet64 / (1024 * 1024)}");      // RSS (resident)
+            Emit($"rt.proc.privatebytes.mb,{proc.PrivateMemorySize64 / (1024 * 1024)}"); // committed incl native
+        }
 
         List<(string Name, Func<long> Sample)> gauges;
         using (Sync.Lock())
@@ -195,7 +236,7 @@ public static class PerformanceCheck
             long value;
             try { value = sample(); }
             catch { continue; }   // a dead/disposed structure must never break the flush
-            Console.Error.WriteLine($"{name},{value}");
+            Emit($"{name},{value}");
         }
     }
 #else

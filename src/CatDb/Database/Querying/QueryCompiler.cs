@@ -40,7 +40,16 @@ internal static class QueryCompiler
         RowPlan rows;
         var streamingOrder = false;   // source already emits the requested order → skip Sort
 
-        if (pk is not null)
+        if (pk is IndexEqualSeek eqSeek && residual is null && !q.HasKeyRange
+            && TryComposePrefixScan(eqSeek, q.Sorts, ctx, out var prefixPlan))
+        {
+            // WHERE a=v ORDER BY b[,c…] served by an (a,b[,c…]) composite index: stream the a=v prefix
+            // ALREADY ordered by the trailing keys. No Sort, and no fetch-everything — only the Take rows
+            // are fetched. Fixes the O(matches) "seek pks then fetch every match to sort" plan.
+            rows = new Fetch(prefixPlan);
+            streamingOrder = true;
+        }
+        else if (pk is not null)
         {
             // A selective index filter already fixes the candidate set → fetch then sort (small).
             rows = new Fetch(pk);
@@ -179,6 +188,38 @@ internal static class QueryCompiler
         var name = ctx.ResolveCoveringIndex(members);
         if (name is null) return false;
         index = name;
+        return true;
+    }
+
+    /// <summary>
+    /// `WHERE a=v ORDER BY b[,c…]` → if an `(a,b[,c…])` composite index exists (equality field is the leading
+    /// member, the ORDER BY keys are the trailing members, all sorts same direction), stream that index's
+    /// `a=v` prefix already ordered by the trailing keys. Lets the caller skip the Sort and the
+    /// fetch-everything. Scoped to a SINGLE leading equality field (the common case); multi-field equality
+    /// prefixes fall back to the existing fetch-then-sort plan.
+    /// </summary>
+    private static bool TryComposePrefixScan(IndexEqualSeek eqSeek, List<SortField> sorts,
+        IQueryEngineContext ctx, out PkPlan plan)
+    {
+        plan = null!;
+        if (sorts.Count == 0) return false;
+
+        var descending = sorts[0].Descending;
+        var members = new string[sorts.Count + 1];
+        members[0] = eqSeek.Member;                       // leading prefix field
+        for (var i = 0; i < sorts.Count; i++)
+        {
+            if (sorts[i].Member is not { } m || sorts[i].Descending != descending)
+                return false;                             // key sort or mixed direction → not a single ordered scan
+            if (string.Equals(m, eqSeek.Member, StringComparison.Ordinal))
+                return false;                             // sort key == prefix field: degenerate, leave to normal path
+            members[i + 1] = m;
+        }
+
+        var composite = ctx.ResolveCoveringIndex(members);
+        if (composite is null) return false;
+
+        plan = new IndexPrefixSeek(composite, eqSeek.Member, eqSeek.ValueSlot, prefixFieldCount: 1, backward: descending);
         return true;
     }
 

@@ -384,6 +384,17 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
             return cmd.Buffer!;
         }
 
+        // Remote reads come back as a freshly-deserialized network buffer; no local pooling.
+        public bool TryReadPooled(long handle, System.Buffers.ArrayPool<byte> pool, out byte[] rented, out int length)
+        {
+            rented = System.Array.Empty<byte>();
+            length = 0;
+            return false;
+        }
+
+        // The buffer is serialized onto the wire; don't assume it's safe to reuse.
+        public bool RetainsWrittenBuffer => true;
+
         public void Commit() => InternalExecute(new HeapCommitCommand());
         public void Close()  => InternalExecute(new HeapCloseCommand());
 

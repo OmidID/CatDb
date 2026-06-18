@@ -38,6 +38,12 @@ internal interface IQueryEngineContext
         IData? to, bool hasTo, bool toInclusive,
         bool backward);
 
+    /// <summary>Primary keys from a COMPOSITE index whose leading <paramref name="prefixFieldCount"/> field(s)
+    /// equal <paramref name="prefixValue"/>, streamed in the trailing field(s)' order (backward = descending).
+    /// Serves <c>WHERE a=v ORDER BY b…</c> from an <c>(a,b…)</c> index WITHOUT fetching every match to sort —
+    /// rows arrive already ordered, so only <c>Take</c> records are fetched.</summary>
+    IEnumerable<IData> SeekPrefix(string indexName, IData prefixValue, int prefixFieldCount, bool backward);
+
     /// <summary>Point-fetch a record by primary key.</summary>
     bool TryFetch(IData pk, out IData record);
 

@@ -674,6 +674,33 @@ public partial class WTree : IDisposable
             _operationLog.Truncate(cpLsn);
             _lastCheckpointTicks = Environment.TickCount64;
         }
+
+        CompactLohIfFragmented();
+    }
+
+    private long _lastLohCompactTicks = Environment.TickCount64;
+
+    /// <summary>
+    /// Memory safety net. Node store/load buffers are large <c>byte[]</c> (nodes are tens of KB to over a MB),
+    /// which land on the Large Object Heap. The LOH is NOT compacted by default, so this churn fragments the
+    /// heap — committed memory climbs unbounded (multi-GB <c>FragmentedBytes</c>) over hours until the process
+    /// OOMs. When fragmentation crosses a high-water mark, force a one-shot compacting gen2 GC to return the
+    /// holes to the OS. Rate-limited to at most once a minute so the blocking collection is rare (the cost is
+    /// an occasional stall instead of an eventual crash). The proper fix is pooling the buffers so the large
+    /// arrays are reused and never churn the LOH; this bounds memory until that lands.
+    /// </summary>
+    private void CompactLohIfFragmented()
+    {
+        if (Environment.TickCount64 - _lastLohCompactTicks < 60_000)
+            return;
+
+        var fragmentedBytes = GC.GetGCMemoryInfo().FragmentedBytes;
+        if (fragmentedBytes < 768L * 1024 * 1024)   // only when the heap holds >768 MB of holes
+            return;
+
+        _lastLohCompactTicks = Environment.TickCount64;
+        System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
     }
 
     public virtual void Commit()

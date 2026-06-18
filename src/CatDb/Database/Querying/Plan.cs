@@ -30,9 +30,22 @@ internal abstract class PkPlan : PlanNode
 
 internal sealed class IndexEqualSeek(string indexName, int valueSlot, string member) : PkPlan
 {
+    public string Member => member;     // exposed so the planner can fold this into a composite-prefix scan
+    public int ValueSlot => valueSlot;
     public override IEnumerable<IData> Execute(IQueryEngineContext ctx)
         => ctx.SeekEqual(indexName, ctx.Parameter(valueSlot));
     public override string Explain(int indent) => $"{Pad(indent)}IndexEqualSeek({member} == ?, idx={indexName})";
+}
+
+/// <summary>Streams the pks of a COMPOSITE index whose leading field equals a value, already ordered by the
+/// trailing field(s) — serves <c>WHERE a=v ORDER BY b…</c> from an <c>(a,b…)</c> index with no Sort and no
+/// fetch-everything (only <c>Take</c> rows are fetched downstream). <c>backward</c> = descending trailing order.</summary>
+internal sealed class IndexPrefixSeek(string indexName, string member, int valueSlot, int prefixFieldCount, bool backward) : PkPlan
+{
+    public override IEnumerable<IData> Execute(IQueryEngineContext ctx)
+        => ctx.SeekPrefix(indexName, ctx.Parameter(valueSlot), prefixFieldCount, backward);
+    public override string Explain(int indent)
+        => $"{Pad(indent)}IndexPrefixSeek({member} == ?, idx={indexName}{(backward ? ", backward" : "")})";
 }
 
 internal sealed class IndexRangeSeek(

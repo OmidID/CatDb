@@ -25,6 +25,9 @@ internal sealed class ParameterizedContext(IQueryEngineContext inner, IData[] pa
         IData? to, bool hasTo, bool toInclusive, bool backward)
         => inner.SeekRange(indexName, from, hasFrom, fromInclusive, to, hasTo, toInclusive, backward);
 
+    public IEnumerable<IData> SeekPrefix(string indexName, IData prefixValue, int prefixFieldCount, bool backward)
+        => inner.SeekPrefix(indexName, prefixValue, prefixFieldCount, backward);
+
     public bool TryFetch(IData pk, out IData record) => inner.TryFetch(pk, out record);
 
     public IEnumerable<KeyValuePair<IData, IData>> ScanRows(

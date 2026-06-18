@@ -66,21 +66,26 @@ public class Space
         if (_free.Count == 0)
             throw new Exception("Not enough space.");
 
-        var needSearch = _activeChunkIndex < 0 ||
+        // FromTheBeginning forces a search (never just reuse the cached active chunk): otherwise the active
+        // chunk becomes the giant file-tail chunk (always fits) and freed holes are never reclaimed → the file
+        // grows forever. BUT the search is NEXT-FIT (continue from the last position, then wrap), NOT a restart
+        // from index 0. Restarting from 0 re-scans the whole small-hole prefix on every alloc — over a long
+        // run the free list grows to thousands of small holes and that O(n) scan explodes (25 ms/alloc →
+        // multi-second checkpoints → throughput death). Next-fit is O(1) amortized and still reclaims holes
+        // (it cycles through the whole list via the wrap), keeping the file bounded.
+        var needSearch = Strategy == AllocationStrategy.FromTheBeginning ||
+                         _activeChunkIndex < 0 ||
                          _activeChunkIndex >= _free.Count ||
                          _free[_activeChunkIndex].Size < size;
 
         if (needSearch)
         {
-            var idx = Strategy switch
-            {
-                AllocationStrategy.FromTheCurrentBlock => _activeChunkIndex >= 0 &&
-                                                          _activeChunkIndex + 1 < _free.Count
-                    ? _activeChunkIndex + 1
-                    : 0,
-                AllocationStrategy.FromTheBeginning => 0,
-                _ => throw new NotSupportedException(Strategy.ToString())
-            };
+            // Both strategies continue from just past the active chunk (next-fit). They differ only in whether
+            // a fitting active chunk short-circuits the search (above): FromTheCurrentBlock reuses it (fast,
+            // file grows); FromTheBeginning always advances (reclaims holes, file bounded).
+            var idx = _activeChunkIndex >= 0 && _activeChunkIndex + 1 < _free.Count
+                ? _activeChunkIndex + 1
+                : 0;
 
             var found = false;
 
@@ -97,7 +102,7 @@ public class Space
                 }
             }
 
-            if (!found && Strategy == AllocationStrategy.FromTheCurrentBlock && idx > 0)
+            if (!found && idx > 0)
             {
                 // Wrap search to the beginning to avoid missing reusable chunks.
 #if PERFORMANCE_CHECK

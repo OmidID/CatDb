@@ -91,6 +91,14 @@ internal sealed partial class TableIndexManager : IQueryEngineContext
             : ScanNonUniqueRangeKeys(entry, from, hasFrom, fromInclusive, to, hasTo, toInclusive, backward);
     }
 
+    IEnumerable<IData> IQueryEngineContext.SeekPrefix(string indexName, IData prefixValue, int prefixFieldCount, bool backward)
+    {
+        var entry = GetEntry(indexName);
+        // Stream the composite index restricted to the leading-field(s) prefix, already ordered by the
+        // trailing field(s) — the planner only emits this for an (eqField, sortFields…) composite.
+        return ScanPrefixKeys(entry, prefixValue, prefixFieldCount, backward);
+    }
+
     bool IQueryEngineContext.TryFetch(IData pk, out IData record) => _table.TryGet(pk, out record);
 
     IEnumerable<KeyValuePair<IData, IData>> IQueryEngineContext.ScanRows(

@@ -2,6 +2,7 @@
 // Licensed under the MIT License. See LICENSE in the project root for license information.
 
 using System.Diagnostics;
+using System.Text;
 using System.Threading;
 
 namespace CatDb.StressTest;
@@ -16,6 +17,20 @@ public sealed class Dashboard
     private readonly Dictionary<string, long> _counts        = new();
     private readonly Stopwatch                _countTimer    = Stopwatch.StartNew();
     private volatile bool                     _refreshing    = false;
+
+    // Aggregate-throughput history for the live sparkline — one sample every CHART_SAMPLE_SECONDS,
+    // measured from the true total-ops delta (not the per-service smoothed rate). Makes throughput
+    // decay over a long run visible at a glance.
+    private readonly List<double> _opsHistory   = new();
+    private readonly List<double> _memHistory   = new();   // RSS (MB) per sample — side-by-side with OPS
+    private readonly Stopwatch    _chartTimer   = Stopwatch.StartNew();
+    private long                  _chartLastOps;
+    private double                _opsPerSecNow;
+    private double                _memNowMb;
+    private const int             CHART_WIDTH    = 70;
+    private const double          CHART_SAMPLE_SECONDS = 5.0;
+    private static readonly char[] SparkBlocks = " ▁▂▃▄▅▆▇█".ToCharArray();
+    private static readonly System.Diagnostics.Process Proc = System.Diagnostics.Process.GetCurrentProcess();
 
     private const int W = 92;   // console line width
 
@@ -43,6 +58,23 @@ public sealed class Dashboard
         var elapsed   = _elapsed.Elapsed;
         var totalOps  = _services.Sum(s => Volatile.Read(ref s.TotalOps));
         var totalErrs = _services.Sum(s => Volatile.Read(ref s.TotalErrors));
+
+        // Sample aggregate throughput every ~CHART_SAMPLE_SECONDS for the sparkline.
+        var dt = _chartTimer.Elapsed.TotalSeconds;
+        if (dt >= CHART_SAMPLE_SECONDS)
+        {
+            _opsPerSecNow = (totalOps - _chartLastOps) / dt;
+            _opsHistory.Add(_opsPerSecNow);
+            if (_opsHistory.Count > CHART_WIDTH) _opsHistory.RemoveAt(0);
+            _chartLastOps = totalOps;
+
+            Proc.Refresh();
+            _memNowMb = Proc.WorkingSet64 / (1024.0 * 1024);   // RSS — what the OS/Activity Monitor shows
+            _memHistory.Add(_memNowMb);
+            if (_memHistory.Count > CHART_WIDTH) _memHistory.RemoveAt(0);
+
+            _chartTimer.Restart();
+        }
 
         // Header
         Ln(ConsoleColor.Cyan,
@@ -88,6 +120,28 @@ public sealed class Dashboard
             $"  HighSearch Ops: {searchOps,12:N0}");
         if (corruptions > 0)
             Col(ConsoleColor.Red, $"   *** CORRUPTIONS: {corruptions} ***");
+        Console.WriteLine();
+        Sep();
+
+        // Throughput + memory sparklines, aligned column-for-column (same sample cadence) so spikes and
+        // GC/memory events line up visually — the point is to SEE whether perf dips correlate with memory.
+        // Each scaled to its OWN peak. Two header lines + two bars, padded so they never wrap the layout.
+        var opsPeak = _opsHistory.Count > 0 ? _opsHistory.Max() : 0;
+        var memPeak = _memHistory.Count > 0 ? _memHistory.Max() : 0;
+        var memMin  = _memHistory.Count > 0 ? _memHistory.Min() : 0;
+
+        Col(ConsoleColor.Cyan, "  OPS/SEC ");
+        Col(ConsoleColor.Yellow, $"{_opsPerSecNow,9:N0}");
+        Col(ConsoleColor.DarkGray, $"  peak {opsPeak,9:N0}      ");
+        Col(ConsoleColor.Cyan, "MEM(MB) ");
+        Col(ConsoleColor.Magenta, $"{_memNowMb,7:N0}");
+        Col(ConsoleColor.DarkGray, $"  {memMin,5:N0}-{memPeak,5:N0}");
+        Console.WriteLine();
+        Col(ConsoleColor.Green, Pad("  ops " + Spark(_opsHistory)));
+        Console.WriteLine();
+        // Memory bar scaled between its window min and max so the slow base-creep + sawtooth are visible
+        // even when the absolute value barely changes.
+        Col(ConsoleColor.Magenta, Pad("  mem " + SparkRange(_memHistory, memMin, memPeak)));
         Console.WriteLine();
         Sep();
 
@@ -141,6 +195,14 @@ public sealed class Dashboard
         Console.WriteLine($"  Duration     : {elapsed:hh\\:mm\\:ss}");
         Console.WriteLine($"  Total Ops    : {totalOps:N0}");
         Console.WriteLine($"  Avg Ops/sec  : {opsPerSec:N0}");
+        if (_opsHistory.Count > 1)
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"  Throughput   : {Spark(_opsHistory)}  (peak {_opsHistory.Max():N0}/s)");
+            Console.ForegroundColor = ConsoleColor.Magenta;
+            Console.WriteLine($"  Memory (RSS) : {SparkRange(_memHistory, _memHistory.Count > 0 ? _memHistory.Min() : 0, _memHistory.Count > 0 ? _memHistory.Max() : 0)}  ({(_memHistory.Count > 0 ? _memHistory.Min() : 0):N0}-{(_memHistory.Count > 0 ? _memHistory.Max() : 0):N0} MB, ~{CHART_SAMPLE_SECONDS:N0}s samples)");
+            Console.ForegroundColor = ConsoleColor.White;
+        }
         Console.WriteLine($"  DB Commits   : {_ctx.TotalCommits}");
         Console.WriteLine($"  Total Errors : {totalErrs}");
         var finalCorruptions = Volatile.Read(ref _ctx.TotalCorruptions);
@@ -232,6 +294,43 @@ public sealed class Dashboard
     {
         try   { _counts[key] = fn(); }
         catch { /* ignore races during shutdown */ }
+    }
+
+    // Unicode block sparkline, each sample scaled relative to the window's peak.
+    private static string Spark(List<double> history)
+    {
+        if (history.Count == 0) return "(collecting…)";
+        var max = history.Max();
+        if (max <= 0) return new string(SparkBlocks[0], history.Count);
+
+        var sb = new StringBuilder(history.Count);
+        foreach (var v in history)
+        {
+            var idx = (int)Math.Round(v / max * (SparkBlocks.Length - 1));
+            if (idx < 0) idx = 0;
+            else if (idx >= SparkBlocks.Length) idx = SparkBlocks.Length - 1;
+            sb.Append(SparkBlocks[idx]);
+        }
+        return sb.ToString();
+    }
+
+    // Sparkline scaled between an explicit [min,max] window (not 0..max) — surfaces small relative
+    // movement (slow base-memory creep, sawtooth) that a 0-based scale would flatten to a constant bar.
+    private static string SparkRange(List<double> history, double min, double max)
+    {
+        if (history.Count == 0) return "(collecting…)";
+        var span = max - min;
+        if (span <= 0) return new string(SparkBlocks[1], history.Count);
+
+        var sb = new StringBuilder(history.Count);
+        foreach (var v in history)
+        {
+            var idx = (int)Math.Round((v - min) / span * (SparkBlocks.Length - 1));
+            if (idx < 0) idx = 0;
+            else if (idx >= SparkBlocks.Length) idx = SparkBlocks.Length - 1;
+            sb.Append(SparkBlocks[idx]);
+        }
+        return sb.ToString();
     }
 
     private static void Sep() =>

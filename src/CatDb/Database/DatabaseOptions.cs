@@ -102,19 +102,26 @@ public sealed class DatabaseOptions
     public int CacheSize { get; set; } = 4096;
 
     /// <summary>
-    /// Memory budget (bytes) for the in-memory node cache. Because write-buffered WTree nodes vary
-    /// enormously in size (tens of KB to over a MB), a fixed node <i>count</i> makes the managed heap —
-    /// and therefore GC pause time — unpredictable and ever-growing, which shows up as throughput that
-    /// decays the longer the process runs (a restart clears it). Bounding the cache by bytes keeps the
-    /// heap flat and performance steady regardless of database size. Raise it on memory-rich servers for
-    /// more cache (higher throughput); 0 falls back to <see cref="CacheSize"/>.
-    /// Default: 512&#160;MB. Eviction keeps the working set bounded (no throughput decay) at any value;
-    /// lower it to trade throughput for a smaller heap, raise it for more cache on memory-rich servers.
+    /// Memory budget (bytes) for the in-memory node cache. Default: <b>2&#160;GB</b>.
+    /// <para>
+    /// This is NOT just a read cache — it gates the WTree's buffer cascade. Ops buffer in internal nodes and
+    /// drain ("sink") down to their children; a sink can only drain into children that are <i>resident</i> in
+    /// the cache (it skips cold/evicted children to avoid an I/O storm under the root lock). If the cache is
+    /// too small the children get evicted, the sink can't drain, and the buffers pile up — a node bloats to
+    /// tens of thousands of buffered ops (a &gt;1&#160;MB object). Those bloated nodes then hog the cache, so
+    /// even fewer children stay resident → a self-reinforcing bloat spiral: memory climbs, GC pauses grow, and
+    /// throughput collapses over minutes. The behaviour is bistable: with enough cache the tree stays in the
+    /// "drained" state (small nodes, many resident, sink keeps draining) and — counter-intuitively — uses
+    /// <i>less</i> total memory than a starved small cache. 512&#160;MB starved this; 2&#160;GB stays drained
+    /// (validated: sink drains ~90%, cold-skips drop to zero, RSS self-regulates well under the budget).
+    /// </para>
+    /// The budget is a ceiling, not a reservation — the drained working set typically sits far below it.
+    /// Raise it for very large/write-heavy datasets; lower it only if RAM-constrained (and watch
+    /// <c>wtree.maintenance.sink.cold.skipped</c> / <c>final.ops</c> for the starvation signature).
     /// Set to 0 to fall back to the legacy fixed <see cref="CacheSize"/> node-count cache (NOT recommended:
-    /// WTree nodes vary from KB to over a MB, so a node count makes the managed heap unbounded — it grows
-    /// until the count cap, which can be multiple GB, then GC-thrashes; that is the slow throughput collapse).
+    /// WTree nodes vary from KB to over a MB, so a node count makes the managed heap unbounded).
     /// </summary>
-    public long CacheSizeBytes { get; set; } = 512L * 1024 * 1024;
+    public long CacheSizeBytes { get; set; } = 2L * 1024 * 1024 * 1024;
 
     /// <summary>
     /// Default options suitable for most workloads.

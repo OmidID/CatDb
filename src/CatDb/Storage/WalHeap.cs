@@ -72,6 +72,18 @@ public sealed class WalHeap : IHeap
         return _heap.Read(handle);
     }
 
+    public bool TryReadPooled(long handle, System.Buffers.ArrayPool<byte> pool, out byte[] rented, out int length)
+    {
+        // A pending read returns the LIVE pending byte[]; lending/returning it to a pool would corrupt the
+        // not-yet-committed write. Decline pooling — the caller falls back to Read(handle).
+        rented = System.Array.Empty<byte>();
+        length = 0;
+        return false;
+    }
+
+    // Write() stashes the caller's buffer in the pending-write queue until commit → caller must NOT reuse it.
+    public bool RetainsWrittenBuffer => true;
+
     public byte[] Tag
     {
         get => _heap.Tag;

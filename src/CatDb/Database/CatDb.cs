@@ -15,7 +15,7 @@ public static class CatDb
         new StorageEngine(heap, options);
 
     public static IStorageEngine FromStream(Stream stream, DatabaseOptions? options = null) =>
-        FromHeap(new Heap(stream), options);
+        FromHeap(new Heap(stream, false, AllocationStrategy.FromTheBeginning), options);
 
     public static IStorageEngine FromMemory(DatabaseOptions? options = null) =>
         FromStream(new MemoryStream(), options);
@@ -28,7 +28,11 @@ public static class CatDb
     {
         options ??= DatabaseOptions.Default;
         var stream = new OptimizedFileStream(fileName, FileMode.OpenOrCreate);
-        var heap = new Heap(stream);
+        // FromTheBeginning: reuse freed space (lower offsets) before extending the file. Without it the
+        // allocator always carves from the giant end-chunk, so every commit's rewritten nodes append and
+        // freed slots are never reclaimed — the file grows unbounded (16 GB for ~0.5 GB of live data) and
+        // I/O across it slowly decays. Costs some fragmentation; far cheaper than an ever-growing file.
+        var heap = new Heap(stream, false, AllocationStrategy.FromTheBeginning);
 
         if (options.CommitMode == CommitMode.WriteAheadLog)
         {

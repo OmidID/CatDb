@@ -85,8 +85,14 @@ leading drive → buffered**.
 2. **Composite prefix scan (streaming, no residual)** — `WHERE a = v ORDER BY b[,c…]` (same
    direction) where a composite `(a, b[, c…])` index exists. Scans that index restricted to the
    `a = v` prefix → rows come out already ordered by the trailing keys, with NO residual and NO
-   per-row heap fetch. `OrderedQuery.TryPrefixDrive` + `TableIndexManager.FindByIndexPrefix`
-   (`SlotAccessor.BuildPrefixSeekKeyBuilder`). This is the canonical real-DB filter+sort plan.
+   per-row heap fetch (only `Take` rows fetched). Implemented in the COMPILER:
+   `QueryCompiler.TryComposePrefixScan` emits `IndexPrefixSeek` (→ `IQueryEngineContext.SeekPrefix` →
+   `TableIndexManager.ScanPrefixKeys` → `BuildCompositeBound` sentinels) and skips the Sort. This is the
+   canonical real-DB filter+sort plan. **Was a latent perf bug until 2026-06:** without it the planner did
+   `Sort(Fetch(IndexEqualSeek(a)))` = fetch EVERY `a=v` record then sort = O(matches) random reads that grew
+   with the table (stress scans hit 4.58 s; after the fix ~ms, SortStress ~6-7× faster). Scoped to a single
+   leading equality field; multi-eq prefix + mixed-direction multi-key still fall back to fetch-then-sort.
+   Covered by `CompositePrefixScanTests` (plan-shape + brute-force equality).
 3. **Drive-from-sort-index (streaming, bounded memory)** — ORDER BY a *different* single-indexed
    field. Driven from that index, original query re-applied as a **residual** (engine-consistent
    comparer). Single key → pure stream; multi-key → each **equal-leading-key run** buffered + sorted.
@@ -147,6 +153,22 @@ Guidelines:
 - Keep old compatibility helpers (`QueryTake`, `QueryBackward`, `PageAfter`, etc.) for existing callers.
 - Preserve support for non-primitive key/index types.
 
+## Memory Model (bounded, Postgres-like)
+
+CatDb's memory has two knobs, mirroring Postgres `shared_buffers` + total-RAM budget:
+- **`DatabaseOptions.CacheSizeBytes`** (default 2 GB) = the node cache / "buffer pool" — the engine's working
+  set. Also gates the buffer cascade (invariant #5). This is the in-engine bound.
+- Node read/write buffers are **pooled** (`IHeap.TryReadPooled` / `RetainsWrittenBuffer` + `Node.Load`/`Store`)
+  to cut LOH churn (RSS 3.3 GB → ~1.2 GB, fragmentation way down).
+
+**Do NOT use a tight `System.GC.HeapHardLimit` to bound memory** — tried it (4 GB) and it BACKFIRED: with the
+working set near the ceiling Server GC thrashes (collects frantically to stay under) → multi-second
+`commit.hold`/`cp.evict`, throughput collapsed to ~50–100 ops. A GC cap is NOT a native buffer pool. Reverted.
+The residual GC sawtooth is **per-op object allocation** (records/`Data<>`/ops, ~400 MB/s gen0) inherent to the
+managed design; the only real flatteners are (a) per-op object pooling and (b) moving the synchronous
+checkpoint+evict node store/I/O OFF the root lock (today a working-set ≫ cache DB stalls the world during
+`EvictCache` — `cp.evict` — and the checkpoint). Those two are the deep, still-open architectural items.
+
 ## Concurrency Model
 
 Lock strategy:
@@ -163,12 +185,15 @@ Lock strategy:
 2. Maintenance must be exception-safe and always rebuild branch collections.
 3. EvictCache runs synchronously inside `Commit` under root lock.
 4. BroadcastFall stays sequential (no `Parallel.ForEach`).
-5. **Byte-budget cache** (`DatabaseOptions.CacheSizeBytes`, **default 512 MB**). EvictCache bounds the cache
-   to `Σ ApproxByteSize × 8 ≤ CacheSizeBytes` (managed-RAM estimate) instead of node count. This is the
-   DEFAULT because WTree nodes vary KB→>1 MB, so the legacy fixed `CacheSize`=4096-NODE cache (selected by
-   setting `CacheSizeBytes`=0) makes the managed heap multi-GB and unpredictable. Eviction only works if cold
-   nodes are actually reachable by the tree-walk `CacheFlush` — see the stranded-`_cache`-node leak in
-   Debugging Shortcuts (merged nodes must be `Exclude`d from `_cache`).
+5. **Byte-budget cache** (`DatabaseOptions.CacheSizeBytes`, **default 2 GB**). EvictCache bounds the cache
+   to `Σ ApproxByteSize × 8 ≤ CacheSizeBytes` (managed-RAM estimate) instead of node count (legacy count
+   cache = setting `CacheSizeBytes`=0, NOT recommended — KB→>1 MB nodes make a node count unbounded). The
+   cache **gates the buffer cascade**, not just reads: a sink drains an internal node's buffer only into
+   RESIDENT children (cold ones are skipped). Too small a budget → children evicted → sink can't drain →
+   nodes bloat to ~14k ops/>1 MB → bloat hogs the cache → **bistable bloat spiral** (heap multi-GB, GC
+   thrash, throughput collapse over minutes). 512 MB starved this; 2 GB stays "drained" and uses LESS RAM
+   (~1.1 GB) than a starved small cache. Budget is a CEILING; drained set sits below it. Eviction also only
+   works if cold nodes are reachable by the tree-walk `CacheFlush` (merged nodes must be `Exclude`d).
 6. **CacheFlush must descend into cold subtrees.** In `DoFall`, an expired node still runs
    `BroadcastFall` (which skips unloaded children) before storing+unloading itself — do NOT switch to
    `WalkMethod.Current` on eviction or marked descendants orphan in `_cache` and the cache never shrinks.
@@ -277,6 +302,20 @@ Lock strategy:
   no-op ⇒ nodes stranded** (the cache grows even though cold nodes are "marked"). Also: `DatabaseOptions.CacheSizeBytes`
   defaults to 512 MB (byte-budget cache) — if set to 0 it falls back to the legacy 4096-NODE count cache, and
   WTree nodes are huge/variable so a node count makes the heap multi-GB (keep the byte budget).
+- **DB file grows unbounded (GBs for MBs of live data) → slow I/O decay over a long run:** the heap allocator
+  never reused freed space. `Storage/Space.cs` with `FromTheCurrentBlock` + the `_activeChunkIndex` cache locks
+  onto the giant file-tail free chunk (always fits → `needSearch` false → `space.alloc.scan.chunks`=0), so
+  freed low-offset holes are never examined and every commit appends. Fixed: file heaps use
+  `AllocationStrategy.FromTheBeginning` (`CatDb.FromFile`/`FromStream`) and `Space.Alloc` force-re-searches
+  from index 0 for it → fills holes first. Bounds the file (16 GB→~120 MB). Tradeoff: first-fit scans
+  ~300 holes/alloc (`scan.chunks`) + scattered writes → ~10k steady vs ~16k peak; a segregated/best-fit
+  allocator (O(log n)) is the follow-up to recover throughput. Watch `heap.commit.stream.after.bytes` (file
+  size) vs `gauge.heap.used.count`×avg-node-size (live data) — a big gap = dead space not being reclaimed.
+- **Throughput oscillates/decays + memory climbs (cache-starved buffer cascade):** the sink can't drain
+  because children aren't resident. Diagnose with `wtree.maintenance.sink.cold.skipped` (>0 = skipping cold
+  children) and `sink.initial.ops ≈ sink.final.ops` (≈ equal = NOT draining → nodes bloat to ~14k ops/>1 MB).
+  Fix = raise `CacheSizeBytes` until `cold.skipped`→0 and `final.ops` ≪ `initial.ops` (default 2 GB does this);
+  it's bistable so a too-small cache spirals into bloat (heap multi-GB). The drained state uses LESS RAM.
 - **Leak hunting — the gauge tool:** `PerformanceCheck.RegisterGauge(name, () => structure.Count)` samples a
   structure's current SIZE once per 20 s window (off the hot path; ALWAYS inside `#if PERFORMANCE_CHECK`).
   Registered: `gauge.wtree.cache.count`/`cache.bytes.mb`/`cachesizebytes.mb`/`oplog.size.mb` (WTree ctor),

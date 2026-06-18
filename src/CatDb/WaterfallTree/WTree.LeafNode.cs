@@ -233,6 +233,10 @@ public partial class WTree
             {
                 Branch.Tree.SerializeLocator(writer, kv.Key);
                 kv.Key.OrderedSetPersist.Write(writer, kv.Value);
+                // Reclaim over-allocated backing capacity now that the leaf is settled (post sink/split/delete).
+                // Without this the List backing stays at its high-water capacity (e.g. 65536 slots ~7% full) —
+                // a >85KB LOH array that wastes memory and churns the non-compacting LOH, escalating GC pause.
+                kv.Value.TrimExcess();
             }
 
             IsModified = false;
