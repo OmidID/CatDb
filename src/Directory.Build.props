@@ -17,9 +17,9 @@
 
   <PropertyGroup>
     <!-- Assembly / package version — bump here, applies everywhere -->
-    <VersionPrefix>1.0.0</VersionPrefix>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <VersionPrefix>2.0.0</VersionPrefix>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
 
     <!-- NuGet package metadata shared by all publishable projects -->
     <Authors>Omid Mafakher</Authors>

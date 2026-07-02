@@ -37,6 +37,7 @@ public partial class WTree
 
             if (_container.TryGetValue(locator, out var data))
             {
+                var emptied = false;
                 data.Lock.EnterWrite();
                 try
                 {
@@ -48,9 +49,15 @@ public partial class WTree
                     RecordCount += data.Count;
 
                     if (data.Count == 0)
+                    {
                         _container.Remove(locator);
+                        emptied = true;
+                    }
                 }
                 finally { data.Lock.ExitWrite(); }
+
+                if (emptied)
+                    NativeReclaim.Defer(data);   // dropped set — deferred native reclaim (grace period)
             }
             else
             {
@@ -145,7 +152,11 @@ public partial class WTree
                     _container.Remove(kv.Key);
 
                 foreach (var key in emptyContainers)
+                {
+                    if (_container.TryGetValue(key, out var empty))
+                        NativeReclaim.Defer(empty);   // empty but still holds allocated native capacity
                     _container.Remove(key);
+                }
 
                 if (specialCase.Value != null) //have special case?
                     rightContainer[specialCase.Key] = specialCase.Value;
@@ -164,7 +175,7 @@ public partial class WTree
             foreach (var kv in ((LeafNode)node)._container)
             {
                 if (!_container.TryGetValue(kv.Key, out var data))
-                    _container[kv.Key] = data = kv.Value;
+                    _container[kv.Key] = data = kv.Value;   // ADOPTED — lives on in this node, no reclaim
                 else
                 {
                     // Acquire write on target and READ on source.
@@ -184,6 +195,9 @@ public partial class WTree
                         kv.Value.Lock.ExitRead();
                         data.Lock.ExitWrite();
                     }
+
+                    // Source set's rows were copied into ours; the source is dropped with its node.
+                    NativeReclaim.Defer(kv.Value);
                     continue;
                 }
 
@@ -194,6 +208,31 @@ public partial class WTree
                 TouchId = node.TouchId;
 
             IsModified = true;
+        }
+
+        /// <summary>Exact native bytes held by this leaf's ordered sets (slots + arena capacity). The
+        /// byte-budget eviction adds this to its managed estimate — without it, native arenas are invisible
+        /// to the budget and accumulate unbounded (measured 2.3 GB in 5 min before eviction ever fired).</summary>
+        public override long NativeAllocatedBytes
+        {
+            get
+            {
+                long total = 0;
+                foreach (var kv in _container)
+                    if (kv.Value is NativeOrderedSet native)
+                        total += native.AllocatedBytes;
+                return total;
+            }
+        }
+
+        /// <summary>Queues every container set for deferred native reclaim. Called when the node is
+        /// unloaded from the cache (evicted after Store) — the sets are unreachable from the tree after
+        /// that, and without this only the (lagging) finalizer would ever free their native memory.</summary>
+        public override void ReleaseNativeData()
+        {
+            foreach (var kv in _container)
+                NativeReclaim.Defer(kv.Value);
+            _container.Clear();
         }
 
         public override bool IsOverflow => RecordCount > Branch.Tree._leafNodeMaxRecords;

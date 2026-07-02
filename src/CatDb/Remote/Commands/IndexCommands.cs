@@ -214,3 +214,40 @@ public class IndexQueryCommand : ICommand
     public int Code => CommandCode.INDEX_QUERY;
     public bool IsSynchronous => true;
 }
+
+/// <summary>
+/// Count-only counterpart of <see cref="IndexQueryCommand"/>: same query shape over the wire, but the
+/// server returns a single <see cref="Result"/> count instead of materialized rows. Without this, a remote
+/// <c>Query(...).Count()</c> had no server-side fast-count path to dispatch to (the local-only fast path
+/// checks <c>is TableIndexManager</c>, never true for the remote manager) and fell back to enumerating —
+/// transferring every matching FULL RECORD over the wire just to discard it and return a count. The server
+/// runs the same <c>TableIndexManager.TryCountFast</c> used locally (index-key-only counting, no per-row
+/// heap fetch) and this command carries back only the long.
+/// </summary>
+public class IndexCountQueryCommand : ICommand
+{
+    public WireNode? FilterRoot;
+    public List<WireSort> Sorts;
+
+    public bool HasKeyFrom;
+    public bool KeyFromInclusive;
+    public byte[]? KeyFromRaw;
+    public bool HasKeyTo;
+    public bool KeyToInclusive;
+    public byte[]? KeyToRaw;
+
+    public int Skip;
+    public bool HasTake;
+    public int Take;
+
+    public long Result;
+
+    public IndexCountQueryCommand(WireNode? filterRoot, List<WireSort> sorts)
+    {
+        FilterRoot = filterRoot;
+        Sorts = sorts;
+    }
+
+    public int Code => CommandCode.INDEX_COUNT_QUERY;
+    public bool IsSynchronous => true;
+}

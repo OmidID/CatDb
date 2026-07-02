@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using CatDb.Database;
+using CatDb.Storage;
 
 namespace CatDb.Server.Services;
 
@@ -37,7 +38,12 @@ public sealed class DatabaseHostService : IDisposable
             var (service, logger) = state;
             var filePath = service.GetDatabasePath(name);
             logger.LogInformation("Opening database {DatabaseName} from {Path}", name, filePath);
-            return Database.CatDb.FromFile(filePath);
+            return Database.CatDb.FromFile(filePath, new()
+            {
+                CommitMode = CommitMode.TransactionLog,
+                IncrementalCheckpoint = true,
+                UseNativeLeafStorage = true  
+            });
         }, (this, _logger));
     }
 

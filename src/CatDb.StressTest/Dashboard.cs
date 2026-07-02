@@ -30,7 +30,6 @@ public sealed class Dashboard
     private const int             CHART_WIDTH    = 70;
     private const double          CHART_SAMPLE_SECONDS = 5.0;
     private static readonly char[] SparkBlocks = " ▁▂▃▄▅▆▇█".ToCharArray();
-    private static readonly System.Diagnostics.Process Proc = System.Diagnostics.Process.GetCurrentProcess();
 
     private const int W = 92;   // console line width
 
@@ -68,8 +67,10 @@ public sealed class Dashboard
             if (_opsHistory.Count > CHART_WIDTH) _opsHistory.RemoveAt(0);
             _chartLastOps = totalOps;
 
-            Proc.Refresh();
-            _memNowMb = Proc.WorkingSet64 / (1024.0 * 1024);   // RSS — what the OS/Activity Monitor shows
+            // Environment.WorkingSet = RSS (physical pages in RAM) — matches Activity Monitor "Memory".
+            // Always fresh (no Proc.Refresh needed). TotalCommittedBytes was 4-8x too high: GC pre-commits
+            // virtual address space it never touches, inflating the number wildly.
+            _memNowMb = Environment.WorkingSet / (1024.0 * 1024);
             _memHistory.Add(_memNowMb);
             if (_memHistory.Count > CHART_WIDTH) _memHistory.RemoveAt(0);
 

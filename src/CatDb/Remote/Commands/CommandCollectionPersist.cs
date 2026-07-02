@@ -107,6 +107,7 @@ public partial class CommandPersist : IPersist<ICommand>
         _writes[CommandCode.TRY_GET] = WriteTryGetCommand;
         _writes[CommandCode.FORWARD] = WriteForwardCommand;
         _writes[CommandCode.BACKWARD] = WriteBackwardCommand;
+        _writes[CommandCode.RANGE_COUNT] = WriteRangeCountCommand;
         _writes[CommandCode.FIND_NEXT] = WriteFindNextCommand;
         _writes[CommandCode.FIND_AFTER] = WriteFindAfterCommand;
         _writes[CommandCode.FIND_PREV] = WriteFindPrevCommand;
@@ -127,6 +128,7 @@ public partial class CommandPersist : IPersist<ICommand>
         _reads[CommandCode.TRY_GET] = ReadTryGetCommand;
         _reads[CommandCode.FORWARD] = ReadForwardCommand;
         _reads[CommandCode.BACKWARD] = ReadBackwardCommand;
+        _reads[CommandCode.RANGE_COUNT] = ReadRangeCountCommand;
         _reads[CommandCode.FIND_NEXT] = ReadFindNextCommand;
         _reads[CommandCode.FIND_AFTER] = ReadFindAfterCommand;
         _reads[CommandCode.FIND_PREV] = ReadFindPrevCommand;
@@ -204,6 +206,7 @@ public partial class CommandPersist : IPersist<ICommand>
         _writes[CommandCode.INDEX_REBUILD] = WriteIndexRebuildCommand;
         _writes[CommandCode.INDEX_LIST] = WriteIndexListCommand;
         _writes[CommandCode.INDEX_QUERY] = WriteIndexQueryCommand;
+        _writes[CommandCode.INDEX_COUNT_QUERY] = WriteIndexCountQueryCommand;
 
         // Index command reads
         _reads[CommandCode.INDEX_CREATE] = ReadIndexCreateCommand;
@@ -216,6 +219,7 @@ public partial class CommandPersist : IPersist<ICommand>
         _reads[CommandCode.INDEX_REBUILD] = ReadIndexRebuildCommand;
         _reads[CommandCode.INDEX_LIST] = ReadIndexListCommand;
         _reads[CommandCode.INDEX_QUERY] = ReadIndexQueryCommand;
+        _reads[CommandCode.INDEX_COUNT_QUERY] = ReadIndexCountQueryCommand;
 
         _writes[CommandCode.EXCEPTION] = WriteExceptionCommand;
         _reads[CommandCode.EXCEPTION] = ReadExceptionCommand;

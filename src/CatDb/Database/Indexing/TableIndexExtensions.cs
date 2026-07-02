@@ -74,7 +74,7 @@ public static class TableIndexExtensions
         string indexName,
         TField fieldValue)
     {
-        var fieldData = new Data<TField>(fieldValue);
+        IData fieldData = (object)fieldValue!;
         foreach (var kv in table.Indexes.FindByIndex(indexName, fieldData))
             yield return ConvertPair<TKey, TRecord>(kv);
     }
@@ -87,9 +87,9 @@ public static class TableIndexExtensions
         string indexName,
         TField fieldValue)
     {
-        var fieldData = new Data<TField>(fieldValue);
+        IData fieldData = (object)fieldValue!;
         foreach (var key in table.Indexes.FindKeysByIndex(indexName, fieldData))
-            yield return ((Data<TKey>)key).Value;
+            yield return (TKey)key;
     }
 
     /// <summary>
@@ -103,8 +103,8 @@ public static class TableIndexExtensions
         bool fromInclusive = true, bool toInclusive = true,
         bool backward = false)
     {
-        var fromData = hasFrom ? new Data<TField>(from) : null;
-        var toData = hasTo ? new Data<TField>(to) : null;
+        var fromData = hasFrom ? (IData)(object)from! : null;
+        var toData   = hasTo   ? (IData)(object)to!   : null;
         foreach (var kv in table.Indexes.FindByIndexRange(
             indexName, fromData, hasFrom, fromInclusive, toData, hasTo, toInclusive, backward))
             yield return ConvertPair<TKey, TRecord>(kv);
@@ -118,7 +118,7 @@ public static class TableIndexExtensions
         string indexName,
         TField fieldValue)
     {
-        return table.Indexes.ExistsInIndex(indexName, new Data<TField>(fieldValue));
+        return table.Indexes.ExistsInIndex(indexName, (object)fieldValue!);
     }
 
     /// <summary>
@@ -129,7 +129,7 @@ public static class TableIndexExtensions
         string indexName,
         TField fieldValue)
     {
-        return table.Indexes.CountByIndex(indexName, new Data<TField>(fieldValue));
+        return table.Indexes.CountByIndex(indexName, (object)fieldValue!);
     }
 
     /// <summary>Drops an index.</summary>
@@ -175,9 +175,5 @@ public static class TableIndexExtensions
     }
 
     private static KeyValuePair<TKey, TRecord> ConvertPair<TKey, TRecord>(KeyValuePair<IData, IData> kv)
-    {
-        var key = ((Data<TKey>)kv.Key).Value;
-        var record = ((Data<TRecord>)kv.Value).Value;
-        return new KeyValuePair<TKey, TRecord>(key, record);
-    }
+        => new((TKey)kv.Key, (TRecord)kv.Value);
 }

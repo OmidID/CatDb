@@ -95,4 +95,12 @@ public interface ITableIndexManager
     /// <c>(primaryKey, record)</c> pairs honouring Skip/Take.
     /// </summary>
     IEnumerable<KeyValuePair<IData, IData>> ExecuteQuery(EngineQuery query);
+
+    /// <summary>
+    /// Counts a structured query's matching rows using the fastest available path — index-key-only
+    /// counting when the plan allows (no per-row record fetch), falling back to full enumeration only
+    /// when a residual predicate needs materialized rows. For a remote table this is a SINGLE round trip
+    /// returning just the count — matched rows are never transferred over the wire.
+    /// </summary>
+    long Count(EngineQuery query);
 }

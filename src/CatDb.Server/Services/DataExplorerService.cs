@@ -89,12 +89,9 @@ public sealed class DataExplorerService(DatabaseHostService hostService)
         };
     }
 
-    /// <summary>Unwraps a <c>Data&lt;T&gt;</c> and converts the inner value to JSON.</summary>
+    // IData = object — the data IS the value; no Data<T> wrapper to unwrap.
     private static JsonNode? DataToJson(IData? data, DataType dataType, MemberMap? map)
-    {
-        var value = data?.GetType().GetField("Value")?.GetValue(data);
-        return ValueToJson(value, dataType, map);
-    }
+        => ValueToJson(data, dataType, map);
 
     private static JsonNode? ValueToJson(object? value, DataType dataType, MemberMap? map)
     {
@@ -179,13 +176,9 @@ public sealed class DataExplorerService(DatabaseHostService hostService)
             descriptor.KeyMemberMap, descriptor.RecordMemberMap);
     }
 
-    /// <summary>Builds a <c>Data&lt;T&gt;</c> from JSON, recursively for the whole DataType tree.</summary>
+    // IData = object — box the value directly; no Data<T> wrapper.
     private static IData JsonToData(JsonElement json, DataType dataType, MemberMap? map)
-    {
-        var clrType = DataTypeUtils.BuildType(dataType);
-        var value   = JsonToValue(json, dataType, map);
-        return (IData)Activator.CreateInstance(typeof(Data<>).MakeGenericType(clrType), value)!;
-    }
+        => JsonToValue(json, dataType, map)!;
 
     private static object? JsonToValue(JsonElement json, DataType dataType, MemberMap? map)
     {
@@ -291,8 +284,7 @@ public sealed class DataExplorerService(DatabaseHostService hostService)
                 parsed = Convert.ChangeType(keyStr, primitiveType,
                     CultureInfo.InvariantCulture);
 
-            var dataType = typeof(Data<>).MakeGenericType(primitiveType);
-            key = (IData)Activator.CreateInstance(dataType, parsed)!;
+            key = parsed;
             return true;
         }
         catch

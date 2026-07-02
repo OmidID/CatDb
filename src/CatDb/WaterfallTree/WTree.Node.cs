@@ -69,6 +69,12 @@ public partial class WTree
             Branch = branch;
         }
 
+        /// <summary>Exact native (unmanaged) bytes held by this node — leaves override; internals hold none.</summary>
+        public virtual long NativeAllocatedBytes => 0;
+
+        /// <summary>Queues the node's native data for deferred reclaim on unload — leaves override.</summary>
+        public virtual void ReleaseNativeData() { }
+
         public abstract void Apply(IOperationCollection operations);
         public abstract Node Split();
         public abstract void Merge(Node node);

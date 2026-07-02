@@ -1,10 +1,11 @@
 // Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
 // Licensed under the MIT License. See LICENSE in the project root for license information.
 
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using System.Reflection;
 
 namespace CatDb.Data;
+
 public class DataEqualityComparer : IEqualityComparer<IData>
 {
     private readonly Func<IData, IData, bool> _equals;
@@ -16,12 +17,11 @@ public class DataEqualityComparer : IEqualityComparer<IData>
 
     public DataEqualityComparer(Type type, CompareOption[] compareOptions, Func<Type, MemberInfo, int>? membersOrder = null)
     {
-        _type = type;
-        CompareOption.CheckCompareOptions(type, compareOptions, membersOrder);
+        _type           = type;
         _compareOptions = compareOptions;
-        _membersOrder = membersOrder;
-
-        _equals = CreateEqualsMethod().Compile();
+        _membersOrder   = membersOrder;
+        CompareOption.CheckCompareOptions(type, compareOptions, membersOrder);
+        _equals      = CreateEqualsMethod().Compile();
         _getHashCode = CreateGetHashCodeMethod().Compile();
     }
 
@@ -32,46 +32,33 @@ public class DataEqualityComparer : IEqualityComparer<IData>
 
     public Expression<Func<IData, IData, bool>> CreateEqualsMethod()
     {
-        var x = Expression.Parameter(typeof(IData));
-        var y = Expression.Parameter(typeof(IData));
+        var x = Expression.Parameter(typeof(object));
+        var y = Expression.Parameter(typeof(object));
+
+        // Cast object → T directly (no Data<T> intermediary)
         var xValue = Expression.Variable(_type);
         var yValue = Expression.Variable(_type);
 
-        var dataType = typeof(Data<>).MakeGenericType(_type);
-
         var body = Expression.Block(typeof(bool), new[] { xValue, yValue },
-                Expression.Assign(xValue, Expression.Convert(x, dataType).Value()),
-                Expression.Assign(yValue, Expression.Convert(y, dataType).Value()),
-                EqualityComparerHelper.CreateEqualsBody(xValue, yValue, _compareOptions, _membersOrder)
-            );
-        var lambda = Expression.Lambda<Func<IData, IData, bool>>(body, x, y);
+            Expression.Assign(xValue, Expression.Convert(x, _type)),
+            Expression.Assign(yValue, Expression.Convert(y, _type)),
+            EqualityComparerHelper.CreateEqualsBody(xValue, yValue, _compareOptions, _membersOrder));
 
-        return lambda;
+        return Expression.Lambda<Func<IData, IData, bool>>(body, x, y);
     }
 
     public Expression<Func<IData, int>> CreateGetHashCodeMethod()
     {
-        var obj = Expression.Parameter(typeof(IData));
+        var obj      = Expression.Parameter(typeof(object));
         var objValue = Expression.Variable(_type);
 
-        var dataType = typeof(Data<>).MakeGenericType(_type);
-
         var body = Expression.Block(typeof(int), new[] { objValue },
-            Expression.Assign(objValue, Expression.Convert(obj, dataType).Value()),
-            EqualityComparerHelper.CreateGetHashCodeBody(objValue, _membersOrder)
-            );
-        var lambda = Expression.Lambda<Func<IData, int>>(body, obj);
+            Expression.Assign(objValue, Expression.Convert(obj, _type)),
+            EqualityComparerHelper.CreateGetHashCodeBody(objValue, _membersOrder));
 
-        return lambda;
+        return Expression.Lambda<Func<IData, int>>(body, obj);
     }
 
-    public bool Equals(IData? x, IData? y)
-    {
-        return _equals(x!, y!);
-    }
-
-    public int GetHashCode(IData obj)
-    {
-        return _getHashCode(obj);
-    }
+    public new bool Equals(IData? x, IData? y) => _equals(x!, y!);
+    public int GetHashCode(IData obj)       => _getHashCode(obj);
 }

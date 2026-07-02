@@ -230,10 +230,10 @@ public class SecondaryIndexTests : IDisposable
         _engine.Commit();
 
         // Search by composite value - NYC, Age=30
-        var fieldValue = new Data<Slots<string, int>>(new Slots<string, int>("NYC", 30));
+        var fieldValue = new Slots<string, int>("NYC", 30);
         var results = table.Indexes.FindByIndex("CityAge", fieldValue).ToList();
         results.Should().HaveCount(1);
-        ((Data<int>)results[0].Key).Value.Should().Be(1);
+        ((int)results[0].Key).Should().Be(1);
     }
 
     [Fact]
@@ -247,7 +247,7 @@ public class SecondaryIndexTests : IDisposable
         table.Replace(2, new Customer { Email = "x@y.com", City = "LA", Age = 25, Name = "Bob" });
         _engine.Commit();
 
-        var fieldValue = new Data<string>("NYC");
+        var fieldValue = "NYC";
         var results = table.Indexes.FindByIndex("SlotCity", fieldValue).ToList();
         results.Should().HaveCount(1);
     }
@@ -333,7 +333,7 @@ public class SecondaryIndexTests : IDisposable
         table.Replace(3, new Customer { City = "LA" });
         _engine.Commit();
 
-        var fieldValue = new Data<string>("NYC");
+        var fieldValue = "NYC";
         var results = table.Indexes.FindByIndex("ManualCity", fieldValue).ToList();
         results.Should().HaveCount(2);
     }

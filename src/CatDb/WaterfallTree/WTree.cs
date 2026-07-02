@@ -35,6 +35,7 @@ public partial class WTree : IDisposable
     private int _internalNodeMaxOperations = 8 * 1024;
     private int _leafNodeMinRecords = 4 * 1024;
     private int _leafNodeMaxRecords = 8 * 1024;
+    private bool _useNativeLeafStorage;   // per-tree — see Locator.UseNativeLeafStorage
 
     //reserved handles
     private const long HANDLE_SETTINGS = 0;
@@ -49,6 +50,16 @@ public partial class WTree : IDisposable
     private volatile bool _disposed;
     public bool IsDisposed => _disposed;
     private int _depth = 1;
+
+    // ── Background checkpoint (TransactionLog) ─────────────────────────────────
+    // The durable commit is a cheap log fsync; the heavy checkpoint (flush dirty nodes to the heap) runs on
+    // a DEDICATED thread so the committing thread NEVER waits for it. A commit just signals this worker and
+    // returns. Concurrent writers/readers only contend for the brief Phase-A node-serialise window (the
+    // fsync runs outside the root lock); the multi-second inline-checkpoint freeze is gone.
+    private Thread? _checkpointWorker;
+    private readonly SemaphoreSlim _checkpointSignal = new(0);
+    private int _checkpointInFlight;        // 0/1 CAS guard — never queue more than one pending checkpoint
+    private volatile bool _checkpointStop;
 
     private long _globalVersion;
 
@@ -83,6 +94,12 @@ public partial class WTree : IDisposable
         });
         if (_operationLog != null)
             General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.oplog.size.mb", () => _operationLog.SizeBytes / (1024 * 1024));
+        // Native arena total across ALL live NativeOrderedSets (leaves reclaim via finalizer on eviction —
+        // if this climbs while cache.count is flat, finalization is lagging = the native leak).
+        General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.native.bytes.mb",
+            () => Interlocked.Read(ref General.Collections.NativeOrderedSet.GlobalNativeBytes) / (1024 * 1024));
+        General.Diagnostics.PerformanceCheck.RegisterGauge("gauge.native.reclaim.pending",
+            () => General.Collections.NativeReclaim.PendingCount);
 #endif
 
         if (options != null)
@@ -91,6 +108,10 @@ public partial class WTree : IDisposable
             _checkpointLogSizeBytes = options.CheckpointLogSizeBytes;
             _incrementalCheckpoint = options.IncrementalCheckpoint;
             _checkpointMaxNodes = options.CheckpointMaxNodes;
+            // Per-tree (NOT a process-wide static — see Locator.UseNativeLeafStorage): stamped onto every
+            // locator this WTree owns, below and in CreateLocator, so multiple engines with different
+            // settings can coexist in one process.
+            _useNativeLeafStorage = options.UseNativeLeafStorage;
         }
 
         // Apply options for NEW databases (existing DBs load settings from header)
@@ -123,6 +144,11 @@ public partial class WTree : IDisposable
             //read scheme
             using (var ms = new MemoryStream(heap.Read(HANDLE_SCHEME)))
                 _scheme = Scheme.Deserialize(new BinaryReader(ms));
+
+            // Stamp this WTree's native-storage setting onto every locator it owns (deserialized locators
+            // default to false — see Locator.UseNativeLeafStorage).
+            foreach (var loc in _scheme.Select(kv => kv.Value))
+                loc.UseNativeLeafStorage = _useNativeLeafStorage;
 
             ////load branch cache
             //using (MemoryStream ms = new MemoryStream(Heap.Read(HANDLE_ROOT)))
@@ -165,7 +191,58 @@ public partial class WTree : IDisposable
                 // New DB: write an initial (empty) checkpoint so the heap structure (settings/scheme/root)
                 // exists for reopen — subsequent commits are cheap log fsyncs.
                 CheckpointToHeap(CancellationToken.None);
+
+            // Recovery/initial checkpoint done synchronously above; now start the background checkpoint worker.
+            _checkpointWorker = new Thread(CheckpointWorkerLoop)
+            {
+                IsBackground = true,
+                Name = "catdb-checkpoint"
+            };
+            _checkpointWorker.Start();
         }
+    }
+
+    // Background checkpoint worker — wakes on a signal, runs ONE checkpoint, clears the in-flight guard.
+    private void CheckpointWorkerLoop()
+    {
+        while (true)
+        {
+            // Wake at least once a second even without a commit signal so deferred native reclaim keeps
+            // draining under read-mostly load (grace-period disposal of dropped NativeOrderedSets).
+            _checkpointSignal.Wait(1000);
+            if (_checkpointStop)
+                return;
+
+            General.Collections.NativeReclaim.Drain();
+
+            if (Volatile.Read(ref _checkpointInFlight) == 0)
+                continue;   // woke for the reclaim tick only — no checkpoint requested
+
+            try
+            {
+                CheckpointToHeap(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                // A checkpoint failure must not kill the worker; the ops stay in the log and a later
+                // checkpoint retries. Record it via the error sink if one is attached.
+                _checkpointFailure = ex;
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _checkpointInFlight, 0);
+            }
+        }
+    }
+
+    private volatile Exception? _checkpointFailure;
+
+    /// <summary>Requests a background checkpoint without waiting. No-op if one is already queued/running.</summary>
+    private void SignalCheckpoint()
+    {
+        // Only queue when no checkpoint is in flight — collapses a burst of due-commits into one checkpoint.
+        if (Interlocked.CompareExchange(ref _checkpointInFlight, 1, 0) == 0)
+            _checkpointSignal.Release();
     }
 
     /// <summary>Replays committed op-log records with LSN &gt; the persisted checkpoint LSN, re-applying
@@ -469,14 +546,24 @@ public partial class WTree : IDisposable
         if (_operationLog != null)
         {
             // TransactionLog: the durable commit is a cheap sequential log fsync — NO node serialisation
-            // under the root lock. Dirty nodes flush to the heap only at the occasional checkpoint.
+            // under the root lock. The heavy checkpoint runs on the background worker, so this thread NEVER
+            // waits for it: signal-and-return. Dirty nodes flush to the heap at that background checkpoint.
             _operationLog.Commit(Volatile.Read(ref _lsn));
+            RethrowCheckpointFailure();
             if (CheckpointDue())
-                CheckpointToHeap(cancellationToken, locator, hasLocator, fromKey, toKey);
+                SignalCheckpoint();
             return;
         }
 
         CheckpointToHeap(cancellationToken, locator, hasLocator, fromKey, toKey);
+    }
+
+    private void RethrowCheckpointFailure()
+    {
+        var ex = _checkpointFailure;
+        if (ex == null) return;
+        _checkpointFailure = null;
+        throw new InvalidOperationException("Background checkpoint failed.", ex);
     }
 
     /// <summary>Incremental-checkpoint selection (under the root lock, BEFORE the Store-fall). Only MARKS the
@@ -650,12 +737,26 @@ public partial class WTree : IDisposable
 #if PERFORMANCE_CHECK
             General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.cp.evict", evictStart);
             General.Diagnostics.PerformanceCheck.Observe("gc.heap.mb", GC.GetTotalMemory(false) / (1024 * 1024));
-            var finStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            var storeStart = System.Diagnostics.Stopwatch.GetTimestamp();
 #endif
 
-            _commitStrategy.FinalizeCommit(_heap);
+            // Serialise the dirty nodes into the heap's write buffer UNDER the root lock: a node can be
+            // merged away (handle released) or split only under this lock, so serialising here guarantees a
+            // valid, quiescent node image. Fast with the native raw-byte passthrough (~tens of µs/node).
+            _commitStrategy.StorePending();
 #if PERFORMANCE_CHECK
-            General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.cp.heapcommit", finStart);
+            General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.cp.storepending", storeStart);
+            var hardenStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
+
+            // Harden the heap (free old versions, swap header, fsync) UNDER the root lock. The plain `Heap`
+            // versions space and truncates the file on Commit and assumes NO concurrent WTree mutation across
+            // that boundary — doing it off-lock let a concurrent maintenance/merge interleave and a reader hit
+            // a released handle ("No such handle"). The freeze win comes from running the WHOLE checkpoint on
+            // the background worker (the committing thread never waits), not from splitting this critical section.
+            _commitStrategy.HardenHeap(_heap);
+#if PERFORMANCE_CHECK
+            General.Diagnostics.PerformanceCheck.ObserveDurationTicks("wtree.cp.heapcommit", hardenStart);
 #endif
         }
         finally
@@ -668,7 +769,7 @@ public partial class WTree : IDisposable
         }
 
         // After the heap is durable (header swapped, incl. the new checkpoint LSN), drop the now-redundant
-        // log prefix. Done outside the root lock — it touches only the log file.
+        // log prefix. Outside the root lock — it touches only the log file.
         if (_operationLog != null)
         {
             _operationLog.Truncate(cpLsn);
@@ -716,7 +817,9 @@ public partial class WTree : IDisposable
 
     protected internal Locator CreateLocator(string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType)
     {
-        return _scheme.Create(name, structureType, keyDataType, recordDataType, keyType, recordType);
+        var locator = _scheme.Create(name, structureType, keyDataType, recordDataType, keyType, recordType);
+        locator.UseNativeLeafStorage = _useNativeLeafStorage;   // per-tree — see Locator.UseNativeLeafStorage
+        return locator;
     }
 
     protected Locator GetLocator(long id)
@@ -827,19 +930,25 @@ public partial class WTree : IDisposable
     // so CacheSizeBytes can be expressed in real memory terms.
     private const long InMemoryOverheadFactor = 8;
 
-    /// <summary>Marks coldest nodes for eviction until the estimated cache RAM falls under the budget.</summary>
+    /// <summary>Marks coldest nodes for eviction until the estimated cache RAM falls under the budget.
+    /// A node's footprint = managed estimate (serialized × overhead factor) + EXACT native arena bytes —
+    /// native leaves keep row data off the GC heap, so without the native term the budget saw almost
+    /// nothing, never evicted, and native memory grew unbounded (2.3 GB in 5 min).</summary>
     private bool MarkColdByBytes()
     {
-        long totalSerialized = 0;
+        long totalRam = 0;
         var count = 0;
         foreach (var kv in _cache)
         {
             if (kv.Value.IsRoot) continue;
-            totalSerialized += kv.Value.ApproxByteSize;
+            var native = kv.Value.NativeAllocatedBytes;
+            // Native leaves: managed footprint is small (slots/dictionary only) — count serialized once,
+            // not ×8. Managed nodes (internals, non-native leaves): keep the ×8 managed-RAM estimate.
+            totalRam += native > 0
+                ? native + kv.Value.ApproxByteSize
+                : kv.Value.ApproxByteSize * InMemoryOverheadFactor;
             count++;
         }
-
-        var totalRam = totalSerialized * InMemoryOverheadFactor;
 
 #if PERFORMANCE_CHECK
         General.Diagnostics.PerformanceCheck.Observe("wtree.cache.bytes.mb", totalRam / (1024 * 1024));
@@ -853,7 +962,10 @@ public partial class WTree : IDisposable
         foreach (var kv in _cache)
         {
             if (kv.Value.IsRoot) continue;
-            nodes[i++] = (kv.Value.TouchId, kv.Value, kv.Value.ApproxByteSize * InMemoryOverheadFactor);
+            var native = kv.Value.NativeAllocatedBytes;
+            nodes[i++] = (kv.Value.TouchId, kv.Value,
+                native > 0 ? native + kv.Value.ApproxByteSize
+                           : kv.Value.ApproxByteSize * InMemoryOverheadFactor);
         }
         Array.Sort(nodes, static (a, b) => a.TouchId.CompareTo(b.TouchId));
 
@@ -937,7 +1049,24 @@ public partial class WTree : IDisposable
         {
             if (disposing)
             {
+                // Stop the background checkpoint worker and wait for any in-flight checkpoint to finish,
+                // so nothing serialises into the heap after we close it.
+                if (_checkpointWorker != null)
+                {
+                    _checkpointStop = true;
+                    _checkpointSignal.Release();
+                    _checkpointWorker.Join();
+                }
+
                 _workingFallCount.Wait();
+
+                // Final synchronous checkpoint: flush whatever is still dirty so the close is fully durable
+                // and reopen is instant (otherwise the tail would only be recoverable by replaying the log).
+                if (_operationLog != null)
+                {
+                    try { CheckpointToHeap(CancellationToken.None); }
+                    catch { /* tail stays in the log → recovered on reopen */ }
+                }
 
                 // Flush any in-flight background checkpoint (and join its worker) before closing the heap,
                 // so a clean close is always fully durable even under CommitDurability.AsyncDeferred.
@@ -945,6 +1074,8 @@ public partial class WTree : IDisposable
 
                 _heap.Close();
                 _operationLog?.Dispose();
+                _checkpointSignal.Dispose();
+                General.Collections.NativeReclaim.DrainAll();   // free all deferred native arenas now
             }
 
             _disposed = true;

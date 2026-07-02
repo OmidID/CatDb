@@ -42,6 +42,9 @@ internal sealed partial class TableIndexManager : IQueryEngineContext
         return compiled.Plan.CountFast(new ParameterizedContext(this, values));
     }
 
+    /// <inheritdoc/>
+    public long Count(EngineQuery query) => TryCountFast(query) ?? ExecuteQuery(query).LongCount();
+
     /// <summary>Returns the human-readable physical plan for a query (EXPLAIN).</summary>
     internal string ExplainQuery(EngineQuery query)
     {

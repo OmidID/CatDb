@@ -27,7 +27,7 @@ Console.Clear();
 Console.CursorVisible = false;
 
 // ── Switch between local file and remote server ───────────────────────────
-const bool   USE_SERVER  = false;         // true = connect to CatDb.Server
+const bool   USE_SERVER  = true;         // true = connect to CatDb.Server
 const string SERVER_USERNAME = "admin";
 const string SERVER_PASSWORD = "admin";
 const string SERVER_HOST = "localhost";
@@ -53,7 +53,9 @@ IStorageEngine OpenEngine()
     return Database.CatDb.FromFile(
         DB_FILE,
         new DatabaseOptions {
-            CommitMode = CommitMode.TransactionLog
+            CommitMode = CommitMode.TransactionLog,
+            IncrementalCheckpoint = true,
+            UseNativeLeafStorage = true   // native slotted page: row data in unmanaged memory, off the GC heap
         });
 }
 #pragma warning restore CS0162

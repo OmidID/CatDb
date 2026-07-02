@@ -276,10 +276,10 @@ public class RemoteIndexTests
             client.Commit();
 
             // Full composite-index range scan over the wire returns every row (server-side scan,
-            // Data<Slots> records correctly transported and keyed).
+            // composite Slots records correctly transported and keyed).
             var keys = table.Indexes.FindByIndexRange("CityAge",
                     null, false, true, null, false, true, backward: false)
-                .Select(kv => ((Data<int>)kv.Key).Value).OrderBy(k => k).ToList();
+                .Select(kv => (int)kv.Key).OrderBy(k => k).ToList();
 
             keys.Should().Equal(Enumerable.Range(0, 90));
         }
@@ -353,29 +353,29 @@ public class RemoteIndexTests
             client.Commit();
 
             // Unique equality (engine index seek over the wire).
-            var byEmail = table.Indexes.FindByIndex("Email", new Data<string>("user042@x.com"))
-                .Select(kv => ((Data<int>)kv.Key).Value).ToList();
+            var byEmail = table.Indexes.FindByIndex("Email", "user042@x.com")
+                .Select(kv => (int)kv.Key).ToList();
             byEmail.Should().ContainSingle().Which.Should().Be(42);
 
             // Non-unique count + exists.
-            table.Indexes.CountByIndex("City", new Data<string>("nyc")).Should().Be(40);
-            table.Indexes.ExistsInIndex("City", new Data<string>("london")).Should().BeTrue();
+            table.Indexes.CountByIndex("City", "nyc").Should().Be(40);
+            table.Indexes.ExistsInIndex("City", "london").Should().BeTrue();
 
             // Range over the index (server-side range scan).
             var range = table.Indexes.FindByIndexRange("Email",
-                new Data<string>("user010@x.com"), true, true,
-                new Data<string>("user019@x.com"), true, true, backward: false).Count();
+                "user010@x.com", true, true,
+                "user019@x.com", true, true, backward: false).Count();
             range.Should().Be(10);
 
             // Descending index range scan (backward over the wire) — first 3 keys.
             var topAgeKeys = table.Indexes.FindByIndexRange("Age",
                     null, false, true, null, false, true, backward: true)
-                .Take(3).Select(kv => ((Data<int>)kv.Key).Value).ToList();
+                .Take(3).Select(kv => (int)kv.Key).ToList();
             topAgeKeys.Should().HaveCount(3);
 
             // Composite (City,Age) prefix scan: City='nyc' rows, ordered by Age, over the wire.
-            var nycKeys = table.Indexes.FindByIndexPrefix("CityAge", new Data<string>("nyc"), 1, backward: false)
-                .Select(kv => ((Data<int>)kv.Key).Value).ToList();
+            var nycKeys = table.Indexes.FindByIndexPrefix("CityAge", "nyc", 1, backward: false)
+                .Select(kv => (int)kv.Key).ToList();
             nycKeys.Should().HaveCount(40);
         }
         finally

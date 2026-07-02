@@ -9,8 +9,10 @@ namespace CatDb.Remote.Commands;
 /// <summary>
 /// Serializes index field/prefix values (whose type differs from the table's key/record types) to
 /// and from raw bytes for the wire, using a <see cref="DataPersist"/> built from the value's type.
-/// The client serializes from the runtime <c>Data&lt;TField&gt;</c> type; the server deserializes
-/// using the index's resolved field type — both default-configured, so the encodings match.
+/// IData is a global alias for <see cref="object"/> — the client serializes using the value's own
+/// runtime type directly (a boxed primitive or a composite <c>Slots&lt;...&gt;</c>, never wrapped);
+/// the server deserializes using the index's resolved field type — both default-configured, so the
+/// encodings match.
 /// </summary>
 internal static class RemoteFieldCodec
 {
@@ -18,9 +20,9 @@ internal static class RemoteFieldCodec
 
     private static DataPersist Persist(Type type) => Cache.GetOrAdd(type, t => new DataPersist(t));
 
-    /// <summary>Serializes an index value, inferring its element type from the runtime Data&lt;T&gt;.</summary>
+    /// <summary>Serializes an index value using its own runtime type as the field type.</summary>
     public static byte[] Serialize(IData value)
-        => Serialize(value, value.GetType().GetGenericArguments()[0]);
+        => Serialize(value, value.GetType());
 
     public static byte[] Serialize(IData value, Type type)
     {

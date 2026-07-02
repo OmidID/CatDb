@@ -1,14 +1,14 @@
 // Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
 // Licensed under the MIT License. See LICENSE in the project root for license information.
 
-﻿using System.Diagnostics;
-using CatDb.Data;
+using System.Diagnostics;
 using CatDb.Database.Operations;
 using CatDb.General.Collections;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Database;
 
+// IData = object. Keys are boxed long; records are byte[] stored directly as object.
 public class XStreamApply(Locator path) : IApply
 {
     private const int BLOCK_SIZE = XStream.BLOCK_SIZE;
@@ -52,45 +52,50 @@ public class XStreamApply(Locator path) : IApply
     {
         Debug.Assert(operation.Scope == OperationScope.Point);
 
-        var from      = ((Data<long>)operation.FromKey).Value;
+        var from      = (long)operation.FromKey;
         var localFrom = (int)(from % BLOCK_SIZE);
         var baseFrom  = from - localFrom;
-        var baseKey   = new Data<long>(baseFrom);
+        IData baseKey = (object)baseFrom;
 
-        var src = ((Data<byte[]>)operation.Record).Value;
+        var src = (byte[])operation.Record;
         Debug.Assert(src.Length <= BLOCK_SIZE);
         Debug.Assert(baseFrom == BLOCK_SIZE * ((from + src.Length - 1) / BLOCK_SIZE));
 
         if (set.TryGetValue(baseKey, out var tmp))
         {
-            var rec = (Data<byte[]>)tmp;
+            var dst = (byte[])tmp;
 
-            if (localFrom == 0 && src.Length >= rec.Value.Length)
-                rec.Value = src;
+            if (localFrom == 0 && src.Length >= dst.Length)
+            {
+                set[baseKey] = (object)src;
+            }
             else
             {
                 Debug.Assert(src.Length < BLOCK_SIZE);
-                var dst = rec.Value;
                 if (dst.Length > localFrom + src.Length)
-                    src.CopyTo(dst, localFrom);
+                {
+                    src.CopyTo(dst, localFrom); // mutate in-place — same array object already in set
+                }
                 else
                 {
                     var buffer = new byte[localFrom + src.Length];
                     dst.CopyTo(buffer, 0);
                     src.CopyTo(buffer, localFrom);
-                    rec.Value = buffer;
+                    set[baseKey] = (object)buffer;
                 }
             }
         }
         else
         {
             if (localFrom == 0)
-                set[baseKey] = new Data<byte[]>(src);
+            {
+                set[baseKey] = (object)src;
+            }
             else
             {
                 var values = new byte[localFrom + src.Length];
                 src.CopyTo(values, localFrom);
-                set[baseKey] = new Data<byte[]>(values);
+                set[baseKey] = (object)values;
             }
         }
 
@@ -99,44 +104,44 @@ public class XStreamApply(Locator path) : IApply
 
     private bool Delete(IOrderedSet<IData, IData> set, DeleteRangeOperation operation)
     {
-        var from = ((Data<long>)operation.FromKey).Value;
-        var to   = ((Data<long>)operation.ToKey).Value;
+        var from = (long)operation.FromKey;
+        var to   = (long)operation.ToKey;
 
         var localFrom = (int)(from % BLOCK_SIZE);
         var localTo   = (int)(to   % BLOCK_SIZE);
         var baseFrom  = from - localFrom;
         var baseTo    = to   - localTo;
 
-        var internalFrom = localFrom > 0         ? baseFrom + BLOCK_SIZE : baseFrom;
-        var internalTo   = localTo  < BLOCK_SIZE - 1 ? baseTo  - 1        : baseTo;
+        var internalFrom = localFrom > 0             ? baseFrom + BLOCK_SIZE : baseFrom;
+        var internalTo   = localTo  < BLOCK_SIZE - 1 ? baseTo  - 1          : baseTo;
 
         var isModified = false;
 
         if (internalFrom <= internalTo)
-            isModified = set.Remove(new Data<long>(internalFrom), true, new Data<long>(internalTo), true);
+            isModified = set.Remove((object)internalFrom, true, (object)internalTo, true);
 
-        if (localFrom > 0 && set.TryGetValue(new Data<long>(baseFrom), out var tmp))
+        if (localFrom > 0 && set.TryGetValue((object)baseFrom, out var tmp))
         {
-            var record = (Data<byte[]>)tmp;
-            if (localFrom < record.Value.Length)
+            var record = (byte[])tmp;
+            if (localFrom < record.Length)
             {
-                Array.Clear(record.Value, localFrom, baseFrom < baseTo ? record.Value.Length - localFrom : localTo - localFrom + 1);
+                Array.Clear(record, localFrom, baseFrom < baseTo ? record.Length - localFrom : localTo - localFrom + 1);
                 isModified = true;
             }
             if (baseFrom == baseTo)
                 return isModified;
         }
 
-        if (localTo < BLOCK_SIZE - 1 && set.TryGetValue(new Data<long>(baseTo), out tmp))
+        if (localTo < BLOCK_SIZE - 1 && set.TryGetValue((object)baseTo, out tmp))
         {
-            var record = (Data<byte[]>)tmp;
-            if (localTo < record.Value.Length - 1)
+            var record = (byte[])tmp;
+            if (localTo < record.Length - 1)
             {
-                Array.Clear(record.Value, 0, localTo + 1);
+                Array.Clear(record, 0, localTo + 1);
                 isModified = true;
             }
             else
-                isModified = set.Remove(new Data<long>(baseTo));
+                isModified = set.Remove((object)baseTo);
         }
 
         return isModified;

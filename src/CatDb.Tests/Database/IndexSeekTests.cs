@@ -104,9 +104,9 @@ public class IndexSeekTests : IDisposable
         _engine.Commit();
 
         // WHERE City='nyc' AND Age=1 ORDER BY Score — prefix length 2.
-        var prefix = new Data<Slots<string, int>>(new Slots<string, int>("nyc", 1));
+        var prefix = new Slots<string, int>("nyc", 1);
         var got = table.Indexes.FindByIndexPrefix("CityAgeScore", prefix, 2, backward: false)
-            .Select(kv => ((Data<int>)kv.Key).Value).ToList();
+            .Select(kv => (int)kv.Key).ToList();
 
         var expected = all.Where(kv => kv.Value.City == "nyc" && kv.Value.Age == 1)
             .OrderBy(kv => kv.Value.Score).ThenBy(kv => kv.Key)

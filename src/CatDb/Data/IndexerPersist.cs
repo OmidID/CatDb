@@ -262,7 +262,7 @@ public static class IndexerPersistHelper
         var idx = Expression.Variable(typeof(int), "idx");
         var value = Expression.Variable(member.GetPropertyOrFieldType(), "value");
 
-        var field = isData ? Expression.PropertyOrField(Expression.ArrayAccess(array, idx).Value(), member.Name) : Expression.PropertyOrField(Expression.ArrayAccess(array, idx), member.Name);
+        var field = Expression.PropertyOrField(Expression.ArrayAccess(array, idx), member.Name);
 
         return Expression.Call(Expression.Convert(Expression.Constant(persists[index]), persists[index].GetType()), persists[index].GetType().GetMethod("Load")!,
            Expression.New(typeof(BinaryReader).GetConstructor(new[] { typeof(MemoryStream) })!, ms),
@@ -284,10 +284,7 @@ public static class IndexerPersistHelper
                Expression.Call(Expression.Convert(Expression.Constant(persists[0]),
                    persists[0].GetType()), persists[0].GetType().GetMethod("Load")!,
                    Expression.New(typeof(BinaryReader).GetConstructor(new[] { typeof(MemoryStream) })!, ms),
-                   Expression.Lambda(isData ?
-                       Expression.Call(values, values.Type.GetMethod("Invoke")!, idx, Expression.New(typeof(Data<>).MakeGenericType(type).GetConstructor(new[] { type })!, value))
-                       : Expression.Call(values, values.Type.GetMethod("Invoke")!, idx, value),
-                       idx, value),
+                   Expression.Lambda(Expression.Call(values, values.Type.GetMethod("Invoke")!, idx, value), idx, value),
                    count)));
 
         return Expression.Block(new[] { buffers }, list);

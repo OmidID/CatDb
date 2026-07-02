@@ -415,5 +415,5 @@ internal static class QueryCompiler
     }
 
     internal static string? ReadString(IData data)
-        => data.GetType().GetField("Value")?.GetValue(data) as string;
+        => data as string;
 }

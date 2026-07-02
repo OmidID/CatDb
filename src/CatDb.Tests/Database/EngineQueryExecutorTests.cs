@@ -46,14 +46,14 @@ public class EngineQueryExecutorTests : IDisposable
     }
 
     private static FilterNode Eq<T>(string member, T value) =>
-        FilterNode.Leaf(new FieldFilter { Member = member, Op = FilterOp.Equal, FieldType = typeof(T), Value = new Data<T>(value) });
+        FilterNode.Leaf(new FieldFilter { Member = member, Op = FilterOp.Equal, FieldType = typeof(T), Value = value });
 
     private static FilterNode Leaf<T>(string member, FilterOp op, T value) =>
-        FilterNode.Leaf(new FieldFilter { Member = member, Op = op, FieldType = typeof(T), Value = new Data<T>(value) });
+        FilterNode.Leaf(new FieldFilter { Member = member, Op = op, FieldType = typeof(T), Value = value });
 
     // No ORDER BY => engine returns rows in (unspecified) plan order; sort here to compare as a set.
     private List<int> Keys(ITableIndexManager idx, EngineQuery q) =>
-        idx.ExecuteQuery(q).Select(kv => ((Data<int>)kv.Key).Value).OrderBy(k => k).ToList();
+        idx.ExecuteQuery(q).Select(kv => (int)kv.Key).OrderBy(k => k).ToList();
 
     [Fact]
     public void TwoIndexes_AndIntersection_MatchesLinq()
@@ -76,7 +76,7 @@ public class EngineQueryExecutorTests : IDisposable
         var (_, idx, all) = Seed();
 
         var between = FilterNode.Leaf(new FieldFilter { Member = "Age", Op = FilterOp.Between, FieldType = typeof(int),
-            Value = new Data<int>(5), Value2 = new Data<int>(15) });
+            Value = 5, Value2 = 15 });
         var q = new EngineQuery { Filter = FilterNode.All([Eq("City", "london"), between, Eq("Name", "n2")]) };
 
         var got = Keys(idx, q);
@@ -112,7 +112,7 @@ public class EngineQueryExecutorTests : IDisposable
         var q = new EngineQuery { Take = 5, Filter = Eq("City", "nyc") };
         q.Sorts.Add(new SortField { Member = "Age", FieldType = typeof(int), Descending = true });
 
-        var rows = idx.ExecuteQuery(q).Select(kv => ((Data<int>)kv.Key).Value).ToList();
+        var rows = idx.ExecuteQuery(q).Select(kv => (int)kv.Key).ToList();
 
         var expected = all.Where(kv => kv.Value.City == "nyc")
                           .OrderByDescending(kv => kv.Value.Age).ThenByDescending(kv => kv.Key)

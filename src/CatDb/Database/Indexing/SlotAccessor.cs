@@ -8,88 +8,57 @@ using CatDb.Data;
 namespace CatDb.Database.Indexing;
 
 /// <summary>
-/// Compiles efficient delegates to extract slot values from IData records
-/// and to build IData keys for index tables.
+/// Compiles efficient delegates to extract slot values from IData (= object) records
+/// and to build IData (= object) keys for index tables.
 ///
-/// At index creation time, we inspect the record's concrete Type (from Locator.RecordType)
-/// and compile expression trees that directly access Slot0, Slot1, ... or property members
-/// without per-call reflection. This gives us near-zero-overhead slot extraction.
-///
-/// Supports both:
-/// - Slots&lt;T0,T1,...&gt; types (used with OpenXTablePortable)
-/// - User classes like Customer (used with OpenXTable&lt;TKey, TRecord&gt;)
+/// IData is now a global alias for System.Object — records/keys are stored as their
+/// actual CLR types (no Data&lt;T&gt; wrapper). Expression trees cast object → T directly
+/// and box T → object on output. This is called once per index at setup time, not per op.
 /// </summary>
 internal static class SlotAccessor
 {
     /// <summary>
-    /// Creates a delegate that extracts one or more slots from an IData record
-    /// and produces an IData value suitable as an index table key.
-    ///
-    /// For a single slot index: returns Data&lt;SlotType&gt; wrapping the slot value.
-    /// For a composite index: returns Data&lt;Slots&lt;T0,T1,...&gt;&gt; wrapping the slot values.
+    /// Creates a delegate that extracts one or more slots from an object record
+    /// and produces an object suitable as an index table key.
+    /// Single slot → boxes the slot value. Composite → boxes Slots&lt;T0,T1,...&gt;.
     /// </summary>
-    /// <param name="recordType">The concrete record type (e.g. Slots&lt;string, int, double&gt;).</param>
-    /// <param name="slotIndices">Which slots to extract (0-based).</param>
-    /// <returns>A compiled delegate: IData record → IData indexKey.</returns>
     internal static Func<IData, IData> BuildExtractor(Type recordType, int[] slotIndices)
     {
         if (slotIndices.Length == 0)
             throw new ArgumentException("Must specify at least one slot index.");
 
-        // The IData record is actually Data<RecordType>.
-        // We need: ((Data<RecordType>)input).Value.Slot{i}
-        var dataType = typeof(Data<>).MakeGenericType(recordType);
-        var valueField = dataType.GetField("Value")!;
-
-        var inputParam = Expression.Parameter(typeof(IData), "record");
-        var castToData = Expression.Convert(inputParam, dataType);
-        var valueAccess = Expression.Field(castToData, valueField);
+        // input: object = actual record instance (cast to recordType)
+        var inputParam  = Expression.Parameter(typeof(object), "record");
+        var valueAccess = Expression.Convert(inputParam, recordType);
 
         if (slotIndices.Length == 1)
         {
-            // Single slot → Data<SlotType>
             var slotMember = GetSlotMember(recordType, slotIndices[0]);
-            var slotType = GetMemberType(slotMember);
             var slotAccess = AccessMember(valueAccess, slotMember);
 
-            var resultDataType = typeof(Data<>).MakeGenericType(slotType);
-            var ctor = resultDataType.GetConstructor([slotType])!;
-            var newData = Expression.New(ctor, slotAccess);
-            var castResult = Expression.Convert(newData, typeof(IData));
-
+            // box slot value to object
+            var castResult = Expression.Convert(slotAccess, typeof(object));
             return Expression.Lambda<Func<IData, IData>>(castResult, inputParam).Compile();
         }
         else
         {
-            // Multiple slots → Data<Slots<T0, T1, ...>>
             var slotMembers = slotIndices.Select(i => GetSlotMember(recordType, i)).ToArray();
-            var slotTypes = slotMembers.Select(GetMemberType).ToArray();
-            var slotsType = SlotsBuilder.BuildType(slotTypes);
+            var slotTypes   = slotMembers.Select(GetMemberType).ToArray();
+            var slotsType   = SlotsBuilder.BuildType(slotTypes);
 
             var slotAccesses = slotMembers.Select(m => AccessMember(valueAccess, m)).ToArray();
-            var slotsCtor = slotsType.GetConstructors()
+            var slotsCtor    = slotsType.GetConstructors()
                 .First(c => c.GetParameters().Length == slotTypes.Length);
-            var newSlots = Expression.New(slotsCtor, slotAccesses);
-
-            var resultDataType = typeof(Data<>).MakeGenericType(slotsType);
-            var dataCtor = resultDataType.GetConstructor([slotsType])!;
-            var newData = Expression.New(dataCtor, newSlots);
-            var castResult = Expression.Convert(newData, typeof(IData));
-
+            var newSlots   = Expression.New(slotsCtor, slotAccesses);
+            var castResult = Expression.Convert(newSlots, typeof(object));
             return Expression.Lambda<Func<IData, IData>>(castResult, inputParam).Compile();
         }
     }
 
-    /// <summary>
-    /// Builds the DataType for the index table key, given the record DataType and slot indices.
-    /// Single slot → the slot's DataType.
-    /// Multiple slots → DataType.Slots(slot0Type, slot1Type, ...).
-    /// </summary>
     internal static DataType BuildIndexKeyDataType(DataType recordDataType, int[] slotIndices)
     {
         if (recordDataType.IsPrimitive)
         {
-            // Primitive record (single value, not slots) — slot 0 is the value itself
             if (slotIndices.Length == 1 && slotIndices[0] == 0)
                 return recordDataType;
             throw new ArgumentException("Primitive record type only supports slot index 0.");
@@ -105,11 +74,6 @@ internal static class SlotAccessor
         return DataType.Slots(types);
     }
 
-    /// <summary>
-    /// Builds the DataType for a non-unique index table key:
-    /// Slots(indexed_field_types..., primary_key_type).
-    /// The primary key is appended to ensure uniqueness in the W-tree.
-    /// </summary>
     internal static DataType BuildNonUniqueIndexKeyDataType(DataType recordDataType, int[] slotIndices, DataType primaryKeyDataType)
     {
         var fieldTypes = slotIndices.Select(i =>
@@ -122,49 +86,37 @@ internal static class SlotAccessor
     }
 
     /// <summary>
-    /// For a non-unique index, builds a composite key extractor that appends
-    /// the primary key to the indexed field values.
-    /// Result: Data&lt;Slots&lt;field0, field1, ..., primaryKey&gt;&gt;
+    /// Builds composite key extractor: appends primary key to indexed field values.
+    /// Input: (object record, object primaryKey) → object Slots&lt;fields…, pk&gt;
     /// </summary>
     internal static Func<IData, IData, IData> BuildNonUniqueKeyBuilder(
         Type recordType, int[] slotIndices, Type primaryKeyType)
     {
-        var dataRecordType = typeof(Data<>).MakeGenericType(recordType);
-        var dataKeyType = typeof(Data<>).MakeGenericType(primaryKeyType);
+        var recordParam = Expression.Parameter(typeof(object), "record");
+        var keyParam    = Expression.Parameter(typeof(object), "key");
 
-        var recordParam = Expression.Parameter(typeof(IData), "record");
-        var keyParam = Expression.Parameter(typeof(IData), "key");
+        // cast object → recordType / primaryKeyType
+        var recordValue = Expression.Convert(recordParam, recordType);
+        var keyValue    = Expression.Convert(keyParam, primaryKeyType);
 
-        var castRecord = Expression.Convert(recordParam, dataRecordType);
-        var recordValue = Expression.Field(castRecord, dataRecordType.GetField("Value")!);
-
-        var castKey = Expression.Convert(keyParam, dataKeyType);
-        var keyValue = Expression.Field(castKey, dataKeyType.GetField("Value")!);
-
-        // Get slot field types + primary key type
         Expression[] slotAccesses;
-
-        MemberInfo[] slotMembers;
-
         if (DataType.IsPrimitiveType(recordType))
         {
-            // Primitive record — the value itself is the only "slot"
-            slotMembers = [];
             slotAccesses = [recordValue];
         }
         else
         {
-            slotMembers = slotIndices.Select(i => GetSlotMember(recordType, i)).ToArray();
-            slotAccesses = slotMembers.Select(m => AccessMember(recordValue, m)).ToArray();
+            var slotMembers = slotIndices.Select(i => GetSlotMember(recordType, i)).ToArray();
+            slotAccesses    = slotMembers.Select(m => AccessMember(recordValue, m)).ToArray();
         }
 
         var slotTypes = slotAccesses.Select(a => a.Type).ToArray();
-        var allTypes = new Type[slotTypes.Length + 1];
+        var allTypes  = new Type[slotTypes.Length + 1];
         Array.Copy(slotTypes, allTypes, slotTypes.Length);
         allTypes[^1] = primaryKeyType;
 
-        var compositeType = SlotsBuilder.BuildType(allTypes);
-        var compositeCtor = compositeType.GetConstructors()
+        var compositeType  = SlotsBuilder.BuildType(allTypes);
+        var compositeCtor  = compositeType.GetConstructors()
             .First(c => c.GetParameters().Length == allTypes.Length);
 
         var allAccesses = new Expression[slotAccesses.Length + 1];
@@ -172,208 +124,154 @@ internal static class SlotAccessor
         allAccesses[^1] = keyValue;
 
         var newComposite = Expression.New(compositeCtor, allAccesses);
-
-        var resultDataType = typeof(Data<>).MakeGenericType(compositeType);
-        var dataCtor = resultDataType.GetConstructor([compositeType])!;
-        var newData = Expression.New(dataCtor, newComposite);
-        var castResult = Expression.Convert(newData, typeof(IData));
+        var castResult   = Expression.Convert(newComposite, typeof(object));
 
         return Expression.Lambda<Func<IData, IData, IData>>(castResult, recordParam, keyParam).Compile();
     }
 
     /// <summary>
-    /// For a non-unique index, extracts the field portion from a composite key
-    /// (strips the primary key suffix). Used for comparison during scans.
+    /// Extracts the field portion (strips primary key suffix) from a composite key object.
+    /// Single field → boxes field value. Multi-field → boxes sub-Slots.
     /// </summary>
     internal static Func<IData, IData> BuildFieldExtractorFromCompositeKey(
         Type compositeKeyType, int fieldCount)
     {
-        var dataType = typeof(Data<>).MakeGenericType(compositeKeyType);
-        var inputParam = Expression.Parameter(typeof(IData), "compositeKey");
-        var castToData = Expression.Convert(inputParam, dataType);
-        var valueAccess = Expression.Field(castToData, dataType.GetField("Value")!);
+        var inputParam  = Expression.Parameter(typeof(object), "compositeKey");
+        var valueAccess = Expression.Convert(inputParam, compositeKeyType);
 
         if (fieldCount == 1)
         {
-            // Single field → extract Slot0
             var slotMember = GetSlotMember(compositeKeyType, 0);
-            var slotType = GetMemberType(slotMember);
             var slotAccess = AccessMember(valueAccess, slotMember);
-            var resultType = typeof(Data<>).MakeGenericType(slotType);
-            var ctor = resultType.GetConstructor([slotType])!;
-            var newData = Expression.New(ctor, slotAccess);
-            var castResult = Expression.Convert(newData, typeof(IData));
+            var castResult = Expression.Convert(slotAccess, typeof(object));
             return Expression.Lambda<Func<IData, IData>>(castResult, inputParam).Compile();
         }
         else
         {
-            // Multiple fields → extract Slot0..Slot{fieldCount-1} into a new Slots
-            var members = Enumerable.Range(0, fieldCount)
+            var members    = Enumerable.Range(0, fieldCount)
                 .Select(i => GetSlotMember(compositeKeyType, i)).ToArray();
-            var types = members.Select(GetMemberType).ToArray();
-            var slotsType = SlotsBuilder.BuildType(types);
+            var types      = members.Select(GetMemberType).ToArray();
+            var slotsType  = SlotsBuilder.BuildType(types);
 
-            var accesses = members.Select(m => AccessMember(valueAccess, m)).ToArray();
-            var slotsCtor = slotsType.GetConstructors()
+            var accesses   = members.Select(m => AccessMember(valueAccess, m)).ToArray();
+            var slotsCtor  = slotsType.GetConstructors()
                 .First(c => c.GetParameters().Length == types.Length);
-            var newSlots = Expression.New(slotsCtor, accesses);
-
-            var resultType = typeof(Data<>).MakeGenericType(slotsType);
-            var dataCtor = resultType.GetConstructor([slotsType])!;
-            var newData = Expression.New(dataCtor, newSlots);
-            var castResult = Expression.Convert(newData, typeof(IData));
+            var newSlots   = Expression.New(slotsCtor, accesses);
+            var castResult = Expression.Convert(newSlots, typeof(object));
             return Expression.Lambda<Func<IData, IData>>(castResult, inputParam).Compile();
         }
     }
 
-    /// <summary>
-    /// Extracts the primary key (last slot) from a non-unique composite index key.
-    /// </summary>
+    /// <summary>Extracts the primary key (last slot) from a non-unique composite index key.</summary>
     internal static Func<IData, IData> BuildPrimaryKeyExtractorFromCompositeKey(
         Type compositeKeyType, int totalSlotCount)
     {
-        var dataType = typeof(Data<>).MakeGenericType(compositeKeyType);
-        var inputParam = Expression.Parameter(typeof(IData), "compositeKey");
-        var castToData = Expression.Convert(inputParam, dataType);
-        var valueAccess = Expression.Field(castToData, dataType.GetField("Value")!);
+        var inputParam  = Expression.Parameter(typeof(object), "compositeKey");
+        var valueAccess = Expression.Convert(inputParam, compositeKeyType);
 
-        // Primary key is the last slot
-        var pkMember = GetSlotMember(compositeKeyType, totalSlotCount - 1);
-        var pkType = GetMemberType(pkMember);
-        var pkAccess = AccessMember(valueAccess, pkMember);
-
-        var resultType = typeof(Data<>).MakeGenericType(pkType);
-        var ctor = resultType.GetConstructor([pkType])!;
-        var newData = Expression.New(ctor, pkAccess);
-        var castResult = Expression.Convert(newData, typeof(IData));
+        var pkMember   = GetSlotMember(compositeKeyType, totalSlotCount - 1);
+        var pkAccess   = AccessMember(valueAccess, pkMember);
+        var castResult = Expression.Convert(pkAccess, typeof(object));
         return Expression.Lambda<Func<IData, IData>>(castResult, inputParam).Compile();
     }
 
     /// <summary>
-    /// Builds a delegate that creates a "from" composite key for non-unique index scans.
-    /// Given a field value IData, appends a default primary key to form the composite.
+    /// Builds a "from" composite scan key: given a field value object, appends default(PK).
     /// </summary>
     internal static Func<IData, IData> BuildScanFromKeyBuilder(
         Type compositeKeyType, Type fieldType, Type primaryKeyType, int fieldCount)
     {
-        var inputParam = Expression.Parameter(typeof(IData), "fieldValue");
-
-        // We need to build: new Data<CompositeType>(new CompositeType(field0, ..., default(PK)))
+        var inputParam = Expression.Parameter(typeof(object), "fieldValue");
         var totalSlots = fieldCount + 1;
+        var ctorArgs   = new Expression[totalSlots];
 
-        Expression[] ctorArgs = new Expression[totalSlots];
-
+        // Cast input object → field type, then extract each needed slot
+        var castInput = Expression.Convert(inputParam, fieldType);
         if (fieldCount == 1)
         {
-            // fieldValue is Data<T> — extract the value
-            var dataFieldType = typeof(Data<>).MakeGenericType(fieldType);
-            var castInput = Expression.Convert(inputParam, dataFieldType);
-            var fieldValue = Expression.Field(castInput, dataFieldType.GetField("Value")!);
-            ctorArgs[0] = fieldValue;
+            ctorArgs[0] = castInput;
         }
         else
         {
-            // fieldValue is Data<Slots<T0,T1,...>> — extract each slot
-            var dataFieldType = typeof(Data<>).MakeGenericType(fieldType);
-            var castInput = Expression.Convert(inputParam, dataFieldType);
-            var slotsValue = Expression.Field(castInput, dataFieldType.GetField("Value")!);
             for (int i = 0; i < fieldCount; i++)
             {
                 var slotMember = GetSlotMember(fieldType, i);
-                ctorArgs[i] = AccessMember(slotsValue, slotMember);
+                ctorArgs[i] = AccessMember(castInput, slotMember);
             }
         }
 
-        // Append default primary key
         ctorArgs[^1] = Expression.Default(primaryKeyType);
 
         var compositeCtor = compositeKeyType.GetConstructors()
             .First(c => c.GetParameters().Length == totalSlots);
         var newComposite = Expression.New(compositeCtor, ctorArgs);
-
-        var resultDataType = typeof(Data<>).MakeGenericType(compositeKeyType);
-        var dataCtor = resultDataType.GetConstructor([compositeKeyType])!;
-        var newData = Expression.New(dataCtor, newComposite);
-        var castResult = Expression.Convert(newData, typeof(IData));
+        var castResult   = Expression.Convert(newComposite, typeof(object));
 
         return Expression.Lambda<Func<IData, IData>>(castResult, inputParam).Compile();
     }
 
     /// <summary>
-    /// Builds a compiled equality comparer for IData field values.
-    /// Used to detect when scanning past the target field in non-unique index scans.
-    /// For Slots types (which don't override Equals), performs structural comparison.
+    /// Compiles equality comparer for IData (= object) field values.
+    /// For Slots types performs structural field-by-field comparison.
     /// </summary>
     internal static Func<IData, IData, bool> BuildFieldEqualityComparer(Type fieldType)
     {
-        var dataType = typeof(Data<>).MakeGenericType(fieldType);
-        var aParam = Expression.Parameter(typeof(IData), "a");
-        var bParam = Expression.Parameter(typeof(IData), "b");
+        var aParam = Expression.Parameter(typeof(object), "a");
+        var bParam = Expression.Parameter(typeof(object), "b");
 
-        var castA = Expression.Convert(aParam, dataType);
-        var castB = Expression.Convert(bParam, dataType);
-        var valueA = Expression.Field(castA, dataType.GetField("Value")!);
-        var valueB = Expression.Field(castB, dataType.GetField("Value")!);
+        // Cast object → fieldType directly (no Data<T> intermediary)
+        var valueA = Expression.Convert(aParam, fieldType);
+        var valueB = Expression.Convert(bParam, fieldType);
 
         Expression equalsExpr;
 
         if (typeof(ISlots).IsAssignableFrom(fieldType))
         {
-            // Structural comparison: compare each slot field individually
-            var members = DataTypeUtils.GetPublicMembers(fieldType).ToArray();
+            var members  = DataTypeUtils.GetPublicMembers(fieldType).ToArray();
             Expression? combined = null;
             foreach (var member in members)
             {
-                var memberType = GetMemberType(member);
-                var accessA = AccessMember(valueA, member);
-                var accessB = AccessMember(valueB, member);
-
+                var memberType      = GetMemberType(member);
+                var accessA         = AccessMember(valueA, member);
+                var accessB         = AccessMember(valueB, member);
                 var slotComparerType = typeof(System.Collections.Generic.EqualityComparer<>).MakeGenericType(memberType);
-                var slotDefaultProp = slotComparerType.GetProperty("Default", BindingFlags.Static | BindingFlags.Public)!;
+                var slotDefaultProp  = slotComparerType.GetProperty("Default", BindingFlags.Static | BindingFlags.Public)!;
                 var slotEqualsMethod = slotComparerType.GetMethod("Equals", [memberType, memberType])!;
-                var slotComparer = Expression.Property(null, slotDefaultProp);
-                var slotEquals = Expression.Call(slotComparer, slotEqualsMethod, accessA, accessB);
-
+                var slotComparer     = Expression.Property(null, slotDefaultProp);
+                var slotEquals       = Expression.Call(slotComparer, slotEqualsMethod, accessA, accessB);
                 combined = combined == null ? slotEquals : Expression.AndAlso(combined, slotEquals);
             }
             equalsExpr = combined ?? Expression.Constant(true);
         }
         else
         {
-            // Use EqualityComparer<T>.Default.Equals(a, b)
-            var comparerType = typeof(System.Collections.Generic.EqualityComparer<>).MakeGenericType(fieldType);
-            var defaultProp = comparerType.GetProperty("Default", BindingFlags.Static | BindingFlags.Public)!;
-            var equalsMethod = comparerType.GetMethod("Equals", [fieldType, fieldType])!;
-
-            var comparer = Expression.Property(null, defaultProp);
-            equalsExpr = Expression.Call(comparer, equalsMethod, valueA, valueB);
+            var comparerType  = typeof(System.Collections.Generic.EqualityComparer<>).MakeGenericType(fieldType);
+            var defaultProp   = comparerType.GetProperty("Default", BindingFlags.Static | BindingFlags.Public)!;
+            var equalsMethod  = comparerType.GetMethod("Equals", [fieldType, fieldType])!;
+            var comparer      = Expression.Property(null, defaultProp);
+            equalsExpr        = Expression.Call(comparer, equalsMethod, valueA, valueB);
         }
 
         return Expression.Lambda<Func<IData, IData, bool>>(equalsExpr, aParam, bParam).Compile();
     }
 
-    /// <summary>The .NET type of slot <paramref name="slotIndex"/> in a composite key/record type.</summary>
     internal static Type GetSlotType(Type compositeKeyType, int slotIndex)
         => GetMemberType(GetSlotMember(compositeKeyType, slotIndex));
 
     /// <summary>
-    /// Builds a seek key for a composite-index <b>prefix</b> scan: given the leading prefix value
-    /// (Data&lt;prefixType&gt;), produces the composite key (prefix…, default, …, default) used as
-    /// the inclusive lower bound. Relies on the same "default == minimum" assumption as
-    /// <see cref="BuildScanFromKeyBuilder"/>; correct for non-negative trailing slots.
+    /// Builds a prefix seek key: given prefix value object, fills prefix slots and defaults the rest.
     /// </summary>
     internal static Func<IData, IData> BuildPrefixSeekKeyBuilder(Type compositeKeyType, Type prefixType, int prefixLen)
     {
-        var inputParam = Expression.Parameter(typeof(IData), "prefix");
+        var inputParam = Expression.Parameter(typeof(object), "prefix");
 
-        var ctor = compositeKeyType.GetConstructors()
+        var ctor   = compositeKeyType.GetConstructors()
             .OrderByDescending(c => c.GetParameters().Length).First();
-        var ps = ctor.GetParameters();
-        var args = new Expression[ps.Length];
+        var ps     = ctor.GetParameters();
+        var args   = new Expression[ps.Length];
 
-        var dataPrefixType = typeof(Data<>).MakeGenericType(prefixType);
-        var castInput = Expression.Convert(inputParam, dataPrefixType);
-        var prefixValue = Expression.Field(castInput, dataPrefixType.GetField("Value")!);
+        // Cast object → prefixType
+        var prefixValue = Expression.Convert(inputParam, prefixType);
 
         if (prefixLen == 1)
         {
@@ -388,21 +286,16 @@ internal static class SlotAccessor
             args[i] = Expression.Default(ps[i].ParameterType);
 
         var newComposite = Expression.New(ctor, args);
-        var resultDataType = typeof(Data<>).MakeGenericType(compositeKeyType);
-        var dataCtor = resultDataType.GetConstructor([compositeKeyType])!;
-        var newData = Expression.New(dataCtor, newComposite);
-        var castResult = Expression.Convert(newData, typeof(IData));
+        var castResult   = Expression.Convert(newComposite, typeof(object));
         return Expression.Lambda<Func<IData, IData>>(castResult, inputParam).Compile();
     }
 
     private static MemberInfo GetSlotMember(Type recordType, int index)
     {
-        // For Slots<T0,T1,...> types, use Slot{i} fields directly
         var slotField = recordType.GetField($"Slot{index}");
         if (slotField != null)
             return slotField;
 
-        // For user classes (Customer, etc.), get the i-th public read/write member
         var members = DataTypeUtils.GetPublicMembers(recordType).ToArray();
         if (index < 0 || index >= members.Length)
             throw new ArgumentException($"Slot index {index} is out of range for type '{recordType.Name}' which has {members.Length} members.");
@@ -413,7 +306,7 @@ internal static class SlotAccessor
     {
         return member switch
         {
-            FieldInfo fi => Expression.Field(instance, fi),
+            FieldInfo fi   => Expression.Field(instance, fi),
             PropertyInfo pi => Expression.Property(instance, pi),
             _ => throw new ArgumentException($"Unexpected member type: {member.MemberType}")
         };
@@ -423,7 +316,7 @@ internal static class SlotAccessor
     {
         return member switch
         {
-            FieldInfo fi => fi.FieldType,
+            FieldInfo fi   => fi.FieldType,
             PropertyInfo pi => pi.PropertyType,
             _ => throw new ArgumentException($"Unexpected member type: {member.MemberType}")
         };

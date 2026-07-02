@@ -284,6 +284,38 @@ public class BackwardCommand : IteratorCommand
     }
 }
 
+/// <summary>
+/// Primary-key range count in ONE round trip — the server evaluates <c>XTablePortable.ScanCount</c>
+/// (leaf-index arithmetic, O(leaves × log leafSize), no record access) directly and returns only the
+/// count. Without this a remote range count (e.g. <c>table.Count(KeyQuery.Between(a,b))</c> or any
+/// <c>ScanCount</c> call with no client-side filter) had no server-side fast path and fell back to
+/// enumerating + counting every matching row over the wire — for a multi-million-row range that made a
+/// single logical count "op" run for minutes.
+/// </summary>
+public class RangeCountCommand : ICommand
+{
+    public IData? From;
+    public bool HasFrom;
+    public bool FromExclusive;
+    public IData? To;
+    public bool HasTo;
+    public bool ToExclusive;
+    public long Result;
+
+    public RangeCountCommand(IData? from, bool hasFrom, bool fromExclusive, IData? to, bool hasTo, bool toExclusive)
+    {
+        From = from;
+        HasFrom = hasFrom;
+        FromExclusive = fromExclusive;
+        To = to;
+        HasTo = hasTo;
+        ToExclusive = toExclusive;
+    }
+
+    public int Code => CommandCode.RANGE_COUNT;
+    public bool IsSynchronous => true;
+}
+
 #endregion
 
 #region Descriptor

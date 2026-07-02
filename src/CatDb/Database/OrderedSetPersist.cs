@@ -141,8 +141,19 @@ public class OrderedSetPersist : IPersist<IOrderedSet<IData, IData>>
         return data;
     }
 
+    // Native slotted-page leaves store their already-serialized arena bytes verbatim (no per-row
+    // materialize + column recompress), slashing the checkpoint Store cost that caused the global stall.
+    private const byte VERSION_NATIVE = 50;
+
     public void Write(BinaryWriter writer, IOrderedSet<IData, IData> item)
     {
+        if (item is NativeOrderedSet nativeSet)
+        {
+            writer.Write(VERSION_NATIVE);
+            nativeSet.WriteRawTo(writer);
+            return;
+        }
+
         writer.Write(VERSION);
         if (_verticalCompression)
             WriteVertical(writer, item);
@@ -152,7 +163,17 @@ public class OrderedSetPersist : IPersist<IOrderedSet<IData, IData>>
 
     public IOrderedSet<IData, IData> Read(BinaryReader reader)
     {
-        if (reader.ReadByte() != VERSION)
+        var version = reader.ReadByte();
+        if (version == VERSION_NATIVE)
+        {
+            var set = _orderedSetFactory.Create();
+            if (set is not NativeOrderedSet nativeSet)
+                throw new Exception("Native ordered-set image requires UseNativeLeafStorage enabled.");
+            nativeSet.ReadRawFrom(reader);
+            return nativeSet;
+        }
+
+        if (version != VERSION)
             throw new Exception("Invalid DataContainerPersist version.");
 
         return _verticalCompression ? ReadVertical(reader) : ReadRaw(reader);

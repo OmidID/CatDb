@@ -1,13 +1,13 @@
 // Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
 // Licensed under the MIT License. See LICENSE in the project root for license information.
 
-﻿using CatDb.Data;
 using CatDb.General.Extensions;
 using CatDb.General.Threading;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Database;
 
+// IData = object. Keys are boxed long; records are byte[] stored directly as object.
 public class XStream : Stream
 {
     internal const int BLOCK_SIZE = 2 * 1024;
@@ -21,7 +21,7 @@ public class XStream : Stream
 
     internal XStream(ITable<IData, IData> table)
     {
-        Table       = table;
+        Table = table;
         SetCahchedLenght();
     }
 
@@ -29,11 +29,11 @@ public class XStream : Stream
     {
         foreach (var row in Table.Backward())
         {
-            var key = (Data<long>)row.Key;
-            var rec = (Data<byte[]>)row.Value;
+            var key = (long)row.Key;
+            var rec = (byte[])row.Value;
 
             _isModified   = false;
-            _cachedLength = key.Value + rec.Value.Length;
+            _cachedLength = key + rec.Length;
             break;
         }
     }
@@ -49,8 +49,8 @@ public class XStream : Stream
             {
                 var chunk = Math.Min(BLOCK_SIZE - (int)(_position % BLOCK_SIZE), count);
 
-                IData key    = new Data<long>(_position);
-                IData record = new Data<byte[]>(buffer.Middle(offset, chunk));
+                IData key    = (object)(long)_position;
+                IData record = buffer.Middle(offset, chunk);
                 Table[key] = record;
 
                 _position += chunk;
@@ -77,8 +77,8 @@ public class XStream : Stream
             if (result > count) result = count;
             if (result <= 0)    return 0;
 
-            var fromKey = new Data<long>(_position - _position % BLOCK_SIZE);
-            var toKey   = new Data<long>(_position + count - 1);
+            IData fromKey = (object)(long)(_position - _position % BLOCK_SIZE);
+            IData toKey   = (object)(long)(_position + count - 1);
 
             long currentKey   = -1;
             var  sourceOffset = 0;
@@ -87,8 +87,8 @@ public class XStream : Stream
 
             foreach (var kv in Table.Forward(fromKey, true, toKey, true))
             {
-                var key    = ((Data<long>)kv.Key).Value;
-                var source = ((Data<byte[]>)kv.Value).Value;
+                var key    = (long)kv.Key;
+                var source = (byte[])kv.Value;
 
                 if (currentKey < 0)
                 {
@@ -143,7 +143,7 @@ public class XStream : Stream
         finally { _syncRoot.Exit(); }
     }
 
-    public override void Flush() { } // no-op
+    public override void Flush() { }
 
     public override bool CanRead  => true;
     public override bool CanSeek  => true;
@@ -233,8 +233,8 @@ public class XStream : Stream
         _syncRoot.Enter();
         try
         {
-            var fromKey = new Data<long>(_position);
-            var toKey   = new Data<long>(_position + count - 1);
+            IData fromKey = (object)(long)_position;
+            IData toKey   = (object)(long)(_position + count - 1);
             Table.Delete(fromKey, toKey);
 
             _position   += count;

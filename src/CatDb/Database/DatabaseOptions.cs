@@ -124,6 +124,16 @@ public sealed class DatabaseOptions
     public long CacheSizeBytes { get; set; } = 2L * 1024 * 1024 * 1024;
 
     /// <summary>
+    /// Store leaf row data in <b>unmanaged (native) memory</b> via the SQL-Server/Postgres-style native
+    /// slotted page (<see cref="General.Collections.NativeOrderedSet"/>) instead of the managed
+    /// <see cref="General.Collections.OrderedSet{TKey,TValue}"/>. Default: <b>false</b> (the proven managed
+    /// path). When enabled, keys + records live off the GC heap — no boxed key, record object, or red-black
+    /// node per row — eliminating the multi-GB gen2 footprint (and the page-out freezes) at tens of millions
+    /// of rows. v1 is a process-wide switch applied from the first <see cref="WaterfallTree.WTree"/> built.
+    /// </summary>
+    public bool UseNativeLeafStorage { get; set; } = false;
+
+    /// <summary>
     /// Default options suitable for most workloads.
     /// </summary>
     public static DatabaseOptions Default => new();

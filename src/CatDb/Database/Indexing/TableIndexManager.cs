@@ -416,15 +416,16 @@ internal sealed partial class TableIndexManager : ITableIndexManager
         var ps = ctor.GetParameters();
         var args = new object?[ps.Length];
 
-        var leadingValue = leading.GetType().GetField("Value")!.GetValue(leading);
+        // IData = object: leading IS the field value (no Data<T> wrapper to unwrap)
         if (leadingCount == 1)
         {
-            args[0] = leadingValue;
+            args[0] = leading;
         }
         else
         {
+            // leading is Slots<T0,T1,...> — extract each slot via reflection
             for (var i = 0; i < leadingCount; i++)
-                args[i] = leadingValue!.GetType().GetField($"Slot{i}")!.GetValue(leadingValue);
+                args[i] = leading.GetType().GetField($"Slot{i}")!.GetValue(leading);
         }
 
         for (var i = leadingCount; i < ps.Length; i++)
@@ -436,7 +437,7 @@ internal sealed partial class TableIndexManager : ITableIndexManager
         }
 
         var composite = ctor.Invoke(args);
-        return (IData)Activator.CreateInstance(typeof(Data<>).MakeGenericType(compositeType), composite)!;
+        return composite;
     }
 
     // ── Write interception (called by XTablePortable) ────────────────────────
@@ -518,7 +519,7 @@ internal sealed partial class TableIndexManager : ITableIndexManager
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
-    private static readonly IData _dummyValue = new Data<byte>(0);
+    private static readonly IData _dummyValue = (object)(byte)0;
 
     private IndexEntry BuildEntry(IndexDefinition def)
     {

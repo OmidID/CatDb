@@ -42,6 +42,7 @@ public sealed class StorageEngineServer
         _tableHandlers[CommandCode.TRY_GET]                = TryGet;
         _tableHandlers[CommandCode.FORWARD]                = Forward;
         _tableHandlers[CommandCode.BACKWARD]               = Backward;
+        _tableHandlers[CommandCode.RANGE_COUNT]            = RangeCount;
         _tableHandlers[CommandCode.FIND_NEXT]              = FindNext;
         _tableHandlers[CommandCode.FIND_AFTER]             = FindAfter;
         _tableHandlers[CommandCode.FIND_PREV]              = FindPrev;
@@ -61,6 +62,7 @@ public sealed class StorageEngineServer
         _tableHandlers[CommandCode.INDEX_REBUILD]          = IndexRebuild;
         _tableHandlers[CommandCode.INDEX_LIST]             = IndexList;
         _tableHandlers[CommandCode.INDEX_QUERY]            = IndexQuery;
+        _tableHandlers[CommandCode.INDEX_COUNT_QUERY]      = IndexCountQuery;
 
         _engineHandlers = new Func<IStorageEngine, ICommand, ICommand>[CommandCode.MAX];
         _engineHandlers[CommandCode.STORAGE_ENGINE_COMMIT]          = StorageEngineCommit;
@@ -291,6 +293,21 @@ public sealed class StorageEngineServer
         return new BackwardCommand(cmd.PageCount, cmd.FromKey, cmd.ToKey, list);
     }
 
+    /// <summary>
+    /// Server-side fast range count — calls the SAME O(leaves × log leafSize) leaf-index arithmetic
+    /// <c>XTablePortable.ScanCount</c> uses for local callers, directly (the server already holds the
+    /// concrete table). No records are touched or serialized; only the resulting long crosses the wire.
+    /// </summary>
+    private ICommand RangeCount(XTablePortable table, ICommand command)
+    {
+        var cmd = (RangeCountCommand)command;
+        var count = table.ScanCount(cmd.From!, cmd.HasFrom, cmd.FromExclusive, cmd.To!, cmd.HasTo, cmd.ToExclusive);
+        return new RangeCountCommand(cmd.From, cmd.HasFrom, cmd.FromExclusive, cmd.To, cmd.HasTo, cmd.ToExclusive)
+        {
+            Result = count,
+        };
+    }
+
     private ICommand FindNext(XTablePortable table, ICommand command)
     {
         var cmd = (FindNextCommand)command;
@@ -401,15 +418,53 @@ public sealed class StorageEngineServer
     {
         var cmd = (IndexQueryCommand)command;
         var mgr = Manager(table);
+        var query = RebuildEngineQuery(mgr, cmd.FilterRoot, cmd.Sorts,
+            cmd.HasKeyFrom, cmd.KeyFromInclusive, cmd.KeyFromRaw,
+            cmd.HasKeyTo, cmd.KeyToInclusive, cmd.KeyToRaw,
+            cmd.Skip, cmd.HasTake, cmd.Take);
 
+        var results = mgr.ExecuteQuery(query).ToList();
+        return new IndexQueryCommand(cmd.FilterRoot, cmd.Sorts) { Results = results };
+    }
+
+    /// <summary>
+    /// Count-only counterpart of <see cref="IndexQuery"/>: runs the same server-side fast-count path used
+    /// locally (<see cref="CatDb.Database.Indexing.TableIndexManager.TryCountFast"/> — index-key-only
+    /// counting, no per-row heap fetch), falling back to full enumeration only when the plan needs
+    /// materialized rows. Returns a single long — matched rows are never serialized back over the wire.
+    /// (The count briefly, wrongly, appeared to come back as 0 for every query during development — that
+    /// was <see cref="XTableRemote.SetResult"/> missing a case for the new command code, so the client
+    /// never copied the server's answer back into its own command object; TryCountFast itself was correct
+    /// the whole time. See <c>RemoteCountFastPathTests</c>.)
+    /// </summary>
+    private ICommand IndexCountQuery(XTablePortable table, ICommand command)
+    {
+        var cmd = (IndexCountQueryCommand)command;
+        var mgr = Manager(table);
+        var query = RebuildEngineQuery(mgr, cmd.FilterRoot, cmd.Sorts,
+            cmd.HasKeyFrom, cmd.KeyFromInclusive, cmd.KeyFromRaw,
+            cmd.HasKeyTo, cmd.KeyToInclusive, cmd.KeyToRaw,
+            cmd.Skip, cmd.HasTake, cmd.Take);
+
+        var count = mgr.TryCountFast(query) ?? mgr.ExecuteQuery(query).LongCount();
+        return new IndexCountQueryCommand(cmd.FilterRoot, cmd.Sorts) { Result = count };
+    }
+
+    private static CatDb.Database.Querying.EngineQuery RebuildEngineQuery(
+        CatDb.Database.Indexing.TableIndexManager mgr,
+        WireNode? filterRoot, List<WireSort> sorts,
+        bool hasKeyFrom, bool keyFromInclusive, byte[]? keyFromRaw,
+        bool hasKeyTo, bool keyToInclusive, byte[]? keyToRaw,
+        int skip, bool hasTake, int take)
+    {
         var query = new CatDb.Database.Querying.EngineQuery
         {
-            Skip = cmd.Skip,
-            Take = cmd.HasTake ? cmd.Take : null,
-            Filter = RebuildFilterNode(cmd.FilterRoot, mgr),
+            Skip = skip,
+            Take = hasTake ? take : null,
+            Filter = RebuildFilterNode(filterRoot, mgr),
         };
 
-        foreach (var s in cmd.Sorts)
+        foreach (var s in sorts)
         {
             query.Sorts.Add(new CatDb.Database.Querying.SortField
             {
@@ -419,19 +474,18 @@ public sealed class StorageEngineServer
             });
         }
 
-        if (cmd.HasKeyFrom || cmd.HasKeyTo)
+        if (hasKeyFrom || hasKeyTo)
         {
             var keyType = mgr.GetKeyType();
-            query.HasKeyFrom = cmd.HasKeyFrom;
-            query.KeyFromInclusive = cmd.KeyFromInclusive;
-            query.KeyFrom = cmd.KeyFromRaw != null ? RemoteFieldCodec.Deserialize(cmd.KeyFromRaw, keyType) : null;
-            query.HasKeyTo = cmd.HasKeyTo;
-            query.KeyToInclusive = cmd.KeyToInclusive;
-            query.KeyTo = cmd.KeyToRaw != null ? RemoteFieldCodec.Deserialize(cmd.KeyToRaw, keyType) : null;
+            query.HasKeyFrom = hasKeyFrom;
+            query.KeyFromInclusive = keyFromInclusive;
+            query.KeyFrom = keyFromRaw != null ? RemoteFieldCodec.Deserialize(keyFromRaw, keyType) : null;
+            query.HasKeyTo = hasKeyTo;
+            query.KeyToInclusive = keyToInclusive;
+            query.KeyTo = keyToRaw != null ? RemoteFieldCodec.Deserialize(keyToRaw, keyType) : null;
         }
 
-        var results = mgr.ExecuteQuery(query).ToList();
-        return new IndexQueryCommand(cmd.FilterRoot, cmd.Sorts) { Results = results };
+        return query;
     }
 
     private static CatDb.Database.Querying.FilterNode? RebuildFilterNode(

@@ -25,23 +25,30 @@ public partial class WTree
         /// <summary>Persist a dirty node found during a commit Fall (called under the root lock).</summary>
         void Persist(Node node);
 
-        /// <summary>Finalise the commit (durably harden the heap), called once at the end of <see cref="Commit"/>.</summary>
-        void FinalizeCommit(IHeap heap);
+        /// <summary>Serialise the collected dirty nodes into the heap's write buffer. Runs UNDER the root lock
+        /// (node serialisation must see a quiescent tree — a node can be merged/split only under that lock).</summary>
+        void StorePending();
+
+        /// <summary>Durably harden the heap (WAL burst + fsync). Safe to run OUTSIDE the root lock —
+        /// <see cref="Storage.WalHeap.Commit"/> snapshots the pending writes under its own commit lock and never
+        /// blocks readers/writers — so the fsync no longer freezes the world during a checkpoint.</summary>
+        void HardenHeap(IHeap heap);
     }
 
-    /// <summary>Inline persistence — serialise+write each node and fsync now, under the root lock (default).</summary>
+    /// <summary>Inline persistence — serialise+write each node now (under the root lock); fsync separately.</summary>
     private sealed class SynchronousCommitStrategy : ICommitStrategy
     {
         public void BeginCommit() { }
         public void Persist(Node node) => node.Store();
-        public void FinalizeCommit(IHeap heap) => heap.Commit();
+        public void StorePending() { }                       // already stored inline in Persist
+        public void HardenHeap(IHeap heap) => heap.Commit();
         public void Dispose() { }
     }
 
     /// <summary>
-    /// Full durability on return, but the commit's dirty nodes are serialised+written in parallel across
-    /// dedicated threads (<see cref="ParallelExecutor"/>), shrinking the root-lock hold. <c>_pending</c> needs
-    /// no lock — Persist+FinalizeCommit run single-threaded inside the one commit holding the root lock.
+    /// Dirty nodes are serialised+written in parallel across dedicated threads (<see cref="ParallelExecutor"/>),
+    /// shrinking the root-lock hold. <c>_pending</c> needs no lock — Persist+StorePending run single-threaded
+    /// inside the one checkpoint holding the root lock; the fsync (HardenHeap) runs after the lock is released.
     /// </summary>
     private sealed class ParallelCheckpointCommitStrategy(int degreeOfParallelism) : ICommitStrategy
     {
@@ -51,15 +58,16 @@ public partial class WTree
         public void BeginCommit() { }
         public void Persist(Node node) => _pending.Add(node);
 
-        public void FinalizeCommit(IHeap heap)
+        public void StorePending()
         {
             if (_pending.Count > 0)
             {
                 _executor.ForEach(_pending, static n => n.Store());
                 _pending.Clear();
             }
-            heap.Commit();
         }
+
+        public void HardenHeap(IHeap heap) => heap.Commit();
 
         public void Dispose() { }
     }
@@ -98,7 +106,9 @@ public partial class WTree
 
         public void Persist(Node node) => _pending.Add(node);
 
-        public void FinalizeCommit(IHeap heap)
+        public void StorePending() { }   // deferred — the worker stores (under its own root-lock re-acquire)
+
+        public void HardenHeap(IHeap heap)
         {
             if (_pending.Count == 0)
             {

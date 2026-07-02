@@ -5,6 +5,13 @@
         <Optimize>true</Optimize>
         <AssemblyName>CatDb.StressTest</AssemblyName>
         <RootNamespace>CatDb.StressTest</RootNamespace>
+
+        <!-- Server GC: parallel per-core heaps for the DB's high allocation rate (~500 MB/s).
+             Concurrent (background) GC: collect gen2 ON BACKGROUND THREADS instead of a blocking
+             stop-the-world pause — the default Workstation GC blocked ALL threads for ~4 s per gen2
+             collection, which is the multi-second freeze where every service drops to 0 ops together. -->
+        <ServerGarbageCollection>true</ServerGarbageCollection>
+        <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     </PropertyGroup>
 
     <ItemGroup>

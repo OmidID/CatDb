@@ -46,11 +46,21 @@ public sealed class OperationLog : IDisposable
         get { using (_sync.Lock()) return _stream.Length; }
     }
 
+    // Reused per-thread payload scratch: appends run at op-batch rate (thousands/s) and big batches made
+    // the per-call MemoryStream a Large-Object-Heap allocation — LOH churn → fragmentation → the forced
+    // blocking LOH-compact GC (a periodic global freeze). The scratch grows to the largest batch and stays.
+    [ThreadStatic] private static MemoryStream? _tlPayloadMs;
+    [ThreadStatic] private static BinaryWriter? _tlPayloadBw;
+
     /// <summary>Append one operation-batch record (buffered, not fsynced until <see cref="Commit"/>).</summary>
     public void Append(long lsn, Action<BinaryWriter> writePayload)
     {
-        using var ms = new MemoryStream();
-        writePayload(new BinaryWriter(ms));
+        var ms = _tlPayloadMs ??= new MemoryStream(4096);
+        var bw = _tlPayloadBw ??= new BinaryWriter(ms);
+        ms.Position = 0;
+        ms.SetLength(0);
+        writePayload(bw);
+        bw.Flush();
         var payload = ms.GetBuffer();
         var len = (int)ms.Length;
 

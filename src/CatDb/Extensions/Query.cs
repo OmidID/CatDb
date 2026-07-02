@@ -95,7 +95,7 @@ internal sealed class Query<TKey, TRecord, TField>
         }, negate);
     }
 
-    /// <summary>Wraps a value as <c>Data&lt;type&gt;</c>, coercing (e.g. int literal → double field).</summary>
+    // Boxes value to object, coercing to the declared field type (e.g. int literal → double field).
     private static IData MakeData(Type type, object? value)
     {
         var target = Nullable.GetUnderlyingType(type) ?? type;
@@ -104,7 +104,7 @@ internal sealed class Query<TKey, TRecord, TField>
             try { value = System.Convert.ChangeType(value, target, System.Globalization.CultureInfo.InvariantCulture); }
             catch { /* leave as-is; comparer will surface a clear error */ }
         }
-        return (IData)Activator.CreateInstance(typeof(Data<>).MakeGenericType(type), value)!;
+        return value!;
     }
 
     private void DoGroup(Action<IGroupOpQuery<TKey, TRecord, TField>> build)
@@ -162,9 +162,9 @@ internal sealed class Query<TKey, TRecord, TField>
         => KeyFrom(from, fromInclusive).KeyTo(to, toInclusive);
 
     private Query<TKey, TRecord, TField> KeyFrom(TKey key, bool incl)
-    { _spec.KeyFrom = new Data<TKey>(key); _spec.HasKeyFrom = true; _spec.KeyFromInclusive = incl; return this; }
+    { _spec.KeyFrom = (object)key!; _spec.HasKeyFrom = true; _spec.KeyFromInclusive = incl; return this; }
     private Query<TKey, TRecord, TField> KeyTo(TKey key, bool incl)
-    { _spec.KeyTo = new Data<TKey>(key); _spec.HasKeyTo = true; _spec.KeyToInclusive = incl; return this; }
+    { _spec.KeyTo = (object)key!; _spec.HasKeyTo = true; _spec.KeyToInclusive = incl; return this; }
 
     public IOrderedQuery<TKey, TRecord> OrderBy<TOrder>(Expression<Func<TRecord, TOrder>> s) => Ordered(QueryMember.Name(s), typeof(TOrder), false);
     public IOrderedQuery<TKey, TRecord> OrderByDescending<TOrder>(Expression<Func<TRecord, TOrder>> s) => Ordered(QueryMember.Name(s), typeof(TOrder), true);
@@ -187,10 +187,12 @@ internal sealed class Query<TKey, TRecord, TField>
     {
         _spec.Filter = _filter.Build();
         // Count is order-independent and, when no residual record/key predicate is involved, needs only the
-        // index keys — not the records. Take that fast path; otherwise materialize and count.
-        if (_table.Indexes is CatDb.Database.Indexing.TableIndexManager m && m.TryCountFast(_spec) is { } n)
-            return n;
-        return this.LongCount();
+        // index keys — not the records. ITableIndexManager.Count takes the fastest available path for BOTH
+        // local (index-key-only, no heap fetch) and remote (single round trip, count only — no rows
+        // transferred) tables; previously the fast path only ever dispatched locally (an `is
+        // TableIndexManager` check that's never true for a remote table), so a remote Count() silently
+        // materialized and transferred every matching record over the wire just to discard it.
+        return _table.Indexes.Count(_spec);
     }
     public bool Exists() { using var e = GetEnumerator(); return e.MoveNext(); }
 

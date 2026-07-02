@@ -435,15 +435,15 @@ public class CrossIndexSortTests : IDisposable
         var (table, all) = SeedPrefix();
 
         var fwd = table.Indexes
-            .FindByIndexPrefix("CityAge", new CatDb.Data.Data<string>("la"), 1, backward: false)
-            .Select(kv => ((CatDb.Data.Data<int>)kv.Key).Value).ToList();
+            .FindByIndexPrefix("CityAge", "la", 1, backward: false)
+            .Select(kv => (int)kv.Key).ToList();
         var laByAge = all.Where(kv => kv.Value.City == "la")
             .OrderBy(kv => kv.Value.Age).ThenBy(kv => kv.Key).Select(kv => kv.Key).ToList();
         fwd.Should().Equal(laByAge);
 
         var bwd = table.Indexes
-            .FindByIndexPrefix("CityAge", new CatDb.Data.Data<string>("la"), 1, backward: true)
-            .Select(kv => ((CatDb.Data.Data<int>)kv.Key).Value).ToList();
+            .FindByIndexPrefix("CityAge", "la", 1, backward: true)
+            .Select(kv => (int)kv.Key).ToList();
         var laByAgeDesc = all.Where(kv => kv.Value.City == "la")
             .OrderByDescending(kv => kv.Value.Age).ThenByDescending(kv => kv.Key).Select(kv => kv.Key).ToList();
         bwd.Should().Equal(laByAgeDesc);

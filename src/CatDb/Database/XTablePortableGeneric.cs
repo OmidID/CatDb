@@ -117,6 +117,18 @@ public class XTablePortable<TKey, TRecord> : ITable<TKey, TRecord>
                                  ito,  query.HasTo,   query.ToExclusive);
         }
 
+        // Remote fast path: single round trip, server-side leaf-index arithmetic — no records cross the
+        // wire. `Table is XTablePortable` above only ever matches the LOCAL in-process table, so without
+        // this a remote range count fell straight to full enumeration (a multi-million-row range made a
+        // single "count" op take minutes — see AGENTS.md's HighSearch field report).
+        if (Table is IRemoteScanTable remote)
+        {
+            var ifrom = query.HasFrom ? KeyTransformer.To(query.From) : null;
+            var ito   = query.HasTo   ? KeyTransformer.To(query.To)   : null;
+            return remote.RangeCount(ifrom!, query.HasFrom, query.FromExclusive,
+                                      ito!,  query.HasTo,   query.ToExclusive);
+        }
+
         long count = 0;
         foreach (var _ in Scan(query)) count++;
         return count;
@@ -192,9 +204,15 @@ public class XTablePortable<TKey, TRecord> : ITable<TKey, TRecord>
         }
 
         // Remote fast path: push the exact row limit to the server (single round-trip, no over-fetch).
-        // Only the simple forward range with no upper bound goes here; upper-bound/exclusive cases
-        // with a filter already took the segment path above.
-        if (Table is IRemoteScanTable remote && !query.HasTo)
+        // Only the simple forward range with no upper bound AND NO FILTER goes here — the row-limit
+        // pushdown assumes 1 server row = 1 result, which breaks the moment a client-side predicate is
+        // attached (the server can't evaluate it, so `take` unfiltered rows can yield fewer, or the wrong,
+        // results after filtering). `Table is XTablePortable` above only ever matches the LOCAL in-process
+        // table, never XTableRemote, so a filtered query with no upper bound (e.g. AtLeast(x).WithFilter(f))
+        // fell all the way through to here and was returned completely unfiltered — every row from the
+        // server, filter silently skipped. Excluding `filter is not null` sends it to the Scan() fallback
+        // below instead, which does apply the filter correctly.
+        if (Table is IRemoteScanTable remote && !query.HasTo && filter is null)
         {
             // +1 covers the exclusive-from skip (the `from` key itself is dropped below).
             var want = take + (query.FromExclusive && query.HasFrom ? 1 : 0);
@@ -291,8 +309,10 @@ public class XTablePortable<TKey, TRecord> : ITable<TKey, TRecord>
         }
 
         // Remote fast path: push the row limit to the server (single round-trip). Simple backward
-        // range with no lower bound; the exclusive upper key is dropped below.
-        if (Table is IRemoteScanTable remote && !query.HasFrom)
+        // range with no lower bound AND NO FILTER — see the matching comment in ScanTake above for why
+        // `filter is null` is required (the row-limit pushdown can't account for client-side filtering,
+        // silently returning unfiltered rows for e.g. AtMost(x).WithFilter(f) otherwise).
+        if (Table is IRemoteScanTable remote && !query.HasFrom && filter is null)
         {
             var want = take + (query.ToExclusive && query.HasTo ? 1 : 0);
             var eqr = System.Collections.Generic.EqualityComparer<TKey>.Default;

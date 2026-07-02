@@ -57,6 +57,17 @@ public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
         public IOperationCollectionFactory OperationCollectionFactory;
         public IOrderedSetFactory OrderedSetFactory;
 
+        /// <summary>
+        /// Whether THIS locator's leaves store row data in unmanaged native memory
+        /// (<see cref="Database.DatabaseOptions.UseNativeLeafStorage"/>). Set by the owning <see cref="WTree"/>
+        /// right after creating/loading the locator — scoped per-tree (NOT a process-wide static), because
+        /// multiple <see cref="WTree"/> instances with different settings can be open in the same process
+        /// (e.g. multiple engines, or a test suite). A static here previously let one engine's default
+        /// (native OFF) options flip the flag for every other already-open native-storage engine mid-run,
+        /// corrupting reads with "Native ordered-set image requires UseNativeLeafStorage enabled".
+        /// </summary>
+        public bool UseNativeLeafStorage;
+
         public Locator(long id, string? name, int structureType, DataType keyDataType, DataType recordDataType, Type? keyType, Type? recordType)
         {
             if (keyDataType == null)

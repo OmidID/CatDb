@@ -9,7 +9,7 @@ using CatDb.Database;
 using Database = CatDb.Database;
 
 // ── Switch between local file and remote server ───────────────────────────────
-const bool   USE_SERVER  = true;          // true = connect to CatDb.Server
+const bool   USE_SERVER  = false;          // true = connect to CatDb.Server
 const string SERVER_USERNAME = "admin";
 const string SERVER_PASSWORD = "admin";
 const string SERVER_HOST = "localhost";
@@ -31,7 +31,13 @@ IStorageEngine OpenEngine(bool fresh = false)
 	        SERVER_PASSWORD);
     }
     if (fresh) File.Delete(FILE_NAME);
-    return Database.CatDb.FromFile(FILE_NAME);
+    return Database.CatDb.FromFile(
+        FILE_NAME,
+        new DatabaseOptions {
+            CommitMode = CatDb.Storage.CommitMode.TransactionLog,
+            IncrementalCheckpoint = true,
+            UseNativeLeafStorage = true   // native slotted page: row data in unmanaged memory, off the GC heap
+        });
 }
 #pragma warning restore CS0162
 

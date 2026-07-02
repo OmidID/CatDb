@@ -15,10 +15,10 @@ public class XTable<TKey, TRecord>(ITable<IData, IData> table) : ITable<TKey, TR
 
     public ITableIndexManager Indexes => Table.Indexes;
 
-    private static IData K(TKey key)       => new Data<TKey>(key);
-    private static IData R(TRecord record) => new Data<TRecord>(record);
-    private static TKey   FromK(IData d)   => ((Data<TKey>)d).Value;
-    private static TRecord FromR(IData d)  => ((Data<TRecord>)d).Value;
+    private static IData K(TKey key)       => key;
+    private static IData R(TRecord record) => record;
+    private static TKey    FromK(IData d)  => (TKey)d;
+    private static TRecord FromR(IData d)  => (TRecord)d;
 
     private static KeyValuePair<TKey, TRecord> Pair(KeyValuePair<IData, IData> kv) =>
         new(FromK(kv.Key), FromR(kv.Value));

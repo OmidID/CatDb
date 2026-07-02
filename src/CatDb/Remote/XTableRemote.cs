@@ -420,6 +420,18 @@ public class XTableRemote : ITable<IData, IData>, IRemoteScanTable, IDisposable
         }
     }
 
+    /// <summary>
+    /// Counts records in a primary-key range in one round trip, evaluated server-side via the same
+    /// O(leaves × log leafSize) leaf-index arithmetic <c>XTablePortable.ScanCount</c> uses locally —
+    /// no records cross the wire, just the resulting long.
+    /// </summary>
+    public long RangeCount(IData from, bool hasFrom, bool fromExclusive, IData to, bool hasTo, bool toExclusive)
+    {
+        var command = new RangeCountCommand(from, hasFrom, fromExclusive, to, hasTo, toExclusive);
+        Execute(command);
+        return command.Result;
+    }
+
     public KeyValuePair<IData, IData>? FirstRow
     {
         get
@@ -489,6 +501,9 @@ public class XTableRemote : ITable<IData, IData>, IRemoteScanTable, IDisposable
                 case CommandCode.BACKWARD:
                     ((BackwardCommand)command).List = ((BackwardCommand)resultOperation).List;
                     break;
+                case CommandCode.RANGE_COUNT:
+                    ((RangeCountCommand)command).Result = ((RangeCountCommand)resultOperation).Result;
+                    break;
                 case CommandCode.FIND_NEXT:
                     ((FindNextCommand)command).KeyValue = ((FindNextCommand)resultOperation).KeyValue;
                     break;
@@ -530,6 +545,9 @@ public class XTableRemote : ITable<IData, IData>, IRemoteScanTable, IDisposable
                     break;
                 case CommandCode.INDEX_QUERY:
                     ((IndexQueryCommand)command).Results = ((IndexQueryCommand)resultOperation).Results;
+                    break;
+                case CommandCode.INDEX_COUNT_QUERY:
+                    ((IndexCountQueryCommand)command).Result = ((IndexCountQueryCommand)resultOperation).Result;
                     break;
                 case CommandCode.STORAGE_ENGINE_COMMIT:
                     break;

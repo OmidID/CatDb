@@ -205,16 +205,19 @@ public abstract class BackgroundService
     public volatile string LastOp    = "–";
     public volatile bool   IsRunning = false;
 
-    // OpsPerSec stored as long bits to allow volatile; read via BitConverter
-    private long _opsPerSecBits = 0;
+    private long              _windowOps  = 0;
+    private readonly Stopwatch _window    = Stopwatch.StartNew();
+
+    // Live rate: ops accumulated in current window / elapsed. Naturally decays to 0 when idle
+    // because the window keeps growing while _windowOps stays 0. No stale "last burst" value.
     public double OpsPerSec
     {
-        get => BitConverter.Int64BitsToDouble(Volatile.Read(ref _opsPerSecBits));
-        private set => Volatile.Write(ref _opsPerSecBits, BitConverter.DoubleToInt64Bits(value));
+        get
+        {
+            var secs = _window.Elapsed.TotalSeconds;
+            return secs < 0.001 ? 0 : Volatile.Read(ref _windowOps) / secs;
+        }
     }
-
-    private long              _windowOps = 0;
-    private readonly Stopwatch _window   = Stopwatch.StartNew();
 
     private StressContext? _ctx;
 
@@ -227,11 +230,10 @@ public abstract class BackgroundService
         Interlocked.Increment(ref _windowOps);
         LastOp = op;
 
-        if (_window.Elapsed.TotalSeconds >= 1.0)
+        // Reset window every 2 s so the denominator never grows large enough to undercount a burst.
+        if (_window.Elapsed.TotalSeconds >= 2.0)
         {
-            var secs = _window.Elapsed.TotalSeconds;
-            var ops  = Interlocked.Exchange(ref _windowOps, 0);
-            OpsPerSec = ops / secs;
+            Interlocked.Exchange(ref _windowOps, 0);
             _window.Restart();
         }
     }

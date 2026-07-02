@@ -1,10 +1,12 @@
 // Copyright (c) 2024-2026 CatDb (https://github.com/OmidID/CatDb)
 // Licensed under the MIT License. See LICENSE in the project root for license information.
 
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using System.Reflection;
 
 namespace CatDb.Data;
+
+// IData = object. To: cast object → T, convert to string. From: parse string → T, box to object.
 public class DataToString : IToString<IData>
 {
     private readonly Func<IData, string> _to;
@@ -28,7 +30,7 @@ public class DataToString : IToString<IData>
         _delimiters = delimiters;
         _membersOrder = membersOrder;
 
-        _to = CreateToMethod().Compile();
+        _to   = CreateToMethod().Compile();
         _from = CreateFromMethod().Compile();
     }
 
@@ -44,48 +46,37 @@ public class DataToString : IToString<IData>
 
     public Expression<Func<IData, string>> CreateToMethod()
     {
-        var data = Expression.Parameter(typeof(IData), "data");
-        var d = Expression.Variable(typeof(Data<>).MakeGenericType(_type), "d");
+        var data = Expression.Parameter(typeof(object), "data");
+        var d    = Expression.Variable(_type, "d");
 
+        // Cast object → T, then serialize T's fields
         var list = new List<Expression>
         {
-            Expression.Assign(d, Expression.Convert(data, typeof(Data<>).MakeGenericType(_type))),
-            ValueToStringHelper.CreateToStringBody(d.Value(), _stringBuilderCapacity, _providers, _delimiters[0],
-                _membersOrder)
+            Expression.Assign(d, Expression.Convert(data, _type)),
+            ValueToStringHelper.CreateToStringBody(d, _stringBuilderCapacity, _providers, _delimiters[0], _membersOrder)
         };
 
-        var body = Expression.Block(new[] { d }, list);
-
-        return Expression.Lambda<Func<IData, string>>(body, data);
+        return Expression.Lambda<Func<IData, string>>(Expression.Block(new[] { d }, list), data);
     }
 
     public Expression<Func<string, IData>> CreateFromMethod()
     {
         var stringParam = Expression.Parameter(typeof(string), "item");
-        var list = new List<Expression>();
+        var data        = Expression.Variable(_type, "d");
+        var list        = new List<Expression>();
 
-        var data = Expression.Variable(typeof(Data<>).MakeGenericType(_type), "d");
-
-        list.Add(Expression.Assign(data, Expression.New(data.Type)));
-
+        // For complex types allocate a new instance; for primitives leave as default
         if (!DataType.IsPrimitiveType(_type))
-            list.Add(Expression.Assign(data.Value(), Expression.New(_type)));
+            list.Add(Expression.Assign(data, Expression.New(_type)));
 
-        list.Add(ValueToStringHelper.CreateParseBody(data.Value(), stringParam, _providers, _delimiters, _membersOrder));
-        list.Add(Expression.Label(Expression.Label(typeof(Data<>).MakeGenericType(_type)), data));
+        list.Add(ValueToStringHelper.CreateParseBody(data, stringParam, _providers, _delimiters, _membersOrder));
+        // Box T → object
+        list.Add(Expression.Convert(data, typeof(object)));
 
-        var body = Expression.Block(new[] { data }, list);
-
-        return Expression.Lambda<Func<string, IData>>(body, stringParam);
+        return Expression.Lambda<Func<string, IData>>(
+            Expression.Block(typeof(object), new[] { data }, list), stringParam);
     }
 
-    public string To(IData value1)
-    {
-        return _to(value1);
-    }
-
-    public IData From(string value2)
-    {
-        return _from(value2);
-    }
+    public string To(IData value1)  => _to(value1);
+    public IData From(string value2) => _from(value2);
 }

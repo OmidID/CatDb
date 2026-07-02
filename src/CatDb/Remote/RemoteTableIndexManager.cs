@@ -159,6 +159,40 @@ internal sealed class RemoteTableIndexManager : ITableIndexManager
         return cmd.Results ?? [];
     }
 
+    /// <summary>
+    /// Server-side fast count (index-key-only, no per-row heap fetch) for the same query shape
+    /// <see cref="ExecuteQuery"/> runs — a single round trip returning only a <c>long</c>, never
+    /// materializing/transferring matched rows. Without this, <c>Query(...).Count()</c> had no remote
+    /// fast-count dispatch and fell back to enumerating every matching row over the wire just to discard it.
+    /// </summary>
+    public long Count(CatDb.Database.Querying.EngineQuery query)
+    {
+        var filterRoot = ToWireNode(query.Filter);
+
+        var sorts = query.Sorts
+            .Select(s => new WireSort { Member = s.Member, Descending = s.Descending })
+            .ToList();
+
+        var keyType = _table.Descriptor.KeyType
+                      ?? CatDb.Data.DataTypeUtils.BuildType(_table.Descriptor.KeyDataType);
+
+        var cmd = new IndexCountQueryCommand(filterRoot, sorts)
+        {
+            HasKeyFrom = query.HasKeyFrom,
+            KeyFromInclusive = query.KeyFromInclusive,
+            KeyFromRaw = query.KeyFrom != null ? RemoteFieldCodec.Serialize(query.KeyFrom, keyType) : null,
+            HasKeyTo = query.HasKeyTo,
+            KeyToInclusive = query.KeyToInclusive,
+            KeyToRaw = query.KeyTo != null ? RemoteFieldCodec.Serialize(query.KeyTo, keyType) : null,
+            Skip = query.Skip,
+            HasTake = query.Take.HasValue,
+            Take = query.Take ?? 0,
+        };
+
+        _table.Execute(cmd);
+        return cmd.Result;
+    }
+
     private static WireNode? ToWireNode(CatDb.Database.Querying.FilterNode? node)
     {
         switch (node)

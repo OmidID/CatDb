@@ -115,6 +115,53 @@ public partial class CommandPersist
         return new ForwardCommand(pageCount, from, to, list);
     }
 
+    private void WriteRangeCountCommand(BinaryWriter writer, ICommand command)
+    {
+        var cmd = (RangeCountCommand)command;
+
+        writer.Write(cmd.HasFrom);
+        if (cmd.HasFrom)
+        {
+            writer.Write(cmd.FromExclusive);
+            KeyPersist.Write(writer, cmd.From);
+        }
+
+        writer.Write(cmd.HasTo);
+        if (cmd.HasTo)
+        {
+            writer.Write(cmd.ToExclusive);
+            KeyPersist.Write(writer, cmd.To);
+        }
+
+        writer.Write(cmd.Result);
+    }
+
+    private RangeCountCommand ReadRangeCountCommand(BinaryReader reader)
+    {
+        var hasFrom = reader.ReadBoolean();
+        var fromExclusive = false;
+        IData? from = null;
+        if (hasFrom)
+        {
+            fromExclusive = reader.ReadBoolean();
+            from = KeyPersist.Read(reader);
+        }
+
+        var hasTo = reader.ReadBoolean();
+        var toExclusive = false;
+        IData? to = null;
+        if (hasTo)
+        {
+            toExclusive = reader.ReadBoolean();
+            to = KeyPersist.Read(reader);
+        }
+
+        return new RangeCountCommand(from, hasFrom, fromExclusive, to, hasTo, toExclusive)
+        {
+            Result = reader.ReadInt64(),
+        };
+    }
+
     private void WriteBackwardCommand(BinaryWriter writer, ICommand command)
     {
         var cmd = (BackwardCommand)command;
@@ -1156,6 +1203,62 @@ public partial class CommandPersist
             Take = reader.ReadInt32(),
         };
         cmd.Results = ReadResults(reader);
+        return cmd;
+    }
+
+    private void WriteIndexCountQueryCommand(BinaryWriter writer, ICommand command)
+    {
+        var cmd = (IndexCountQueryCommand)command;
+
+        WriteWireNode(writer, cmd.FilterRoot);
+
+        writer.Write(cmd.Sorts.Count);
+        foreach (var s in cmd.Sorts)
+        {
+            writer.Write(s.Member != null);
+            if (s.Member != null) writer.Write(s.Member);
+            writer.Write(s.Descending);
+        }
+
+        writer.Write(cmd.HasKeyFrom);
+        writer.Write(cmd.KeyFromInclusive);
+        WriteBytes(writer, cmd.KeyFromRaw);
+        writer.Write(cmd.HasKeyTo);
+        writer.Write(cmd.KeyToInclusive);
+        WriteBytes(writer, cmd.KeyToRaw);
+
+        writer.Write(cmd.Skip);
+        writer.Write(cmd.HasTake);
+        writer.Write(cmd.Take);
+
+        writer.Write(cmd.Result);
+    }
+
+    private IndexCountQueryCommand ReadIndexCountQueryCommand(BinaryReader reader)
+    {
+        var filterRoot = ReadWireNode(reader);
+
+        var sortCount = reader.ReadInt32();
+        var sorts = new List<WireSort>(sortCount);
+        for (var i = 0; i < sortCount; i++)
+        {
+            var member = reader.ReadBoolean() ? reader.ReadString() : null;
+            sorts.Add(new WireSort { Member = member, Descending = reader.ReadBoolean() });
+        }
+
+        var cmd = new IndexCountQueryCommand(filterRoot, sorts)
+        {
+            HasKeyFrom = reader.ReadBoolean(),
+            KeyFromInclusive = reader.ReadBoolean(),
+            KeyFromRaw = ReadBytes(reader),
+            HasKeyTo = reader.ReadBoolean(),
+            KeyToInclusive = reader.ReadBoolean(),
+            KeyToRaw = ReadBytes(reader),
+            Skip = reader.ReadInt32(),
+            HasTake = reader.ReadBoolean(),
+            Take = reader.ReadInt32(),
+            Result = reader.ReadInt64(),
+        };
         return cmd;
     }
 

@@ -26,6 +26,15 @@ internal interface IRemoteScanTable
 {
     IEnumerable<KeyValuePair<IData, IData>> ForwardTake(IData from, bool hasFrom, IData to, bool hasTo, int maxRows);
     IEnumerable<KeyValuePair<IData, IData>> BackwardTake(IData to, bool hasTo, IData from, bool hasFrom, int maxRows);
+
+    /// <summary>
+    /// Counts records in a primary-key range in a SINGLE round trip, evaluated server-side via the same
+    /// O(leaves × log leafSize) leaf-index arithmetic <c>XTablePortable.ScanCount</c> uses locally (no
+    /// record access, ~1000x faster than materializing). Without this a remote range count had no
+    /// server-side fast path and fell back to enumerating + counting every matching row over the wire —
+    /// for a multi-million-row range that is a single logical "op" that can run for minutes.
+    /// </summary>
+    long RangeCount(IData from, bool hasFrom, bool fromExclusive, IData to, bool hasTo, bool toExclusive);
 }
 
 public interface ITable<TKey, TRecord> : ITable, IEnumerable<KeyValuePair<TKey, TRecord>>

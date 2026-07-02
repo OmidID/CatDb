@@ -8,7 +8,8 @@ namespace CatDb.Tests.Data;
 
 /// <summary>
 /// Tests for DataPersist — the Expression-tree-based binary serializer/deserializer for IData.
-/// Round-trip tests for all supported primitive types and a complex class.
+/// IData is a global alias for <see cref="object"/> (no wrapper type) — values are written/read
+/// directly, boxed. Round-trip tests for all supported primitive types and a complex class.
 /// </summary>
 public class DataPersistTests
 {
@@ -17,11 +18,10 @@ public class DataPersistTests
         var persist = new DataPersist(typeof(T));
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
-        persist.Write(writer, new CatDb.Data.Data<T>(value));
+        persist.Write(writer, value);
         ms.Position = 0;
         using var reader = new BinaryReader(ms);
-        var result = persist.Read(reader);
-        return ((CatDb.Data.Data<T>)result).Value;
+        return (T)persist.Read(reader);
     }
 
     [Fact]
@@ -96,10 +96,10 @@ public class DataPersistTests
         var persist = new DataPersist(typeof(Tick));
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
-        persist.Write(writer, new CatDb.Data.Data<Tick>(tick));
+        persist.Write(writer, tick);
         ms.Position = 0;
         using var reader = new BinaryReader(ms);
-        var result = ((CatDb.Data.Data<Tick>)persist.Read(reader)).Value;
+        var result = (Tick)persist.Read(reader);
 
         result.Symbol.Should().Be(tick.Symbol);
         result.Timestamp.Should().Be(tick.Timestamp);
@@ -117,10 +117,10 @@ public class DataPersistTests
         var persist = new DataPersist(typeof(TestKey));
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
-        persist.Write(writer, new CatDb.Data.Data<TestKey>(key));
+        persist.Write(writer, key);
         ms.Position = 0;
         using var reader = new BinaryReader(ms);
-        var result = ((CatDb.Data.Data<TestKey>)persist.Read(reader)).Value;
+        var result = (TestKey)persist.Read(reader);
         result.Id.Should().Be(key.Id);
         result.Name.Should().Be(key.Name);
     }
@@ -133,11 +133,11 @@ public class DataPersistTests
         using var writer = new BinaryWriter(ms);
 
         for (var i = 0; i < 100; i++)
-            persist.Write(writer, new CatDb.Data.Data<int>(i));
+            persist.Write(writer, i);
 
         ms.Position = 0;
         using var reader = new BinaryReader(ms);
         for (var i = 0; i < 100; i++)
-            ((CatDb.Data.Data<int>)persist.Read(reader)).Value.Should().Be(i);
+            ((int)persist.Read(reader)).Should().Be(i);
     }
 }

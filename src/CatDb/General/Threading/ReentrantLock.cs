@@ -4,26 +4,24 @@
 namespace CatDb.General.Threading;
 
 /// <summary>
-/// A reentrant mutual-exclusion lock built on <see cref="Monitor"/>.
-/// If the calling thread already holds the lock, <see cref="Enter"/> increments
-/// the recursion depth and returns immediately — preventing self-deadlock.
-/// Every <see cref="Enter"/> must be paired with exactly one <see cref="Exit"/>.
+/// A reentrant mutual-exclusion lock built on <see cref="System.Threading.Lock"/> (.NET 9+).
+/// If the calling thread already holds the lock, <see cref="Enter"/> increments the recursion depth and
+/// returns immediately — preventing self-deadlock. Every <see cref="Enter"/> must be paired with one <see cref="Exit"/>.
+/// <para>
+/// A hand-rolled flag/CAS spinlock was tried (to shave a few ns on uncontended acquire) but REVERTED: it
+/// produced an intermittent "No such handle" — a dangling node reference from a tree mutation racing a
+/// concurrent one, i.e. a mutual-exclusion gap under the WTree's reentrant + hand-over-hand locking. The
+/// runtime's <see cref="System.Threading.Lock"/> has correct fairness/barriers and (unlike Monitor) keeps
+/// its state in dedicated fields, so it does not inflate per-object sync-block entries — flat under load.
+/// </para>
 /// </summary>
 public sealed class ReentrantLock
 {
-    // System.Threading.Lock (.NET 9+) keeps its state in dedicated fields — it does NOT use the object
-    // header's sync block like Monitor does. Under the WTree's heavy lock contention, Monitor inflates a
-    // sync-block entry per contended object and those entries accumulate for the process lifetime,
-    // slowing every Enter/Exit globally as the table grows — the throughput decay that only a restart
-    // cleared. Lock has no such table, so performance stays flat.
     private readonly System.Threading.Lock _sync = new();
     private Thread? _owner;
     private int _depth;
 
-    /// <summary>
-    /// Acquires the lock.  If the calling thread already holds it the call
-    /// is a no-op (depth counter is incremented).
-    /// </summary>
+    /// <summary>Acquires the lock. If the calling thread already holds it, increments the depth counter.</summary>
     public void Enter()
     {
         var current = Thread.CurrentThread;
@@ -41,10 +39,7 @@ public sealed class ReentrantLock
         _depth = 1;
     }
 
-    /// <summary>
-    /// Releases one level of recursion.  When the outermost Exit is called
-    /// the lock is fully released and waiting threads may proceed.
-    /// </summary>
+    /// <summary>Releases one level of recursion; the outermost Exit fully releases the lock.</summary>
     public void Exit()
     {
         if (--_depth == 0)
@@ -59,8 +54,7 @@ public sealed class ReentrantLock
 
     /// <summary>
     /// Acquires the lock and returns a scope that releases it on Dispose.
-    /// Enables <c>using (x.Lock()) { ... }</c> as a drop-in replacement for
-    /// <c>lock (x) { ... }</c> — including early <c>return</c> inside the block.
+    /// <c>using (x.Lock()) { ... }</c> — drop-in replacement for <c>lock (x) { ... }</c>.
     /// </summary>
     public Scope Lock()
     {

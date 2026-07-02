@@ -55,6 +55,8 @@ public static class CommandCode
     public const int INDEX_LIST = 38;
     public const int INDEX_FIND_PREFIX = 39;
     public const int INDEX_QUERY = 51;
+    public const int INDEX_COUNT_QUERY = 52;
+    public const int RANGE_COUNT = 53;
 
     //Heap
     public const int HEAP_OBTAIN_NEW_HANDLE = 40;

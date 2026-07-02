@@ -85,6 +85,11 @@ public partial class WTree
                 // then unload this node from the cache.
                 if (node.IsModified)
                     node.Store();
+                // The on-disk image is written (inline Store above) — queue the leaf's native arenas for
+                // deferred reclaim. Without this only the finalizer frees them and native memory grows
+                // unbounded under eviction churn. NOT safe at the WalkAction.Unload site below: a deferred
+                // checkpoint store (strategy._pending) may still need the arenas there.
+                node.ReleaseNativeData();
                 Node = null;
                 Tree.Exclude(NodeHandle);
 #if PERFORMANCE_CHECK
