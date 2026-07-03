@@ -21,12 +21,13 @@ public class IncrementalCheckpointCrashTests
 {
     private static string CrashWriterDll()
     {
-        // Test bin: .../CatDb.Tests/bin/<config>/<tfm>/ → CrashWriter bin: .../CatDb.CrashWriter/bin/<config>/<tfm>/
+        // Test bin: .../tests/CatDb.Tests/bin/<config>/<tfm>/
+        //   → CrashWriter bin: .../examples/CatDb.CrashWriter/bin/<config>/<tfm>/
         var baseDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var tfm = Path.GetFileName(baseDir);                                   // net10.0
         var config = Path.GetFileName(Path.GetDirectoryName(baseDir)!);        // Debug / Release
-        var src = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..")); // src/
-        var dll = Path.Combine(src, "CatDb.CrashWriter", "bin", config, tfm, "CatDb.CrashWriter.dll");
+        var repoRoot = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..")); // repo root
+        var dll = Path.Combine(repoRoot, "examples", "CatDb.CrashWriter", "bin", config, tfm, "CatDb.CrashWriter.dll");
         File.Exists(dll).Should().BeTrue($"crash-writer must be built at {dll}");
         return dll;
     }

@@ -30,7 +30,7 @@ Offset paging must scan skipped rows. Prefer keyset paging with `PageAfter(query
 Use a duration when running from automation:
 
 ```bash
-cd src/CatDb.StressTest
+cd examples/CatDb.StressTest
 dotnet run -c Release -- --duration 120
 ```
 
@@ -39,8 +39,7 @@ The stress test writes `stress_errors.log` and `catdb_stress.db` in its working 
 ## Useful local commands
 
 ```bash
-cd src
 dotnet build --no-incremental
 dotnet test --no-build
-dotnet run --project CatDb.GettingStarted
+dotnet run --project examples/CatDb.GettingStarted
 ```

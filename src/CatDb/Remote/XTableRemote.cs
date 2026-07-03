@@ -51,7 +51,10 @@ public class XTableRemote : ITable<IData, IData>, IRemoteScanTable, IDisposable
             descriptor.KeyEqualityComparer = keyData.EqualityComparer;
         }
 
-        _commands = new CommandCollection(100 * 1024);
+        // Write-batch flush threshold — see StorageEngineClient.WriteBatchCapacity for the
+        // latency/throughput tradeoff (the old hardcoded 100×1024 stalled concurrent readers
+        // behind ~0.9 s server-side batch stretches).
+        _commands = new CommandCollection(storageEngine.WriteBatchCapacity);
     }
 
     ~XTableRemote()
@@ -118,18 +121,52 @@ public class XTableRemote : ITable<IData, IData>, IRemoteScanTable, IDisposable
     // May be called from the finalizer without a lock (single-threaded GC context).
     private void FlushCoreUnsafe()
     {
-        if (_commands.Count == 0)
-        {
-            UpdateDescriptor();
-            return;
-        }
+        // Descriptor sync only when the local descriptor actually changed (or on the periodic
+        // staleness refresh) — NOT unconditionally. UpdateDescriptor costs TWO synchronous round
+        // trips (SET + GET); doing it before every flush meant every read/query op paid THREE round
+        // trips through the server, which measured as ~24 ms per logical op under write load — the
+        // entire reason index/sort/search services crawled at 50-100 ops/s while batched writes flew.
+        MaybeUpdateDescriptor();
 
-        UpdateDescriptor();
+        if (_commands.Count == 0)
+            return;
 
         var result = _storageEngine.Execute(_indexDescriptor, _commands);
         SetResult(_commands, result);
 
         _commands.Clear();
+    }
+
+    // ── Descriptor sync bookkeeping ──────────────────────────────────────────
+    private byte[]? _lastSyncedTag;
+    private bool    _descriptorEverSynced;
+    private long    _lastDescriptorSyncTicks;
+    private const long DescriptorRefreshMs = 2_000;
+
+    /// <summary>Runs the two-round-trip descriptor SET+GET only when needed: first use, a local
+    /// Tag change (e.g. index metadata written by this client), or a periodic staleness refresh
+    /// (another client may have changed the server-side descriptor; same eventual-consistency
+    /// contract the old always-sync behaviour effectively had under concurrent clients).</summary>
+    private void MaybeUpdateDescriptor()
+    {
+        var now = System.Environment.TickCount64;
+        var tagChanged = !TagsEqual(_indexDescriptor.Tag, _lastSyncedTag);
+
+        if (_descriptorEverSynced && !tagChanged && now - _lastDescriptorSyncTicks < DescriptorRefreshMs)
+            return;
+
+        UpdateDescriptor();
+
+        _descriptorEverSynced = true;
+        _lastSyncedTag = _indexDescriptor.Tag;
+        _lastDescriptorSyncTicks = now;
+    }
+
+    private static bool TagsEqual(byte[]? a, byte[]? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a is null || b is null) return false;
+        return a.AsSpan().SequenceEqual(b);
     }
 
     #region IIndex<IKey, IRecord>

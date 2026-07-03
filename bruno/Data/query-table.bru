@@ -1,0 +1,41 @@
+meta {
+  name: Query Table (filter/order/count)
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/api/v1/data/{{databaseName}}/{{tableName}}
+  body: none
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}
+
+params:query {
+  City: eq:nyc
+  Age: gte:30
+  order: Age:desc
+  limit: 20
+  count: true
+}
+
+docs {
+  Same GET endpoint as Browse Table, but with query params → runs the engine's
+  query planner (index seeks, AND/OR, ORDER BY) instead of a plain key scan.
+
+  Grammar:
+    Field=value            equality (bare value)
+    Field=eq|gt|gte|lt|lte:v
+    Field=between:lo:hi
+    Field=prefix:p
+    repeat a field          ANDed
+    or=(A:eq:1,B:eq:2)      one OR group, ANDed with the rest
+    order=Field:desc,-Other,$key
+    limit / offset (take / skip)
+    count=true              fast total count
+    fromKey / toKey         primary-key range, composes with filters
+}

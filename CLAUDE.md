@@ -20,9 +20,9 @@ Only `ReentrantLock.cs` may use `Monitor` internally.
 
 Diagnosis notes for next time:
 - Build flag `PERFORMANCE_CHECK` must be ON (`EnablePerformanceCheck=true` in
-  [src/Directory.Build.props](src/Directory.Build.props)).
+  [Directory.Build.props](Directory.Build.props)).
 - `PerformanceCheck` flushes a fresh window every 20s and CLEARS it — each `[PERFORMANCE_CHECK]`
   block is an independent ~20s window, not cumulative. Diagnose decay by diffing an EARLY window
   against a LATE window; the metric whose avg/max climbs is the regression source.
 - Headless stress run needs a pty or `Console.Clear` throws:
-  `cd src/CatDb.StressTest && sleep 200 | script -q /dev/null dotnet run -c Release --no-build -- --duration 150`
+  `cd examples/CatDb.StressTest && sleep 200 | script -q /dev/null dotnet run -c Release --no-build -- --duration 150`

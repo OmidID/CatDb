@@ -35,6 +35,16 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
     /// Mutable so callers can adjust it after connect; defaults are sensible for mixed workloads.
     /// </summary>
     public RemoteScanOptions ScanOptions { get; set; } = new();
+
+    /// <summary>
+    /// Client-side write-batch flush threshold per table (commands buffered before one packet ships).
+    /// Latency/throughput knob: bigger batches amortize round trips (higher pure-write throughput) but
+    /// each packet is a longer uninterruptible processing stretch on the server, behind which concurrent
+    /// readers of the same table queue. 8k ≈ tens-of-ms server stretches with near-peak write throughput;
+    /// drop toward 1-2k for latency-sensitive mixed workloads, raise for pure bulk load.
+    /// (The old hardcoded 100×1024 made one packet take ~0.9 s server-side — reads stalled behind it.)
+    /// </summary>
+    public int WriteBatchCapacity { get; set; } = 8 * 1024;
     private readonly ConcurrentDictionary<string, XTableRemote> _indexes = new();
     private readonly Dictionary<TransformerCacheKey, object> _transformerCache = new();
     private readonly CatDb.General.Threading.ReentrantLock _transformerCacheLock = new();
@@ -113,13 +123,29 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
     /// </summary>
     public CommandCollection Execute(IDescriptor descriptor, CommandCollection commands)
     {
+#if PERFORMANCE_CHECK
+        var perfStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
         var ms = new MemoryStream();
         new Message(descriptor, commands, _databaseName, _userName, _password).Serialize(new BinaryWriter(ms));
         ms.Position = 0;
+#if PERFORMANCE_CHECK
+        var serStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        General.Diagnostics.PerformanceCheck.ObserveDurationTicks("remote.client.serialize", perfStart);
+#endif
 
         var responseMs = _connection.SendSync(new Packet(ms));
 
+#if PERFORMANCE_CHECK
+        General.Diagnostics.PerformanceCheck.ObserveDurationTicks("remote.client.wire", serStart);
+#endif
         var message = Message.Deserialize(new BinaryReader(responseMs), (_, _, _, _) => descriptor);
+#if PERFORMANCE_CHECK
+        // Round-trip cost tagged by the LAST (synchronous) command in the batch — the op the caller waits on.
+        General.Diagnostics.PerformanceCheck.ObserveDurationTicks(
+            $"remote.client.rt.code{commands[commands.Count - 1].Code}", perfStart);
+        General.Diagnostics.PerformanceCheck.Observe("remote.client.batch.count", commands.Count);
+#endif
         return message.Commands;
     }
 

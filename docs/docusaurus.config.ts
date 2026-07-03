@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 function readVersionPrefix(): string {
-  const propsPath = path.resolve(__dirname, '../src/Directory.Build.props');
+  const propsPath = path.resolve(__dirname, '../Directory.Build.props');
   const props = fs.readFileSync(propsPath, 'utf8');
   const match = props.match(/<VersionPrefix>([^<]+)<\/VersionPrefix>/);
 

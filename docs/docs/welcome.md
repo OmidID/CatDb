@@ -37,8 +37,9 @@ You can use CatDb in three shapes:
 | --- | --- |
 | `src/CatDb` | Core library: storage engine, WTree, data layer, heap, remote TCP support. |
 | `src/CatDb.Server` | ASP.NET Core server, health checks, authentication, admin/data HTTP APIs. |
-| `src/CatDb.Tests` | Unit tests for data, storage, persistence, CRUD, navigation, and concurrency. |
-| `src/CatDb.GettingStarted` | Runnable examples for inserts, reads, range queries, and paging. |
-| `src/CatDb.StressTest` | Long-running concurrent stress harness. |
+| `tests/CatDb.Tests` | Unit tests for data, storage, persistence, CRUD, navigation, and concurrency. |
+| `examples/CatDb.GettingStarted` | Runnable examples for inserts, reads, range queries, and paging. |
+| `examples/CatDb.StressTest` | Long-running concurrent stress harness. |
+| `examples/CatDb.CrashWriter` | Out-of-process crash-recovery test harness. |
 
 Start with [Quick start](./quick-start), then read [Database Engine](./database-engine) when you want to understand how the WTree and heap fit together.

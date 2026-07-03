@@ -5,7 +5,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\CatDb\CatDb.csproj" />
+	  <ProjectReference Include="..\..\src\CatDb\CatDb.csproj" />
 	</ItemGroup>
 
 </Project>

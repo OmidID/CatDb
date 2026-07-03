@@ -1,0 +1,41 @@
+meta {
+  name: Query Table (JSON filter tree)
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/data/{{databaseName}}/{{tableName}}/query
+  body: json
+  auth: basic
+}
+
+auth:basic {
+  username: {{adminUser}}
+  password: {{adminPassword}}
+}
+
+body:json {
+  {
+    "filter": {
+      "and": [
+        { "field": "City", "op": "eq", "value": "nyc" },
+        { "or": [
+            { "field": "Age", "op": "lt", "value": 10 },
+            { "field": "Age", "op": "gt", "value": 90 }
+        ] }
+      ]
+    },
+    "order": [ { "field": "Age", "desc": true }, { "field": "$key" } ],
+    "skip": 0,
+    "take": 20,
+    "count": true
+  }
+}
+
+docs {
+  Unlimited-depth AND/OR/NOT filter tree — the "chain query" escape hatch when
+  the flat query-string grammar (see Query Table) is too shallow. Node is a
+  predicate ({field, op, value[, value2]}) or a combinator ({and|or:[...]} /
+  {not:...}). Same response shape as the GET query form.
+}

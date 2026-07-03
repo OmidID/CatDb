@@ -15,8 +15,15 @@
     <PackageReference Include="FluentAssertions" />
   </ItemGroup>
 
+  <!-- Framework reference so tests can drive the ASP.NET server's services directly
+       (IQueryCollection for the query-string parser, ILogger for the host services). -->
   <ItemGroup>
-    <ProjectReference Include="..\CatDb\CatDb.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CatDb\CatDb.csproj" />
+    <ProjectReference Include="..\..\src\CatDb.Server\CatDb.Server.csproj" />
   </ItemGroup>
 
 </Project>

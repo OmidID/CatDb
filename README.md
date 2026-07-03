@@ -75,16 +75,15 @@ var londonCount = users.Query(x => x.City).Equals("London").Count();
 ## Build and Validation
 
 ```bash
-cd src
 dotnet build --no-incremental
 dotnet test --no-build
-dotnet run --project CatDb.GettingStarted
+dotnet run --project examples/CatDb.GettingStarted
 ```
 
 Optional stress run:
 
 ```bash
-cd src/CatDb.StressTest
+cd examples/CatDb.StressTest
 dotnet run -c Release -- --duration 120
 ```
 

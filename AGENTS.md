@@ -23,18 +23,20 @@ Its core structure is the Waterfall Tree (WTree).
 
 ## Build & Validate
 
+Repo layout: `src/` (library + server), `examples/` (runnable demos, stress test, crash writer),
+`tests/` (unit tests). `CatDb.slnx` and the shared `Directory.Build.props`/`Directory.Packages.props`
+live at the repo root and cover all projects.
+
 ```bash
-cd src
-dotnet build --no-incremental          # full rebuild
+dotnet build --no-incremental          # full rebuild, from repo root
 dotnet test --no-build                 # currently 190 tests
 ```
 
 Recommended smoke checks after significant changes:
 
 ```bash
-cd src
-dotnet run --project CatDb.GettingStarted
-cd CatDb.StressTest
+dotnet run --project examples/CatDb.GettingStarted
+cd examples/CatDb.StressTest
 dotnet run -c Release -- --duration 120
 ```
 
@@ -216,7 +218,7 @@ Lock strategy:
    ORDER BY a different indexed field from that field's index, re-applying the source query as a
    residual; multi-key sorts run-buffer only equal-leading-key groups, OR — when a single composite
    index covers all keys with one direction — stream the composite end-to-end (O(1) memory). Demo:
-   `CatDb.GettingStarted/SortDemo.cs`.
+   `examples/CatDb.GettingStarted/SortDemo.cs`.
 8c. **Composite prefix scan + mixed direction + Top-K (2026-06):** `WHERE a=v ORDER BY b` now scans
    the composite `(a,b)` index by the `a=v` prefix — one ordered range scan, no residual, no N+1 heap
    fetch. Mixed-direction covering composites stream the lead + run-sort groups. `Take` everywhere

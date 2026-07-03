@@ -115,6 +115,9 @@ public sealed class StorageEngineServer
 
     private MemoryStream ProcessPacket(ServerConnection connection, MemoryStream requestStream)
     {
+#if PERFORMANCE_CHECK
+        var perfStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
         var reader     = new BinaryReader(requestStream);
         IStorageEngine? selectedEngine = null;
 
@@ -148,9 +151,16 @@ public sealed class StorageEngineServer
 
             if (clientDesc != null) // XTable commands
             {
+#if PERFORMANCE_CHECK
+                var openStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
                 var table = (XTablePortable)storageEngineForRequest.OpenXTablePortable(
                     clientDesc.Name ?? "", clientDesc.KeyDataType, clientDesc.RecordDataType);
                 table.Descriptor.Tag = clientDesc.Tag;
+#if PERFORMANCE_CHECK
+                General.Diagnostics.PerformanceCheck.ObserveDurationTicks("server.open", openStart);
+                var handlerStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
 
                 for (var i = 0; i < commands.Count - 1; i++)
                 {
@@ -158,6 +168,13 @@ public sealed class StorageEngineServer
                         throw new Exception(deniedError ?? "Access denied.");
 
                     _tableHandlers[commands[i].Code](table, commands[i]);
+
+                    // Big write batch: the tight handler loop re-acquires the table's SyncRoot within
+                    // nanoseconds of releasing it, so a concurrent reader waiting on the same table can
+                    // barge-starve for the whole batch (.NET locks are not FIFO-fair). A periodic yield
+                    // gives waiting readers a scheduling window at negligible batch-throughput cost.
+                    if ((i & 255) == 255)
+                        Thread.Yield();
                 }
 
                 if (!IsCommandAllowed(connection, msgRequest, clientDesc, commands[commands.Count - 1], out var deniedLastError))
@@ -167,7 +184,22 @@ public sealed class StorageEngineServer
                     table, commands[commands.Count - 1]);
                 if (last != null) resultCmds.Add(last);
 
-                table.Flush();
+#if PERFORMANCE_CHECK
+                General.Diagnostics.PerformanceCheck.ObserveDurationTicks(
+                    $"server.handler.code{commands[commands.Count - 1].Code}", handlerStart);
+                var flushStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
+                // Flush only when the packet actually queued table operations. Read-only packets have
+                // nothing to flush — but Flush() still contends on the table's SyncRoot, so under write
+                // load every read paid a ~2.5 ms lock-convoy wait (measured 67 s of flush time per 20 s
+                // window). Ordering is unchanged: every WRITE packet still flushes before responding, so
+                // its ops are applied before its client sees the ack; a read racing an in-flight write
+                // packet on another connection never had an ordering guarantee to begin with.
+                if (PacketHasWrites(commands))
+                    table.Flush();
+#if PERFORMANCE_CHECK
+                General.Diagnostics.PerformanceCheck.ObserveDurationTicks("server.tableflush", flushStart);
+#endif
             }
             else // StorageEngine commands
             {
@@ -193,7 +225,40 @@ public sealed class StorageEngineServer
 
         new Message(responseDesc, resultCmds, msgRequest.DatabaseName).Serialize(writer);
         ms.Position = 0;
+#if PERFORMANCE_CHECK
+        General.Diagnostics.PerformanceCheck.ObserveDurationTicks("server.packet", perfStart);
+#endif
         return ms;
+    }
+
+    // Known READ-ONLY command codes — a packet of only these queues no table operations, so the
+    // post-packet Flush() is skipped (it would only convoy on the table lock). Unknown/new codes are
+    // conservatively treated as writes (flush) so a future command can't silently lose its flush.
+    private static readonly bool[] ReadOnlyCommand = BuildReadOnlySet();
+
+    private static bool[] BuildReadOnlySet()
+    {
+        var s = new bool[CommandCode.MAX];
+        foreach (var code in new[]
+        {
+            CommandCode.TRY_GET, CommandCode.FORWARD, CommandCode.BACKWARD,
+            CommandCode.FIND_NEXT, CommandCode.FIND_AFTER, CommandCode.FIND_PREV, CommandCode.FIND_BEFORE,
+            CommandCode.FIRST_ROW, CommandCode.LAST_ROW, CommandCode.COUNT,
+            CommandCode.XTABLE_DESCRIPTOR_GET,
+            CommandCode.INDEX_FIND, CommandCode.INDEX_EXISTS, CommandCode.INDEX_FIND_RANGE,
+            CommandCode.INDEX_COUNT, CommandCode.INDEX_LIST, CommandCode.INDEX_FIND_PREFIX,
+            CommandCode.INDEX_QUERY, CommandCode.INDEX_COUNT_QUERY, CommandCode.RANGE_COUNT,
+        })
+            s[code] = true;
+        return s;
+    }
+
+    private static bool PacketHasWrites(CommandCollection commands)
+    {
+        for (var i = 0; i < commands.Count; i++)
+            if (!ReadOnlyCommand[commands[i].Code])
+                return true;
+        return false;
     }
 
     private IStorageEngine? ResolveStorageEngine(ServerConnection connection, string? databaseName, string? userName, string? password, out string? errorMessage)

@@ -9,7 +9,7 @@ using CatDb.Database;
 using Database = CatDb.Database;
 
 // ── Switch between local file and remote server ───────────────────────────────
-const bool   USE_SERVER  = false;          // true = connect to CatDb.Server
+const bool   USE_SERVER  = true;          // true = connect to CatDb.Server
 const string SERVER_USERNAME = "admin";
 const string SERVER_PASSWORD = "admin";
 const string SERVER_HOST = "localhost";

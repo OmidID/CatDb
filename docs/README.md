@@ -24,7 +24,7 @@ npm run build
 
 The production output is generated in `build/`.
 
-The site reads the CatDb release version from `../src/Directory.Build.props`.
+The site reads the CatDb release version from `../Directory.Build.props`.
 When you bump `<VersionPrefix>`, the navbar, homepage, and package install
 snippet update on the next Docusaurus build/start.
 

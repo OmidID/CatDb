@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="examples/CatDb.GettingStarted/CatDb.GettingStarted.csproj" />
+  <Project Path="examples/CatDb.StressTest/CatDb.StressTest.csproj" />
+  <Project Path="tests/CatDb.Tests/CatDb.Tests.csproj" />
+  <Project Path="src/CatDb/CatDb.csproj" />
+  <Project Path="src/CatDb.Server/CatDb.Server.csproj" />
+  <Project Path="examples/CatDb.CrashWriter/CatDb.CrashWriter.csproj" />
+</Solution>

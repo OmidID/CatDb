@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using CatDb.Data;
 using CatDb.Database;
+using CatDb.Database.Querying;
 using CatDb.WaterfallTree;
 
 namespace CatDb.Server.Services;
@@ -87,6 +88,167 @@ public sealed class DataExplorerService(DatabaseHostService hostService)
             count       = rows.Count,
             rows,
         };
+    }
+
+    // ── Structured query (filter tree / ORDER BY / paging / count) ─────────────
+
+    /// <summary>
+    /// Runs a structured query built from the query string or a JSON body against the engine's own
+    /// query planner (index seeks, multi-index AND/OR intersection, engine-side residual + ORDER BY),
+    /// so filtering/sorting happens INSIDE the engine — never by materializing the whole table here.
+    /// When the parsed query is a plain browse (no filter/order/count/key-range) it defers to the fast
+    /// key-scan <see cref="BrowseTable"/> so the simple list case keeps its cheap path.
+    /// </summary>
+    public object QueryTable(string databaseName, string tableName, ParsedQuery spec)
+    {
+        var engine = hostService.GetOrOpenDatabase(databaseName);
+
+        if (!engine.Exists(tableName))
+            throw new KeyNotFoundException($"Table '{tableName}' not found.");
+
+        var descriptor = engine[tableName];
+        if (descriptor.StructureType != StructureType.XTABLE)
+            throw new InvalidOperationException($"'{tableName}' is not a table.");
+
+        var keyDataType    = descriptor.KeyDataType;
+        var recordDataType = descriptor.RecordDataType;
+        var keyMap         = descriptor.KeyMemberMap;
+        var recordMap      = descriptor.RecordMemberMap;
+        var keyType        = keyDataType.IsPrimitive ? keyDataType.PrimitiveType : DataTypeUtils.BuildType(keyDataType);
+
+        var table = engine.OpenXTablePortable(tableName, keyDataType, recordDataType);
+
+        var query = BuildEngineQuery(spec, recordDataType, recordMap, keyType);
+        // Clamp the page size so a runaway/unset limit can't stream an unbounded result over HTTP.
+        query.Take = Math.Clamp(query.Take ?? 50, 1, 1_000);
+        if (query.Skip < 0) query.Skip = 0;
+
+        long? total = spec.Count ? table.Indexes.Count(query) : null;
+
+        var rows = table.Indexes.ExecuteQuery(query)
+            .Select(kv => new
+            {
+                key   = DataToJson(kv.Key,   keyDataType,    keyMap),
+                value = DataToJson(kv.Value, recordDataType, recordMap),
+            })
+            .ToList();
+
+        return new
+        {
+            database    = databaseName,
+            table       = tableName,
+            keySchema   = TableManagementService.ToJsonSchema(keyDataType, keyMap),
+            valueSchema = TableManagementService.ToJsonSchema(recordDataType, recordMap),
+            skip        = query.Skip,
+            take        = query.Take,
+            count       = rows.Count,
+            total,                                  // null unless ?count=true
+            rows,
+        };
+    }
+
+    private static EngineQuery BuildEngineQuery(
+        ParsedQuery spec, DataType recordDataType, MemberMap? recordMap, Type keyType)
+    {
+        var eq = new EngineQuery
+        {
+            Skip = spec.Skip,
+            Take = spec.Take,
+            Filter = spec.Filter is null ? null : BuildFilterNode(spec.Filter, recordDataType, recordMap),
+        };
+
+        foreach (var s in spec.Order)
+        {
+            eq.Sorts.Add(new SortField
+            {
+                Member = s.Field,                                               // null ⇒ primary key
+                FieldType = s.Field is null ? keyType : ResolveFieldType(recordDataType, recordMap, s.Field),
+                Descending = s.Descending,
+            });
+        }
+
+        // direction=backward with no explicit ORDER BY ⇒ order by primary key descending.
+        if (spec.DefaultKeyDescending && eq.Sorts.Count == 0)
+            eq.Sorts.Add(new SortField { Member = null, FieldType = keyType, Descending = true });
+
+        if (spec.KeyFrom is { } kf)
+        {
+            eq.HasKeyFrom = true;
+            eq.KeyFromInclusive = spec.KeyFromInclusive;
+            eq.KeyFrom = kf.Bind(keyType);
+        }
+        if (spec.KeyTo is { } kt)
+        {
+            eq.HasKeyTo = true;
+            eq.KeyToInclusive = spec.KeyToInclusive;
+            eq.KeyTo = kt.Bind(keyType);
+        }
+
+        return eq;
+    }
+
+    private static FilterNode BuildFilterNode(QueryNode node, DataType recordDataType, MemberMap? recordMap)
+    {
+        switch (node)
+        {
+            case GroupSpec g:
+            {
+                var children = g.Nodes.Select(n => BuildFilterNode(n, recordDataType, recordMap)).ToList();
+                if (children.Count == 1) return children[0];
+                return g.IsOr ? FilterNode.Any(children) : FilterNode.All(children);
+            }
+            case NotSpec n:
+                return FilterNode.Not(BuildFilterNode(n.Node, recordDataType, recordMap));
+            case PredicateSpec p:
+            {
+                var fieldType = ResolveFieldType(recordDataType, recordMap, p.Field);
+                return FilterNode.Leaf(new FieldFilter
+                {
+                    Member = p.Field,
+                    Op = p.Op,
+                    FieldType = fieldType,
+                    Value = p.Value.Bind(fieldType),
+                    Value2 = p.Value2?.Bind(fieldType),
+                    FromInclusive = p.FromInclusive,
+                    ToInclusive = p.ToInclusive,
+                });
+            }
+            default:
+                throw new ArgumentException("Unknown filter node.");
+        }
+    }
+
+    /// <summary>CLR type of a record field by member name, resolved from the table's schema
+    /// (<see cref="DataType"/> + <see cref="MemberMap"/>) — the same info the engine's internal
+    /// resolver uses, but reachable from the HTTP layer without touching engine internals.</summary>
+    private static Type ResolveFieldType(DataType recordDataType, MemberMap? recordMap, string member)
+    {
+        if (recordDataType.IsPrimitive)
+            throw new ArgumentException(
+                $"Field '{member}' — this table's record is a single primitive value; " +
+                "filter/sort by field is only supported for object (Slots) records. Use the primary-key range instead.");
+
+        if (!recordDataType.IsSlots)
+            throw new ArgumentException($"Cannot resolve field '{member}' on a non-object record type.");
+
+        int slot;
+        if (recordMap is not null && recordMap.Names.TryGetValue(member, out var byName))
+            slot = byName;
+        else if (member.StartsWith("Slot", StringComparison.Ordinal) &&
+                 int.TryParse(member.AsSpan(4), out var byIndex))
+            slot = byIndex;
+        else
+            throw new ArgumentException($"Unknown field '{member}'.");
+
+        if (slot < 0 || slot >= recordDataType.TypesCount)
+            throw new ArgumentException($"Field '{member}' is out of range.");
+
+        var slotType = recordDataType[slot];
+        if (!slotType.IsPrimitive)
+            throw new ArgumentException(
+                $"Field '{member}' is a nested object/array — only scalar fields can be filtered or sorted.");
+
+        return slotType.PrimitiveType;
     }
 
     // IData = object — the data IS the value; no Data<T> wrapper to unwrap.
