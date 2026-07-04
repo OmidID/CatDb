@@ -7,7 +7,7 @@
 namespace CatDb.General.Persist;
 public class StringIndexerPersist : IIndexerPersist<String>
 {
-    private const byte VERSION = 40;
+    private const byte VERSION = FormatVersion.Current;
 
     private const int NULL_ID = -1;
     private const double PERCENT = 38.2;

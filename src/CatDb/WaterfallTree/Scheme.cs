@@ -9,7 +9,7 @@ namespace CatDb.WaterfallTree;
 
 public class Scheme : IEnumerable<KeyValuePair<long, Locator>>
 {
-    private const byte VERSION = 40;
+    private const byte VERSION = FormatVersion.Current;
 
     private long _locatorId = Locator.Min.Id;
     private readonly ConcurrentDictionary<long, Locator> _map = new();

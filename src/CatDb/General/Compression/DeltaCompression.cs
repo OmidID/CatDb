@@ -9,7 +9,7 @@ using CatDb.General.Comparers;
 namespace CatDb.General.Compression;
 public static class DeltaCompression
 {
-    private const byte VERSION = 40;
+    private const byte VERSION = FormatVersion.Current;
 
     #region UIn64 Tools
 

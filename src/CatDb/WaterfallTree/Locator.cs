@@ -13,7 +13,7 @@ namespace CatDb.WaterfallTree;
 
 public class Locator : IDescriptor, IComparable<Locator>, IEquatable<Locator>
     {
-        private const byte VERSION = 41;
+        private const byte VERSION = FormatVersion.Current;
 
         private byte[]? _serializationData;
 

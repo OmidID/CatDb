@@ -10,7 +10,7 @@ namespace CatDb.Database;
 
 public class OperationCollectionPersist : IPersist<IOperationCollection>
 {
-    private const byte VERSION = 40;
+    private const byte VERSION = FormatVersion.Current;
 
     private readonly Action<BinaryWriter, IOperation>[] _writes;
     private readonly Func<BinaryReader, IOperation>[] _reads;

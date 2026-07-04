@@ -11,7 +11,7 @@ namespace CatDb.Database;
 
 public class OrderedSetPersist : IPersist<IOrderedSet<IData, IData>>
 {
-    private const byte VERSION = 40;
+    private const byte VERSION = FormatVersion.Current;
 
     private readonly IIndexerPersist<IData> _keyIndexerPersist;
     private readonly IIndexerPersist<IData> _recordIndexerPersist;
@@ -143,7 +143,7 @@ public class OrderedSetPersist : IPersist<IOrderedSet<IData, IData>>
 
     // Native slotted-page leaves store their already-serialized arena bytes verbatim (no per-row
     // materialize + column recompress), slashing the checkpoint Store cost that caused the global stall.
-    private const byte VERSION_NATIVE = 50;
+    private const byte VERSION_NATIVE = FormatVersion.NativeLeaf;
 
     public void Write(BinaryWriter writer, IOrderedSet<IData, IData> item)
     {

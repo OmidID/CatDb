@@ -7,7 +7,7 @@
 namespace CatDb.General.Persist;
 public class ByteArrayIndexerPersist : IIndexerPersist<Byte[]>
 {
-    private const byte VERSION = 40;
+    private const byte VERSION = FormatVersion.Current;
 
     public void Store(BinaryWriter writer, Func<int, byte[]> values, int count)
     {

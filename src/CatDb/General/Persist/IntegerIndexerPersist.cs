@@ -6,7 +6,7 @@
 namespace CatDb.General.Persist;
 public class Int64IndexerPersist : IIndexerPersist<Int64>
 {
-    private const byte VERSION = 40;
+    private const byte VERSION = FormatVersion.Current;
 
     private readonly long[] _factors;
 
@@ -69,7 +69,7 @@ public class Int64IndexerPersist : IIndexerPersist<Int64>
 
 public class UInt64IndexerPersist : IIndexerPersist<UInt64>
 {
-    public const byte VERSION = 40;
+    public const byte VERSION = FormatVersion.Current;
 
     private readonly Int64IndexerPersist _persist = new();
     
@@ -91,7 +91,7 @@ public class UInt64IndexerPersist : IIndexerPersist<UInt64>
 
 public class Int32IndexerPersist : IIndexerPersist<Int32>
 {
-    public const byte VERSION = 40;
+    public const byte VERSION = FormatVersion.Current;
 
     private readonly Int64IndexerPersist _persist = new();
 
@@ -113,7 +113,7 @@ public class Int32IndexerPersist : IIndexerPersist<Int32>
 
 public class UInt32IndexerPersist : IIndexerPersist<UInt32>
 {
-    public const byte VERSION = 40;
+    public const byte VERSION = FormatVersion.Current;
 
     private readonly Int64IndexerPersist _persist = new();
 
@@ -135,7 +135,7 @@ public class UInt32IndexerPersist : IIndexerPersist<UInt32>
 
 public class Int16IndexerPersist : IIndexerPersist<Int16>
 {
-    public const byte VERSION = 40;
+    public const byte VERSION = FormatVersion.Current;
 
     private readonly Int64IndexerPersist _persist = new();
 
@@ -157,7 +157,7 @@ public class Int16IndexerPersist : IIndexerPersist<Int16>
 
 public class UInt16IndexerPersist : IIndexerPersist<UInt16>
 {
-    public const byte VERSION = 40;
+    public const byte VERSION = FormatVersion.Current;
 
     private readonly Int64IndexerPersist _persist = new();
 
@@ -179,7 +179,7 @@ public class UInt16IndexerPersist : IIndexerPersist<UInt16>
 
 public class ByteIndexerPersist : IIndexerPersist<Byte>
 {
-    public const byte VERSION = 40;
+    public const byte VERSION = FormatVersion.Current;
 
     private readonly Int64IndexerPersist _persist = new();
 
@@ -201,7 +201,7 @@ public class ByteIndexerPersist : IIndexerPersist<Byte>
 
 public class SByteIndexerPersist : IIndexerPersist<SByte>
 {
-    public const byte VERSION = 40;
+    public const byte VERSION = FormatVersion.Current;
 
     private readonly Int64IndexerPersist _persist = new();
 
@@ -223,7 +223,7 @@ public class SByteIndexerPersist : IIndexerPersist<SByte>
 
 public class CharIndexerPersist : IIndexerPersist<Char>
 {
-    public const byte VERSION = 40;
+    public const byte VERSION = FormatVersion.Current;
 
     private readonly Int64IndexerPersist _persist = new();
 

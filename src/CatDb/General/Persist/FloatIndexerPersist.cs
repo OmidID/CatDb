@@ -8,7 +8,7 @@ using CatDb.General.Mathematics;
 namespace CatDb.General.Persist;
 public class SingleIndexerPersist : IIndexerPersist<Single>
 {
-    private const byte VERSION = 40;
+    private const byte VERSION = FormatVersion.Current;
 
     private int GetMaxDigits(Func<int, float> values, int count)
     {
@@ -91,7 +91,7 @@ public class SingleIndexerPersist : IIndexerPersist<Single>
 
 public class DoubleIndexerPersist : IIndexerPersist<Double>
 {
-    public const byte VERSION = 40;
+    public const byte VERSION = FormatVersion.Current;
 
     private int GetMaxDigits(Func<int, double> values, int count)
     {
@@ -173,7 +173,7 @@ public class DoubleIndexerPersist : IIndexerPersist<Double>
 
 public class DecimalIndexerPersist : IIndexerPersist<Decimal>
 {
-    public const byte VERSION = 40;
+    public const byte VERSION = FormatVersion.Current;
 
     private int GetMaxDigits(Func<int, decimal> values, int count)
     {

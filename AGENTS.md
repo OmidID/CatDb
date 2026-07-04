@@ -20,6 +20,14 @@ Its core structure is the Waterfall Tree (WTree).
 - Query API has been refactored to fluent builders.
 - Secondary indexes are supported in the public API.
 - Composite/object key and index field types are supported (not just primitive keys).
+- **CatDb v2 — breaking on-disk format (2026-07):** every persisted structure (WTree nodes, Locator,
+  Scheme, WTree settings header, operation log, indexers, delta compression) used to stamp its own
+  literal `VERSION` byte (a legacy STSDB-derived number, scattered 40/41 across ~20 files). Collapsed
+  into ONE constant, `FormatVersion.Current` (`src/CatDb/FormatVersion.cs`) = `2`. This is a clean
+  break: **no backward compatibility, no reading pre-v2 or STSDB files** — old per-type legacy-read
+  branches (e.g. LeafNode/InternalNode's `VERSION_V40` fallback, WTree.Header's version 0/1 switch)
+  were deleted, not kept. Bump `FormatVersion.Current` — and only that — for the next breaking change.
+  Existing on-disk databases from before this change will throw on open; recreate them.
 
 ## Build & Validate
 
@@ -51,6 +59,7 @@ Stress test notes:
 
 | Path | Purpose |
 |------|---------|
+| `src/CatDb/FormatVersion.cs` | Single on-disk format version for ALL persisted structures |
 | `src/CatDb/WaterfallTree/WTree.cs` | Core tree operations: execute, read, commit |
 | `src/CatDb/WaterfallTree/WTree.Branch.cs` | Branch lock/cache/node lifetime |
 | `src/CatDb/WaterfallTree/WTree.Branch.Fall.cs` | Cache cascade (fall) |

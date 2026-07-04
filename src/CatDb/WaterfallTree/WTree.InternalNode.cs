@@ -12,8 +12,7 @@ public partial class WTree
 {
     private sealed partial class InternalNode : Node
     {
-        private const byte VERSION = 41;     // v41 adds persisted PageLsn after the version byte
-        private const byte VERSION_V40 = 40;  // pre-PageLsn images (PageLsn defaults to 0 → full replay)
+        private const byte VERSION = FormatVersion.Current;
 
         private readonly BranchesOptimizator _optimizator = new();
 
@@ -326,10 +325,10 @@ public partial class WTree
         {
             var reader = new BinaryReader(stream);
             var version = reader.ReadByte();
-            if (version != VERSION && version != VERSION_V40)
+            if (version != VERSION)
                 throw new Exception("Invalid InternalNode version.");
 
-            PageLsn = version >= VERSION ? reader.ReadInt64() : 0;
+            PageLsn = reader.ReadInt64();
 
             var id = (long)CountCompression.Deserialize(reader);
             if (id != Branch.NodeHandle)

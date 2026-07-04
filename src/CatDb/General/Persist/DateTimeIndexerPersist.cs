@@ -4,7 +4,7 @@
 ﻿namespace CatDb.General.Persist;
 public class DateTimeIndexerPersist : IIndexerPersist<DateTime>
 {
-    private const byte VERSION = 40;
+    private const byte VERSION = FormatVersion.Current;
     
     private static readonly long Millisecond = 10000;
     private static readonly long Second = 1000 * Millisecond;
