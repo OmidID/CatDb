@@ -206,6 +206,13 @@ public partial class WTree
             if (TouchId < node.TouchId)
                 TouchId = node.TouchId;
 
+            // The source's rows (possibly still unflushed) live on in this node now — its recovery
+            // boundary must stay pinned at least as far back, or a still-clean survivor (MinDirtyLsn ==
+            // MaxValue) would stop constraining the incremental checkpoint LSN and silently drop ops that
+            // only ever existed in the merged-away leaf's memory.
+            if (node.MinDirtyLsn < MinDirtyLsn) MinDirtyLsn = node.MinDirtyLsn;
+            if (node.PageLsn > PageLsn) PageLsn = node.PageLsn;
+
             IsModified = true;
         }
 

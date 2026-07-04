@@ -205,6 +205,11 @@ public partial class WTree
             if (TouchId < node.TouchId)
                 TouchId = node.TouchId;
 
+            // See LeafNode.Merge: fold the source's recovery boundary in, or a clean survivor could stop
+            // pinning cpLsn even though it now owns the source's still-unflushed branches.
+            if (node.MinDirtyLsn < MinDirtyLsn) MinDirtyLsn = node.MinDirtyLsn;
+            if (node.PageLsn > PageLsn) PageLsn = node.PageLsn;
+
             IsModified = true;
         }
 
