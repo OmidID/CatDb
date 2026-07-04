@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="AppName" xml:space="preserve"><value>CatDb Admin</value></data>
+
+  <data name="Nav_Home" xml:space="preserve"><value>בית</value></data>
+  <data name="Nav_Databases" xml:space="preserve"><value>מסדי נתונים</value></data>
+  <data name="Nav_Users" xml:space="preserve"><value>משתמשים</value></data>
+  <data name="Nav_Refresh" xml:space="preserve"><value>רענון</value></data>
+  <data name="Nav_Expand" xml:space="preserve"><value>הרחבה</value></data>
+  <data name="Nav_Collapse" xml:space="preserve"><value>כיווץ</value></data>
+  <data name="Nav_SignedInAs" xml:space="preserve"><value>מחובר בתור</value></data>
+  <data name="Nav_SignOut" xml:space="preserve"><value>התנתקות</value></data>
+  <data name="Nav_NoDatabases" xml:space="preserve"><value>אין מסדי נתונים</value></data>
+  <data name="Nav_NoTables" xml:space="preserve"><value>אין טבלאות</value></data>
+  <data name="Nav_SkipToContent" xml:space="preserve"><value>דלג לתוכן</value></data>
+
+  <data name="Login_ServerAddress" xml:space="preserve"><value>כתובת השרת</value></data>
+  <data name="Login_Username" xml:space="preserve"><value>שם משתמש</value></data>
+  <data name="Login_Password" xml:space="preserve"><value>סיסמה</value></data>
+  <data name="Login_SignIn" xml:space="preserve"><value>התחברות</value></data>
+  <data name="Login_SigningIn" xml:space="preserve"><value>מתחבר...</value></data>
+  <data name="Login_InvalidCredentials" xml:space="preserve"><value>שם משתמש או סיסמה שגויים.</value></data>
+  <data name="Login_ConnectionError" xml:space="preserve"><value>לא ניתן להתחבר ל-CatDb.Server: {0}</value></data>
+
+  <data name="Common_Save" xml:space="preserve"><value>שמירה</value></data>
+  <data name="Common_Cancel" xml:space="preserve"><value>ביטול</value></data>
+  <data name="Common_Delete" xml:space="preserve"><value>מחיקה</value></data>
+  <data name="Common_Edit" xml:space="preserve"><value>עריכה</value></data>
+  <data name="Common_Create" xml:space="preserve"><value>יצירה</value></data>
+  <data name="Common_Loading" xml:space="preserve"><value>טוען...</value></data>
+  <data name="Common_Actions" xml:space="preserve"><value>פעולות</value></data>
+  <data name="Common_Close" xml:space="preserve"><value>סגירה</value></data>
+
+  <data name="Theme_Light" xml:space="preserve"><value>בהיר</value></data>
+  <data name="Theme_Dark" xml:space="preserve"><value>כהה</value></data>
+  <data name="Theme_System" xml:space="preserve"><value>מערכת</value></data>
+  <data name="Language_Label" xml:space="preserve"><value>שפה</value></data>
+
+  <data name="Home_Subtitle" xml:space="preserve"><value>נהל מסדי נתונים, משתמשים, טבלאות ואינדקסים, ועיין/שאילתה נתונים במופע CatDb.Server שלך.</value></data>
+  <data name="Home_DatabasesDesc" xml:space="preserve"><value>צור, הצג ומחק מסדי נתונים; גישה לטבלאות ולנתונים.</value></data>
+  <data name="Home_UsersDesc" xml:space="preserve"><value>נהל חשבונות משתמשים והרשאות גלובליות/לפי מסד נתונים.</value></data>
+  <data name="Home_Open" xml:space="preserve"><value>פתיחה</value></data>
+
+  <data name="Pagination_Previous" xml:space="preserve"><value>הקודם</value></data>
+  <data name="Pagination_Next" xml:space="preserve"><value>הבא</value></data>
+  <data name="Pagination_PageOf" xml:space="preserve"><value>עמוד {0} מתוך {1}</value></data>
+
+  <data name="Databases_NewPlaceholder" xml:space="preserve"><value>שם מסד הנתונים החדש</value></data>
+  <data name="Databases_Create" xml:space="preserve"><value>יצירת מסד נתונים</value></data>
+  <data name="Databases_Creating" xml:space="preserve"><value>יוצר...</value></data>
+  <data name="Databases_Name" xml:space="preserve"><value>שם</value></data>
+  <data name="Databases_CreatedUtc" xml:space="preserve"><value>נוצר (UTC)</value></data>
+  <data name="Databases_TablesLink" xml:space="preserve"><value>טבלאות</value></data>
+  <data name="Databases_ConfirmDelete" xml:space="preserve"><value>למחוק את מסד הנתונים '{0}'? לא ניתן לבטל פעולה זו.</value></data>
+  <data name="Databases_None" xml:space="preserve"><value>אין עדיין מסדי נתונים.</value></data>
+
+  <data name="Users_New" xml:space="preserve"><value>משתמש חדש</value></data>
+  <data name="Users_Edit" xml:space="preserve"><value>עריכת משתמש: {0}</value></data>
+  <data name="Users_PasswordHint" xml:space="preserve"><value>נדרש בכל שמירה — CatDb.Server מאפס את הסיסמה בכל עדכון.</value></data>
+  <data name="Users_GlobalPermissions" xml:space="preserve"><value>הרשאות גלובליות</value></data>
+  <data name="Users_DatabasePermissions" xml:space="preserve"><value>הרשאות מסד נתונים</value></data>
+  <data name="Users_DatabasePlaceholder" xml:space="preserve"><value>מסד נתונים (או * לכולם)</value></data>
+  <data name="Users_RemoveRow" xml:space="preserve"><value>הסרה</value></data>
+  <data name="Users_AddDatabasePermission" xml:space="preserve"><value>הוספת הרשאת מסד נתונים</value></data>
+  <data name="Users_Saving" xml:space="preserve"><value>שומר...</value></data>
+  <data name="Users_ConfirmDelete" xml:space="preserve"><value>למחוק את המשתמש '{0}'?</value></data>
+  <data name="Users_None" xml:space="preserve"><value>אין עדיין משתמשים.</value></data>
+
+  <data name="Tables_Title" xml:space="preserve"><value>טבלאות ב-"{0}"</value></data>
+  <data name="Tables_New" xml:space="preserve"><value>טבלה חדשה</value></data>
+  <data name="Tables_TableName" xml:space="preserve"><value>שם הטבלה</value></data>
+  <data name="Tables_KeySchema" xml:space="preserve"><value>סכימת מפתח (JSON Schema)</value></data>
+  <data name="Tables_ValueSchema" xml:space="preserve"><value>סכימת ערך (JSON Schema)</value></data>
+  <data name="Tables_SampleObject" xml:space="preserve"><value>אובייקט לדוגמה</value></data>
+  <data name="Tables_Modified" xml:space="preserve"><value>עודכן</value></data>
+  <data name="Tables_Manage" xml:space="preserve"><value>ניהול</value></data>
+  <data name="Tables_BrowseData" xml:space="preserve"><value>עיון בנתונים</value></data>
+  <data name="Tables_ConfirmDelete" xml:space="preserve"><value>למחוק את הטבלה '{0}'? לא ניתן לבטל פעולה זו.</value></data>
+  <data name="Tables_None" xml:space="preserve"><value>אין עדיין טבלאות.</value></data>
+
+  <data name="TableDetail_Indexes" xml:space="preserve"><value>אינדקסים</value></data>
+  <data name="TableDetail_NewIndex" xml:space="preserve"><value>אינדקס חדש</value></data>
+  <data name="TableDetail_RebuildAll" xml:space="preserve"><value>בנייה מחדש של הכול</value></data>
+  <data name="TableDetail_ConfirmRebuildAll" xml:space="preserve"><value>לבנות מחדש את כל האינדקסים בטבלה זו?</value></data>
+  <data name="TableDetail_IndexName" xml:space="preserve"><value>שם האינדקס</value></data>
+  <data name="TableDetail_MemberFields" xml:space="preserve"><value>שדות חברים (מופרדים בפסיקים)</value></data>
+  <data name="TableDetail_Type" xml:space="preserve"><value>סוג</value></data>
+  <data name="TableDetail_IndexNameCol" xml:space="preserve"><value>שם</value></data>
+  <data name="TableDetail_MembersCol" xml:space="preserve"><value>חברים</value></data>
+  <data name="TableDetail_Rebuild" xml:space="preserve"><value>בנייה מחדש</value></data>
+  <data name="TableDetail_ConfirmRebuild" xml:space="preserve"><value>לבנות מחדש את האינדקס '{0}'?</value></data>
+  <data name="TableDetail_Drop" xml:space="preserve"><value>מחיקה</value></data>
+  <data name="TableDetail_ConfirmDrop" xml:space="preserve"><value>למחוק את האינדקס '{0}'?</value></data>
+  <data name="TableDetail_NoIndexes" xml:space="preserve"><value>אין אינדקסים משניים.</value></data>
+
+  <data name="DataBrowser_Data" xml:space="preserve"><value>נתונים</value></data>
+  <data name="DataBrowser_LoadingSchema" xml:space="preserve"><value>טוען סכימה...</value></data>
+  <data name="DataBrowser_Browse" xml:space="preserve"><value>עיון</value></data>
+  <data name="DataBrowser_FilterAndSort" xml:space="preserve"><value>סינון ומיון</value></data>
+  <data name="DataBrowser_FromKey" xml:space="preserve"><value>ממפתח</value></data>
+  <data name="DataBrowser_ToKey" xml:space="preserve"><value>עדמפתח</value></data>
+  <data name="DataBrowser_Start" xml:space="preserve"><value>(התחלה)</value></data>
+  <data name="DataBrowser_End" xml:space="preserve"><value>(סוף)</value></data>
+  <data name="DataBrowser_Direction" xml:space="preserve"><value>כיוון</value></data>
+  <data name="DataBrowser_Forward" xml:space="preserve"><value>קדימה</value></data>
+  <data name="DataBrowser_Backward" xml:space="preserve"><value>אחורה</value></data>
+  <data name="DataBrowser_Take" xml:space="preserve"><value>כמות</value></data>
+  <data name="DataBrowser_RowCount" xml:space="preserve"><value>{0} שורה/ות.</value></data>
+  <data name="DataBrowser_RowCountWithTotal" xml:space="preserve"><value>{0} שורה/ות הוחזרו (סה"כ {1} התאמות).</value></data>
+  <data name="DataBrowser_FiltersAnded" xml:space="preserve"><value>מסננים (וגם)</value></data>
+  <data name="DataBrowser_FilterField" xml:space="preserve"><value>שדה</value></data>
+  <data name="DataBrowser_FilterOperator" xml:space="preserve"><value>אופרטור</value></data>
+  <data name="DataBrowser_FilterValue" xml:space="preserve"><value>ערך</value></data>
+  <data name="DataBrowser_FilterValue2" xml:space="preserve"><value>ערך 2</value></data>
+  <data name="DataBrowser_AddFilter" xml:space="preserve"><value>הוספת מסנן</value></data>
+  <data name="DataBrowser_NoObjectFields" xml:space="preserve"><value>סכימת הערך של טבלה זו אינה אובייקט, ולכן סינון לפי שדה אינו זמין — השתמש בטווח המפתחות למטה.</value></data>
+  <data name="DataBrowser_Sort" xml:space="preserve"><value>מיון</value></data>
+  <data name="DataBrowser_SortField" xml:space="preserve"><value>שדה מיון</value></data>
+  <data name="DataBrowser_PrimaryKey" xml:space="preserve"><value>$key (מפתח ראשי)</value></data>
+  <data name="DataBrowser_Descending" xml:space="preserve"><value>יורד</value></data>
+  <data name="DataBrowser_AddSort" xml:space="preserve"><value>הוספת מיון</value></data>
+  <data name="DataBrowser_KeyRangeAndPaging" xml:space="preserve"><value>טווח מפתחות ועימוד</value></data>
+  <data name="DataBrowser_KeyFrom" xml:space="preserve"><value>מפתח מ-</value></data>
+  <data name="DataBrowser_KeyTo" xml:space="preserve"><value>מפתח עד</value></data>
+  <data name="DataBrowser_Skip" xml:space="preserve"><value>דילוג</value></data>
+  <data name="DataBrowser_ComputeCount" xml:space="preserve"><value>חישוב סך הכול</value></data>
+  <data name="DataBrowser_Searching" xml:space="preserve"><value>מחפש...</value></data>
+  <data name="DataBrowser_Search" xml:space="preserve"><value>חיפוש</value></data>
+  <data name="DataBrowser_InsertRecord" xml:space="preserve"><value>הוספת רשומה</value></data>
+  <data name="DataBrowser_NewRecord" xml:space="preserve"><value>רשומה חדשה</value></data>
+  <data name="DataBrowser_EditRecord" xml:space="preserve"><value>עריכת רשומה (החלפה)</value></data>
+  <data name="DataBrowser_KeyJson" xml:space="preserve"><value>מפתח (JSON)</value></data>
+  <data name="DataBrowser_ValueJson" xml:space="preserve"><value>ערך (JSON)</value></data>
+  <data name="DataBrowser_Insert" xml:space="preserve"><value>הוספה</value></data>
+  <data name="DataBrowser_Key" xml:space="preserve"><value>מפתח</value></data>
+  <data name="DataBrowser_Value" xml:space="preserve"><value>ערך</value></data>
+  <data name="DataBrowser_ConfirmDelete" xml:space="preserve"><value>למחוק רשומה זו?</value></data>
+  <data name="DataBrowser_NoRows" xml:space="preserve"><value>אין שורות.</value></data>
+</root>

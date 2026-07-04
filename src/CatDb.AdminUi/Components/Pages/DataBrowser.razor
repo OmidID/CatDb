@@ -1,0 +1,232 @@
+@page "/data/{DatabaseName}/{TableName}"
+@inject IStringLocalizer<SharedResources> Localizer
+
+<PageTitle>@TableName - @Localizer["AppName"]</PageTitle>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="databases">@Localizer["Nav_Databases"]</a>
+    <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    <a href="@($"tables/{Uri.EscapeDataString(DatabaseName)}")">@DatabaseName</a>
+    <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    <a href="@($"tables/{Uri.EscapeDataString(DatabaseName)}/{Uri.EscapeDataString(TableName)}")">@TableName</a>
+    <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    <span aria-current="page">@Localizer["DataBrowser_Data"]</span>
+</nav>
+
+<h1 class="section-title">@TableName</h1>
+
+<ErrorAlert @bind-Message="_errorMessage" />
+
+<LoadingIndicator IsLoading="_isLoadingSchema" Text="@Localizer["DataBrowser_LoadingSchema"]" />
+
+@if (!_isLoadingSchema && _table is not null)
+{
+    <div class="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected="@(_activeTab == "browse")" class="tab @(_activeTab == "browse" ? "tab-active" : "")" @onclick='() => _activeTab = "browse"'>
+            @Localizer["DataBrowser_Browse"]
+        </button>
+        <button type="button" role="tab" aria-selected="@(_activeTab == "query")" class="tab @(_activeTab == "query" ? "tab-active" : "")" @onclick='() => _activeTab = "query"'>
+            @Localizer["DataBrowser_FilterAndSort"]
+        </button>
+    </div>
+
+    @if (_activeTab == "browse")
+    {
+        <div class="toolbar mb-4 items-end">
+            <div class="field">
+                <label class="label" for="browse-from">@Localizer["DataBrowser_FromKey"]</label>
+                <input id="browse-from" class="input" @bind="_browseFromKey" placeholder="@Localizer["DataBrowser_Start"]" />
+            </div>
+            <div class="field">
+                <label class="label" for="browse-to">@Localizer["DataBrowser_ToKey"]</label>
+                <input id="browse-to" class="input" @bind="_browseToKey" placeholder="@Localizer["DataBrowser_End"]" />
+            </div>
+            <div class="field">
+                <label class="label" for="browse-direction">@Localizer["DataBrowser_Direction"]</label>
+                <select id="browse-direction" class="select" @bind="_browseDirection">
+                    <option value="forward">@Localizer["DataBrowser_Forward"]</option>
+                    <option value="backward">@Localizer["DataBrowser_Backward"]</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="label" for="browse-take">@Localizer["DataBrowser_Take"]</label>
+                <input id="browse-take" type="number" class="input w-24" @bind="_browseTake" />
+            </div>
+            <button type="button" class="btn-primary" disabled="@_isSearching" @onclick="BrowseAsync">
+                @(_isSearching ? Localizer["Common_Loading"] : Localizer["DataBrowser_Browse"])
+            </button>
+        </div>
+
+        @if (_browseResult is not null)
+        {
+            <p class="subtle mb-2">@Localizer["DataBrowser_RowCount", _browseResult.Count]</p>
+            @RenderRowsTable(_browseResult.Rows)
+        }
+    }
+    else
+    {
+        <div class="card mb-4">
+            <div class="card-body">
+                <h2 class="card-title">@Localizer["DataBrowser_FiltersAnded"]</h2>
+                @foreach (var row in _filters)
+                {
+                    <div class="toolbar mb-2">
+                        <select class="select max-w-[12rem]" @bind="row.Field" aria-label="@Localizer["DataBrowser_FilterField"]">
+                            @foreach (var field in _valueFields)
+                            {
+                                <option value="@field.Name">@field.Name</option>
+                            }
+                        </select>
+                        <select class="select max-w-[10rem]" @bind="row.Op" aria-label="@Localizer["DataBrowser_FilterOperator"]">
+                            @foreach (var op in FilterOps.All)
+                            {
+                                <option value="@op">@op</option>
+                            }
+                        </select>
+                        <input class="input" placeholder="value" aria-label="@Localizer["DataBrowser_FilterValue"]" @bind="row.Value" />
+                        @if (row.Op == FilterOps.Between)
+                        {
+                            <input class="input" placeholder="value2" aria-label="@Localizer["DataBrowser_FilterValue2"]" @bind="row.Value2" />
+                        }
+                        <button type="button" class="btn-danger-outline btn-sm" @onclick="() => _filters.Remove(row)">@Localizer["Users_RemoveRow"]</button>
+                    </div>
+                }
+                <button type="button" class="btn-secondary btn-sm" disabled="@(_valueFields.Count == 0)" @onclick="AddFilterRow">
+                    @Localizer["DataBrowser_AddFilter"]
+                </button>
+                @if (_valueFields.Count == 0)
+                {
+                    <p class="hint">@Localizer["DataBrowser_NoObjectFields"]</p>
+                }
+
+                <hr class="my-4 border-slate-200 dark:border-slate-800" />
+
+                <h2 class="card-title">@Localizer["DataBrowser_Sort"]</h2>
+                @foreach (var sort in _sorts)
+                {
+                    <div class="toolbar mb-2">
+                        <select class="select max-w-[12rem]" @bind="sort.Field" aria-label="@Localizer["DataBrowser_SortField"]">
+                            <option value="$key">@Localizer["DataBrowser_PrimaryKey"]</option>
+                            @foreach (var field in _valueFields)
+                            {
+                                <option value="@field.Name">@field.Name</option>
+                            }
+                        </select>
+                        <label class="flex items-center gap-1.5 text-sm">
+                            <input class="checkbox" type="checkbox" @bind="sort.Desc" />
+                            @Localizer["DataBrowser_Descending"]
+                        </label>
+                        <button type="button" class="btn-danger-outline btn-sm" @onclick="() => _sorts.Remove(sort)">@Localizer["Users_RemoveRow"]</button>
+                    </div>
+                }
+                <button type="button" class="btn-secondary btn-sm" @onclick="() => _sorts.Add(new SortRow())">@Localizer["DataBrowser_AddSort"]</button>
+
+                <hr class="my-4 border-slate-200 dark:border-slate-800" />
+
+                <h2 class="card-title">@Localizer["DataBrowser_KeyRangeAndPaging"]</h2>
+                <div class="toolbar items-end">
+                    <div class="field">
+                        <label class="label" for="query-key-from">@Localizer["DataBrowser_KeyFrom"]</label>
+                        <input id="query-key-from" class="input" @bind="_keyFrom" />
+                    </div>
+                    <div class="field">
+                        <label class="label" for="query-key-to">@Localizer["DataBrowser_KeyTo"]</label>
+                        <input id="query-key-to" class="input" @bind="_keyTo" />
+                    </div>
+                    <div class="field">
+                        <label class="label" for="query-skip">@Localizer["DataBrowser_Skip"]</label>
+                        <input id="query-skip" type="number" class="input w-24" @bind="_skip" />
+                    </div>
+                    <div class="field">
+                        <label class="label" for="query-take">@Localizer["DataBrowser_Take"]</label>
+                        <input id="query-take" type="number" class="input w-24" @bind="_take" />
+                    </div>
+                    <label class="flex items-center gap-1.5 pb-2 text-sm">
+                        <input class="checkbox" type="checkbox" @bind="_count" />
+                        @Localizer["DataBrowser_ComputeCount"]
+                    </label>
+                    <button type="button" class="btn-primary" disabled="@_isSearching" @onclick="RunQueryAsync">
+                        @(_isSearching ? Localizer["DataBrowser_Searching"] : Localizer["DataBrowser_Search"])
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (_queryResult is not null)
+        {
+            <p class="subtle mb-2">
+                @(_queryResult.Total is { } total
+                    ? Localizer["DataBrowser_RowCountWithTotal", _queryResult.Count, total]
+                    : Localizer["DataBrowser_RowCount", _queryResult.Count])
+            </p>
+            @RenderRowsTable(_queryResult.Rows)
+        }
+    }
+
+    <hr class="my-4 border-slate-200 dark:border-slate-800" />
+    <div class="mb-2 flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">@Localizer["DataBrowser_InsertRecord"]</h2>
+        <button type="button" class="btn-secondary btn-sm" @onclick="StartInsert">@Localizer["DataBrowser_NewRecord"]</button>
+    </div>
+
+    @if (_recordForm is not null)
+    {
+        <div class="card my-3">
+            <div class="card-body">
+                <h2 class="card-title">@(_recordForm.IsNew ? Localizer["DataBrowser_InsertRecord"] : Localizer["DataBrowser_EditRecord"])</h2>
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div class="field">
+                        <label class="label" for="record-key">@Localizer["DataBrowser_KeyJson"]</label>
+                        <textarea id="record-key" class="textarea" rows="4" @bind="_recordForm.KeyJson" disabled="@(!_recordForm.IsNew)"></textarea>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="record-value">@Localizer["DataBrowser_ValueJson"]</label>
+                        <textarea id="record-value" class="textarea" rows="4" @bind="_recordForm.ValueJson"></textarea>
+                    </div>
+                </div>
+                <div class="toolbar mt-4">
+                    <button type="button" class="btn-primary" disabled="@_isSavingRecord" @onclick="SaveRecordAsync">
+                        @(_isSavingRecord ? Localizer["Users_Saving"] : _recordForm.IsNew ? Localizer["DataBrowser_Insert"] : Localizer["Common_Save"])
+                    </button>
+                    <button type="button" class="btn-secondary" @onclick="() => _recordForm = null">@Localizer["Common_Cancel"]</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private RenderFragment RenderRowsTable(List<KeyValueRow> rows) =>
+        @<div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th scope="col">@Localizer["DataBrowser_Key"]</th>
+                        <th scope="col">@Localizer["DataBrowser_Value"]</th>
+                        <th scope="col" class="text-end">@Localizer["Common_Actions"]</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in rows)
+                    {
+                        <tr>
+                            <td><code>@row.Key.GetRawText()</code></td>
+                            <td><code>@row.Value.GetRawText()</code></td>
+                            <td class="text-end">
+                                <div class="toolbar justify-end">
+                                    <button type="button" class="btn-secondary btn-sm" @onclick="() => StartEdit(row)">@Localizer["Common_Edit"]</button>
+                                    <ConfirmButton ConfirmText="@Localizer["DataBrowser_ConfirmDelete"].Value" OnConfirmed="() => DeleteRecordAsync(row.Key)">
+                                        @Localizer["Common_Delete"]
+                                    </ConfirmButton>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @if (rows.Count == 0)
+                    {
+                        <tr><td colspan="3" class="subtle">@Localizer["DataBrowser_NoRows"]</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>;
+}

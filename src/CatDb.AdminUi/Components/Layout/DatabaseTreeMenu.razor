@@ -1,0 +1,82 @@
+@* Root-level "Databases" tree: expand to lazy-load the database list, expand a database to
+   lazy-load its tables. Each expandable level gets its own refresh button so a subtree can be
+   reloaded without collapsing/re-expanding the whole tree. *@
+<div role="tree" aria-label="@Localizer["Nav_Databases"]">
+    <div class="tree-item-row group">
+        <button type="button" class="tree-toggle" aria-expanded="@_rootExpanded" aria-controls="db-tree-root"
+                aria-label="@(_rootExpanded ? Localizer["Nav_Collapse"] : Localizer["Nav_Expand"])"
+                @onclick="ToggleRootAsync">
+            <Icon Name="IconName.ChevronRight" Class="@ChevronClass(_rootExpanded)" />
+        </button>
+        <NavLink class="tree-link" ActiveClass="tree-link-active" href="databases">
+            @Localizer["Nav_Databases"]
+        </NavLink>
+        <button type="button" class="tree-icon-btn" aria-label="@Localizer["Nav_Refresh"]" @onclick="RefreshRootAsync">
+            <Icon Name="IconName.Refresh" Class="h-3.5 w-3.5" />
+        </button>
+    </div>
+
+    @if (_rootExpanded)
+    {
+        <div id="db-tree-root" role="group" class="tree-children">
+            @if (_rootLoading)
+            {
+                <div class="flex items-center gap-2 px-2 py-1"><span class="spinner"></span></div>
+            }
+            else if (_databases.Count == 0)
+            {
+                <p class="px-2 py-1 subtle">@Localizer["Nav_NoDatabases"]</p>
+            }
+            else
+            {
+                @foreach (var db in _databases)
+                {
+                    var name = db.Name;
+                    var expanded = _expandedDbs.Contains(name);
+                    <div role="treeitem" aria-expanded="@expanded">
+                        <div class="tree-item-row group">
+                            <button type="button" class="tree-toggle" aria-expanded="@expanded" aria-controls="@($"db-tree-{name}")"
+                                    aria-label="@(expanded ? Localizer["Nav_Collapse"] : Localizer["Nav_Expand"])"
+                                    @onclick="() => ToggleDatabaseAsync(name)">
+                                <Icon Name="IconName.ChevronRight" Class="@ChevronClass(expanded)" />
+                            </button>
+                            <NavLink class="tree-link" ActiveClass="tree-link-active" href="@($"tables/{Uri.EscapeDataString(name)}")">
+                                @name
+                            </NavLink>
+                            <button type="button" class="tree-icon-btn" aria-label="@Localizer["Nav_Refresh"]"
+                                    @onclick="() => RefreshDatabaseAsync(name)">
+                                <Icon Name="IconName.Refresh" Class="h-3.5 w-3.5" />
+                            </button>
+                        </div>
+
+                        @if (expanded)
+                        {
+                            <div id="@($"db-tree-{name}")" role="group" class="tree-children">
+                                @if (_dbLoading.Contains(name))
+                                {
+                                    <div class="flex items-center gap-2 px-2 py-1"><span class="spinner"></span></div>
+                                }
+                                else if (!_dbTables.TryGetValue(name, out var tables) || tables.Count == 0)
+                                {
+                                    <p class="px-2 py-1 subtle">@Localizer["Nav_NoTables"]</p>
+                                }
+                                else
+                                {
+                                    @foreach (var table in tables)
+                                    {
+                                        <div role="treeitem" class="tree-item-row">
+                                            <NavLink class="tree-link ml-5" ActiveClass="tree-link-active"
+                                                     href="@($"tables/{Uri.EscapeDataString(name)}/{Uri.EscapeDataString(table.Name)}")">
+                                                <Icon Name="IconName.Table" Class="mr-1 inline h-3.5 w-3.5 align-text-bottom" />@table.Name
+                                            </NavLink>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>

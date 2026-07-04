@@ -4,5 +4,6 @@
   <Project Path="tests/CatDb.Tests/CatDb.Tests.csproj" />
   <Project Path="src/CatDb/CatDb.csproj" />
   <Project Path="src/CatDb.Server/CatDb.Server.csproj" />
+  <Project Path="src/CatDb.AdminUi/CatDb.AdminUi.csproj" />
   <Project Path="examples/CatDb.CrashWriter/CatDb.CrashWriter.csproj" />
 </Solution>

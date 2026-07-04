@@ -1,0 +1,47 @@
+@inject CatDbAuthenticationStateProvider AuthStateProvider
+@inject ApiCredentialProvider Credentials
+@inject NavigationManager Navigation
+@inject IStringLocalizer<SharedResources> Localizer
+
+<div class="flex items-center gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+    <img src="images/catdb-logo.svg" alt="" class="h-6 w-6 rounded" />
+    <a class="text-base font-semibold text-slate-900 dark:text-slate-100" href="">@Localizer["AppName"]</a>
+</div>
+
+<nav class="min-h-0 flex-1 overflow-y-auto px-2 py-2" aria-label="@Localizer["Nav_Databases"]">
+    <div class="tree-item-row">
+        <NavLink class="tree-link flex items-center gap-2" ActiveClass="tree-link-active" href="" Match="NavLinkMatch.All">
+            <Icon Name="IconName.Home" Class="h-4 w-4" />@Localizer["Nav_Home"]
+        </NavLink>
+    </div>
+
+    <DatabaseTreeMenu />
+
+    <p class="tree-section-title">@Localizer["Nav_Users"]</p>
+    <div class="tree-item-row">
+        <NavLink class="tree-link flex items-center gap-2" ActiveClass="tree-link-active" href="users">
+            <Icon Name="IconName.Users" Class="h-4 w-4" />@Localizer["Nav_Users"]
+        </NavLink>
+    </div>
+</nav>
+
+<div class="border-t border-slate-200 px-3 py-3 dark:border-slate-800">
+    <div class="toolbar mb-2 justify-between">
+        <ThemeToggle />
+        <LanguageSwitcher />
+    </div>
+    <p class="subtle">
+        @Localizer["Nav_SignedInAs"] <strong class="text-slate-700 dark:text-slate-200">@Credentials.UserName</strong>
+    </p>
+    <button type="button" class="btn-link !text-sm" @onclick="SignOut">
+        @Localizer["Nav_SignOut"]
+    </button>
+</div>
+
+@code {
+    private void SignOut()
+    {
+        AuthStateProvider.SignOut();
+        Navigation.NavigateTo("/login");
+    }
+}

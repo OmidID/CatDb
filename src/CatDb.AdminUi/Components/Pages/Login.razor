@@ -1,0 +1,45 @@
+@page "/login"
+@layout Layout.BlankLayout
+
+<PageTitle>@Localizer["AppName"]</PageTitle>
+
+<div class="card w-96 shadow-sm">
+    <div class="card-body">
+        <div class="mb-4 flex items-center justify-center gap-2">
+            <img src="images/catdb-logo.svg" alt="" class="h-8 w-8 rounded" />
+            <h1 class="text-lg font-semibold text-slate-900 dark:text-slate-100">@Localizer["AppName"]</h1>
+        </div>
+
+        <EditForm Model="_model" OnValidSubmit="SubmitAsync" FormName="login-form">
+            <DataAnnotationsValidator />
+
+            @if (_errorMessage is not null)
+            {
+                <div class="alert-danger mb-3" role="alert" aria-live="assertive">@_errorMessage</div>
+            }
+
+            <div class="field mb-3">
+                <label class="label" for="server-address">@Localizer["Login_ServerAddress"]</label>
+                <InputText id="server-address" class="input" @bind-Value="_model.ServerAddress" autocomplete="url" />
+            </div>
+
+            <div class="field mb-3">
+                <label class="label" for="username">@Localizer["Login_Username"]</label>
+                <InputText id="username" class="input" @bind-Value="_model.UserName" autocomplete="username" />
+            </div>
+
+            <div class="field mb-4">
+                <label class="label" for="password">@Localizer["Login_Password"]</label>
+                <InputText id="password" type="password" class="input" @bind-Value="_model.Password" autocomplete="current-password" />
+            </div>
+
+            <button type="submit" class="btn-primary w-full" disabled="@_isSubmitting">
+                @if (_isSubmitting)
+                {
+                    <span class="spinner !border-white/40 !border-t-white" aria-hidden="true"></span>
+                }
+                @(_isSubmitting ? Localizer["Login_SigningIn"] : Localizer["Login_SignIn"])
+            </button>
+        </EditForm>
+    </div>
+</div>

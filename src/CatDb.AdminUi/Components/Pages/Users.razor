@@ -1,0 +1,123 @@
+@page "/users"
+@inject IStringLocalizer<SharedResources> Localizer
+
+<PageTitle>@Localizer["Nav_Users"] - @Localizer["AppName"]</PageTitle>
+
+<h1 class="section-title">@Localizer["Nav_Users"]</h1>
+
+<ErrorAlert @bind-Message="_errorMessage" />
+
+<button type="button" class="btn-primary mb-4" @onclick="StartCreate">@Localizer["Users_New"]</button>
+
+@if (_editing is not null)
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <h2 class="card-title">@(_isNew ? Localizer["Users_New"] : Localizer["Users_Edit", _editing.UserName])</h2>
+
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div class="field">
+                    <label class="label" for="edit-username">@Localizer["Login_Username"]</label>
+                    <input id="edit-username" class="input" @bind="_editing.UserName" disabled="@(!_isNew)" />
+                </div>
+                <div class="field">
+                    <label class="label" for="edit-password">@Localizer["Login_Password"]</label>
+                    <input id="edit-password" type="password" class="input" @bind="_editing.Password" />
+                    <p class="hint">@Localizer["Users_PasswordHint"]</p>
+                </div>
+            </div>
+
+            <fieldset class="mt-4">
+                <legend class="label">@Localizer["Users_GlobalPermissions"]</legend>
+                <div class="toolbar">
+                    @foreach (var flag in GlobalPermissionFlags.All)
+                    {
+                        <label class="flex items-center gap-1.5 text-sm" for="@("g-" + flag)">
+                            <input class="checkbox" type="checkbox" id="@("g-" + flag)"
+                                   checked="@_editing.GlobalFlags.Contains(flag)"
+                                   @onchange="e => ToggleFlag(_editing.GlobalFlags, flag, e.Value)" />
+                            @flag
+                        </label>
+                    }
+                </div>
+            </fieldset>
+
+            <fieldset class="mt-4">
+                <legend class="label">@Localizer["Users_DatabasePermissions"]</legend>
+                @foreach (var row in _editing.DatabaseRows)
+                {
+                    <div class="toolbar mb-2">
+                        <input class="input max-w-[12rem]" placeholder="@Localizer["Users_DatabasePlaceholder"]"
+                               aria-label="@Localizer["Users_DatabasePlaceholder"]" @bind="row.Database" />
+                        @foreach (var flag in DatabasePermissionFlags.All)
+                        {
+                            <label class="flex items-center gap-1.5 text-sm" for="@($"d-{row.Database}-{flag}-{row.GetHashCode()}")">
+                                <input class="checkbox" type="checkbox" id="@($"d-{row.Database}-{flag}-{row.GetHashCode()}")"
+                                       checked="@row.Flags.Contains(flag)"
+                                       @onchange="e => ToggleFlag(row.Flags, flag, e.Value)" />
+                                @flag
+                            </label>
+                        }
+                        <button type="button" class="btn-danger-outline btn-sm" @onclick="() => _editing.DatabaseRows.Remove(row)">
+                            @Localizer["Users_RemoveRow"]
+                        </button>
+                    </div>
+                }
+                <button type="button" class="btn-secondary btn-sm" @onclick="() => _editing.DatabaseRows.Add(new())">
+                    @Localizer["Users_AddDatabasePermission"]
+                </button>
+            </fieldset>
+
+            <div class="toolbar mt-4">
+                <button type="button" class="btn-primary" disabled="@_isSaving" @onclick="SaveAsync">
+                    @(_isSaving ? Localizer["Users_Saving"] : Localizer["Common_Save"])
+                </button>
+                <button type="button" class="btn-secondary" @onclick="() => _editing = null">@Localizer["Common_Cancel"]</button>
+            </div>
+        </div>
+    </div>
+}
+
+<LoadingIndicator IsLoading="_isLoading" />
+
+@if (!_isLoading && _result is not null)
+{
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">@Localizer["Login_Username"]</th>
+                    <th scope="col">@Localizer["Users_GlobalPermissions"]</th>
+                    <th scope="col">@Localizer["Users_DatabasePermissions"]</th>
+                    <th scope="col" class="text-end">@Localizer["Common_Actions"]</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in _result.Items)
+                {
+                    <tr>
+                        <td>@user.UserName</td>
+                        <td>@user.GlobalPermissions</td>
+                        <td>@string.Join(", ", DatabasePermissionsFormat.Parse(user.DatabasePermissions).Select(kv => $"{kv.Key}: {kv.Value}"))</td>
+                        <td class="text-end">
+                            <div class="toolbar justify-end">
+                                <button type="button" class="btn-secondary btn-sm" @onclick="() => StartEdit(user)">@Localizer["Common_Edit"]</button>
+                                <ConfirmButton ConfirmText="@Localizer["Users_ConfirmDelete", user.UserName].Value" OnConfirmed="() => DeleteAsync(user.UserName)">
+                                    @Localizer["Common_Delete"]
+                                </ConfirmButton>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                @if (_result.Items.Count == 0)
+                {
+                    <tr><td colspan="4" class="subtle">@Localizer["Users_None"]</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mt-3">
+        <Pagination Page="_page" PageSize="_pageSize" Total="_result.Total" PageChanged="OnPageChangedAsync" />
+    </div>
+}

@@ -1,0 +1,13 @@
+@if (IsLoading)
+{
+    <div class="flex items-center gap-2 py-3 subtle" role="status" aria-live="polite">
+        <span class="spinner"></span>
+        <span>@(Text ?? Localizer["Common_Loading"])</span>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string? Text { get; set; }
+    [Inject] private IStringLocalizer<SharedResources> Localizer { get; set; } = default!;
+}

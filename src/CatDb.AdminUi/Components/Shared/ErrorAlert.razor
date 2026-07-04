@@ -1,0 +1,16 @@
+@if (Message is not null)
+{
+    <div class="alert-danger" role="alert" aria-live="assertive">
+        <span>@Message</span>
+        <button type="button" class="icon-btn icon-btn-sm !text-red-700 dark:!text-red-300"
+                aria-label="@Localizer["Common_Close"]" @onclick="() => MessageChanged.InvokeAsync(null)">
+            <Icon Name="IconName.Close" Class="h-3.5 w-3.5" />
+        </button>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public EventCallback<string?> MessageChanged { get; set; }
+    [Inject] private IStringLocalizer<SharedResources> Localizer { get; set; } = default!;
+}

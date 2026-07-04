@@ -1,0 +1,95 @@
+@page "/tables/{DatabaseName}"
+@inject IStringLocalizer<SharedResources> Localizer
+
+<PageTitle>@DatabaseName - @Localizer["Nav_Databases"] - @Localizer["AppName"]</PageTitle>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="databases">@Localizer["Nav_Databases"]</a>
+    <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    <span aria-current="page">@DatabaseName</span>
+</nav>
+
+<h1 class="section-title">@Localizer["Tables_Title", DatabaseName]</h1>
+
+<ErrorAlert @bind-Message="_errorMessage" />
+
+<button type="button" class="btn-primary mb-4" @onclick="() => _showCreate = !_showCreate">
+    @(_showCreate ? Localizer["Common_Cancel"] : Localizer["Tables_New"])
+</button>
+
+@if (_showCreate)
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <h2 class="card-title">@Localizer["Tables_New"]</h2>
+            <div class="field mb-3">
+                <label class="label" for="new-table-name">@Localizer["Tables_TableName"]</label>
+                <input id="new-table-name" class="input max-w-xs" @bind="_newTableName" />
+            </div>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div class="field">
+                    <label class="label" for="new-key-schema">@Localizer["Tables_KeySchema"]</label>
+                    <textarea id="new-key-schema" class="textarea" rows="6" @bind="_newKeySchemaJson"></textarea>
+                    <div class="toolbar mt-1">
+                        <button type="button" class="btn-secondary btn-sm" @onclick='() => _newKeySchemaJson = "{ \"type\": \"string\" }"'>string</button>
+                        <button type="button" class="btn-secondary btn-sm" @onclick='() => _newKeySchemaJson = "{ \"type\": \"integer\", \"format\": \"int64\" }"'>int64</button>
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="label" for="new-value-schema">@Localizer["Tables_ValueSchema"]</label>
+                    <textarea id="new-value-schema" class="textarea" rows="6" @bind="_newValueSchemaJson"></textarea>
+                    <div class="toolbar mt-1">
+                        <button type="button" class="btn-secondary btn-sm" @onclick='() => _newValueSchemaJson = "{ \"type\": \"string\" }"'>string</button>
+                        <button type="button" class="btn-secondary btn-sm" @onclick='() => _newValueSchemaJson = SampleObjectSchema'>@Localizer["Tables_SampleObject"]</button>
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="btn-primary mt-4" disabled="@_isCreating" @onclick="CreateAsync">
+                @(_isCreating ? Localizer["Databases_Creating"] : Localizer["Common_Create"])
+            </button>
+        </div>
+    </div>
+}
+
+<LoadingIndicator IsLoading="_isLoading" />
+
+@if (!_isLoading)
+{
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">@Localizer["Tables_TableName"]</th>
+                    <th scope="col">@Localizer["Tables_KeySchema"]</th>
+                    <th scope="col">@Localizer["Tables_ValueSchema"]</th>
+                    <th scope="col">@Localizer["Tables_Modified"]</th>
+                    <th scope="col" class="text-end">@Localizer["Common_Actions"]</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var table in _tables)
+                {
+                    <tr>
+                        <td>@table.Name</td>
+                        <td><code>@SchemaInfo.Describe(table.KeySchema)</code></td>
+                        <td><code>@SchemaInfo.Describe(table.ValueSchema)</code></td>
+                        <td>@table.ModifiedAt.ToString("u")</td>
+                        <td class="text-end">
+                            <div class="toolbar justify-end">
+                                <a class="btn-secondary btn-sm" href="@($"tables/{Uri.EscapeDataString(DatabaseName)}/{Uri.EscapeDataString(table.Name)}")">@Localizer["Tables_Manage"]</a>
+                                <a class="btn-primary btn-sm" href="@($"data/{Uri.EscapeDataString(DatabaseName)}/{Uri.EscapeDataString(table.Name)}")">@Localizer["Tables_BrowseData"]</a>
+                                <ConfirmButton ConfirmText="@Localizer["Tables_ConfirmDelete", table.Name].Value" OnConfirmed="() => DeleteAsync(table.Name)">
+                                    @Localizer["Common_Delete"]
+                                </ConfirmButton>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                @if (_tables.Count == 0)
+                {
+                    <tr><td colspan="5" class="subtle">@Localizer["Tables_None"]</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

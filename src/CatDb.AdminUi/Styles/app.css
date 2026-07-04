@@ -1,0 +1,190 @@
+/*
+ * Design-system source for CatDb.AdminUi. Tailwind v4 (CSS-first config — no tailwind.config.js).
+ *
+ * Rebuild after editing:
+ *   npm install && npm run build:css     (one-shot -> ../wwwroot/app.css)
+ *   npm run watch:css                    (rebuild on save while developing)
+ *
+ * Rule of thumb: one-off spacing/flex/grid in markup uses Tailwind's own utilities directly
+ * (flex, gap-2, grid-cols-2, ...). Anything reused across pages (buttons, cards, inputs, the
+ * tree nav, tables, alerts, badges) gets a named "key" class here — components reference the
+ * key, never re-declare the same utility soup per page.
+ *
+ * Tailwind v4 note: composable custom classes must use @utility (not @apply inside a plain
+ * @layer components rule) — @apply can only reference core utilities or other @utility classes.
+ */
+
+@import "tailwindcss";
+
+/* Manual light/dark toggle (ThemeToggle.razor sets/removes .dark on <html>) instead of relying
+   solely on prefers-color-scheme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source "../Components";
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md
+         px-3 py-1.5 text-sm font-medium transition-colors
+         focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
+         disabled:pointer-events-none disabled:opacity-50;
+}
+@utility btn-sm { @apply px-2 py-1 text-xs; }
+@utility btn-primary {
+  @apply btn bg-blue-600 text-white hover:bg-blue-700 focus-visible:outline-blue-600
+         dark:bg-blue-500 dark:hover:bg-blue-400;
+}
+@utility btn-secondary {
+  @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50
+         focus-visible:outline-slate-400 dark:border-slate-600 dark:bg-slate-900
+         dark:text-slate-200 dark:hover:bg-slate-800;
+}
+@utility btn-danger {
+  @apply btn bg-red-600 text-white hover:bg-red-700 focus-visible:outline-red-600
+         dark:bg-red-500 dark:hover:bg-red-400;
+}
+@utility btn-danger-outline {
+  @apply btn border border-red-300 text-red-600 hover:bg-red-50 focus-visible:outline-red-500
+         dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-950;
+}
+@utility btn-link {
+  @apply inline-flex items-center gap-1 text-sm text-blue-600 hover:underline
+         focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
+         focus-visible:outline-blue-500 dark:text-blue-400;
+}
+
+/* ── Icon-only buttons (theme toggle, tree refresh/expand) ──────────────────── */
+@utility icon-btn {
+  @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500
+         hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2
+         focus-visible:outline-blue-500 dark:text-slate-400 dark:hover:bg-slate-800
+         dark:hover:text-slate-200;
+}
+@utility icon-btn-sm { @apply h-6 w-6; }
+
+/* ── Surfaces ────────────────────────────────────────────────────────────── */
+@utility card {
+  @apply rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900;
+}
+@utility card-body { @apply p-4; }
+@utility card-title { @apply mb-2 block text-base font-semibold text-slate-900 dark:text-slate-100; }
+
+/* ── Forms ───────────────────────────────────────────────────────────────── */
+@utility label { @apply mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300; }
+@utility input {
+  @apply block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900
+         placeholder:text-slate-400 focus:border-blue-500 focus:outline focus:outline-2
+         focus:outline-blue-500/30 disabled:cursor-not-allowed disabled:bg-slate-100
+         dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500
+         dark:disabled:bg-slate-900;
+}
+@utility select { @apply input pr-8; }
+@utility textarea { @apply input font-mono; }
+@utility checkbox {
+  @apply h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500/40
+         dark:border-slate-600 dark:bg-slate-800;
+}
+@utility hint { @apply mt-1 block text-xs text-slate-500 dark:text-slate-400; }
+@utility field { @apply flex flex-col gap-1; }
+
+/* ── Feedback ────────────────────────────────────────────────────────────── */
+@utility alert {
+  @apply flex items-start justify-between gap-3 rounded-md border px-3 py-2 text-sm;
+}
+@utility alert-danger {
+  @apply alert border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300;
+}
+@utility spinner {
+  @apply h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600
+         dark:border-slate-600 dark:border-t-blue-400;
+}
+@utility badge { @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium; }
+@utility badge-neutral { @apply badge bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300; }
+@utility badge-blue { @apply badge bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300; }
+
+/* ── Navigation chrome ─────────────────────────────────────────────────────── */
+@utility breadcrumb { @apply mb-3 flex flex-wrap items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400; }
+@utility breadcrumb-sep { @apply text-slate-300 dark:text-slate-600; }
+@utility tabs { @apply mb-4 flex gap-1 border-b border-slate-200 dark:border-slate-700; }
+@utility tab {
+  @apply -mb-px border-b-2 border-transparent px-3 py-2 text-sm font-medium text-slate-500
+         hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200;
+}
+@utility tab-active { @apply border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400; }
+
+/* ── App shell ─────────────────────────────────────────────────────────────── */
+@utility app-shell { @apply flex min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100; }
+@utility sidebar {
+  @apply flex w-72 shrink-0 flex-col border-e border-slate-200 bg-white
+         dark:border-slate-800 dark:bg-slate-900;
+}
+@utility topbar {
+  @apply flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3
+         dark:border-slate-800 dark:bg-slate-900;
+}
+@utility main-content { @apply min-w-0 flex-1 px-6 py-6; }
+@utility skip-link {
+  @apply sr-only focus:not-sr-only focus:absolute focus:start-2 focus:top-2 focus:z-50
+         focus:rounded-md focus:bg-blue-600 focus:px-3 focus:py-2 focus:text-white;
+}
+@utility section-title { @apply mb-4 block text-2xl font-semibold text-slate-900 dark:text-slate-100; }
+@utility toolbar { @apply flex flex-wrap items-center gap-2; }
+@utility subtle { @apply text-sm text-slate-500 dark:text-slate-400; }
+@utility card-grid { @apply grid grid-cols-1 gap-4 md:grid-cols-2; }
+
+/* ── Tree nav (Databases > tables) ────────────────────────────────────────── */
+@utility tree-section-title {
+  @apply flex items-center justify-between px-2 pb-1 pt-4 text-xs font-semibold uppercase
+         tracking-wide text-slate-400 dark:text-slate-500;
+}
+/* Note: add the literal "group" class alongside tree-item-row in markup (Tailwind's `group`
+   marker has no CSS of its own, so it can't be composed via @apply). */
+@utility tree-item-row {
+  @apply flex items-center gap-1 rounded-md px-1.5 py-1.5 text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800;
+}
+@utility tree-toggle {
+  @apply flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400
+         hover:text-slate-700 focus-visible:outline focus-visible:outline-2
+         focus-visible:outline-blue-500 dark:hover:text-slate-200;
+}
+@utility tree-link {
+  @apply flex-1 truncate text-slate-700 hover:text-blue-600 focus-visible:outline
+         focus-visible:outline-2 focus-visible:outline-blue-500 dark:text-slate-200
+         dark:hover:text-blue-400;
+}
+@utility tree-link-active { @apply font-medium text-blue-600 dark:text-blue-400; }
+@utility tree-icon-btn {
+  @apply flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400
+         opacity-0 hover:text-blue-600 focus-visible:opacity-100 focus-visible:outline
+         focus-visible:outline-2 focus-visible:outline-blue-500 group-hover:opacity-100
+         dark:hover:text-blue-400;
+}
+@utility tree-children {
+  @apply ms-4 space-y-0.5 border-s border-slate-200 py-0.5 ps-2 dark:border-slate-800;
+}
+
+/* ── Tables (descendant selectors — plain CSS, core utilities only) ──────────── */
+@layer components {
+  .table-wrap { @apply overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700; }
+  .table { @apply w-full text-start text-sm text-slate-700 dark:text-slate-300; }
+  .table thead {
+    @apply bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500
+           dark:bg-slate-800/60 dark:text-slate-400;
+  }
+  .table th, .table td { @apply border-b border-slate-100 px-3 py-2 dark:border-slate-800; }
+  .table tbody tr:hover { @apply bg-slate-50 dark:bg-slate-800/40; }
+  .table tbody tr:last-child td { @apply border-b-0; }
+  .breadcrumb a { @apply text-blue-600 hover:underline dark:text-blue-400; }
+
+  /* blazor.web.js toggles this element's display directly (style.display = 'block') on an
+     unhandled circuit error — it ships with no default styling of its own, so without this rule
+     it renders visible-but-unstyled at all times. */
+  #blazor-error-ui {
+    @apply fixed inset-x-0 bottom-0 z-50 hidden items-center justify-between gap-3 border-t
+           border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900
+           dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200;
+  }
+  #blazor-error-ui .reload, #blazor-error-ui .dismiss { @apply btn-link !text-amber-900 dark:!text-amber-200; }
+  #blazor-error-ui .dismiss { @apply cursor-pointer; }
+}

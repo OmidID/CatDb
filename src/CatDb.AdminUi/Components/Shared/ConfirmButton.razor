@@ -1,0 +1,19 @@
+@inject IJSRuntime JS
+
+<button type="button" class="@CssClass" disabled="@Disabled" @onclick="HandleClickAsync">
+    @ChildContent
+</button>
+
+@code {
+    [Parameter] public string ConfirmText { get; set; } = "Are you sure?";
+    [Parameter] public string CssClass { get; set; } = "btn-danger-outline btn-sm";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback OnConfirmed { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private async Task HandleClickAsync()
+    {
+        if (await JS.InvokeAsync<bool>("confirm", ConfirmText))
+            await OnConfirmed.InvokeAsync();
+    }
+}

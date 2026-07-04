@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="@System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName"
+      dir="@(CatDb.AdminUi.Resources.SupportedCultures.IsRightToLeft(System.Globalization.CultureInfo.CurrentUICulture) ? "rtl" : "ltr")">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    @* Applies the saved/OS-preferred theme before first paint (no flash of the wrong theme), and
+       follows the OS setting live for as long as the user hasn't explicitly picked a theme via
+       ThemeToggle (which stores an explicit 'catdb-theme' override and stops auto-following).
+       This only covers the very first real document load, though: MainLayout's auth-redirect to
+       /login (a client-side NavigateTo, no real reload) was observed wiping this class with no
+       DOM mutation or "enhancedload" event visible to explain it — same story for the dir="rtl"/
+       "ltr" attribute above right after a culture switch (a request-localization/streaming-render
+       timing race). LayoutInitializer.razor (mounted in both layouts) is what actually re-applies
+       both after that kind of in-app navigation; the "enhancedload" listener here is defense-in-
+       depth for the same class of problem via a different navigation path (real enhanced-nav link
+       clicks), not the primary fix. *@
+    <script>
+        (function () {
+            var media = window.matchMedia('(prefers-color-scheme: dark)');
+            var apply = function () {
+                var stored = localStorage.getItem('catdb-theme');
+                var dark = stored ? stored === 'dark' : media.matches;
+                document.documentElement.classList.toggle('dark', dark);
+            };
+            apply();
+            media.addEventListener('change', function () {
+                if (!localStorage.getItem('catdb-theme')) apply();
+            });
+            document.addEventListener('enhancedload', apply);
+        })();
+    </script>
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["CatDb.AdminUi.styles.css"]" />
+    <ImportMap />
+    <link rel="icon" type="image/svg+xml" href="images/catdb-logo.svg" />
+    <HeadOutlet />
+</head>
+
+<body class="bg-slate-50 dark:bg-slate-950">
+    @* prerender:false — auth here is a scoped, circuit-only AuthenticationStateProvider (Basic-auth
+       credentials, no ASP.NET Core Identity/cookie scheme). Prerendering would run the static SSR
+       HTTP pass through the endpoint routing AuthorizationMiddleware before any circuit/auth-state
+       exists, which then tries to ChallengeAsync() with no IAuthenticationService registered. *@
+    <Routes @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>

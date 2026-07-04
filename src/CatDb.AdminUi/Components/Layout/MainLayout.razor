@@ -1,0 +1,43 @@
+@inherits LayoutComponentBase
+@inject ApiCredentialProvider Credentials
+@inject NavigationManager Navigation
+@inject IStringLocalizer<SharedResources> Localizer
+
+<LayoutInitializer />
+
+@if (Credentials.IsAuthenticated)
+{
+    <a href="#main-content" class="skip-link">@Localizer["Nav_SkipToContent"]</a>
+
+    <div class="app-shell">
+        <aside class="sidebar">
+            <NavMenu />
+        </aside>
+
+        <main id="main-content" class="main-content" tabindex="-1">
+            @Body
+        </main>
+    </div>
+
+    <div id="blazor-error-ui" data-nosnippet>
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">🗙</span>
+    </div>
+}
+
+@code {
+    // This app has no ASP.NET Core authentication scheme (no Identity/cookies) — auth is a scoped,
+    // per-circuit Basic-auth credential store (see ApiCredentialProvider). Gating access here, in the
+    // one shared layout, keeps every routable page protected without repeating an auth check per page
+    // or routing authorization through the HTTP endpoint pipeline (which needs a real IAuthenticationService
+    // and doesn't fit this model — see the note in Program.cs).
+    protected override void OnInitialized()
+    {
+        if (!Credentials.IsAuthenticated)
+        {
+            var returnUrl = Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri));
+            Navigation.NavigateTo($"/login?returnUrl={returnUrl}");
+        }
+    }
+}

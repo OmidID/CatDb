@@ -1,0 +1,24 @@
+@page "/"
+@inject IStringLocalizer<SharedResources> Localizer
+
+<PageTitle>@Localizer["AppName"]</PageTitle>
+
+<h1 class="section-title">@Localizer["AppName"]</h1>
+<p class="subtle">@Localizer["Home_Subtitle"]</p>
+
+<div class="card-grid mt-4">
+    <div class="card">
+        <div class="card-body">
+            <h2 class="card-title">@Localizer["Nav_Databases"]</h2>
+            <p class="subtle mb-3">@Localizer["Home_DatabasesDesc"]</p>
+            <a href="databases" class="btn-primary btn-sm">@Localizer["Home_Open"]</a>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <h2 class="card-title">@Localizer["Nav_Users"]</h2>
+            <p class="subtle mb-3">@Localizer["Home_UsersDesc"]</p>
+            <a href="users" class="btn-primary btn-sm">@Localizer["Home_Open"]</a>
+        </div>
+    </div>
+</div>

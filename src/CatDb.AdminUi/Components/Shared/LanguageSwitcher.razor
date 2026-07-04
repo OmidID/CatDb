@@ -1,0 +1,25 @@
+@using System.Globalization
+@inject NavigationManager Navigation
+@inject IStringLocalizer<SharedResources> Localizer
+
+<label class="sr-only" for="language-switcher">@Localizer["Language_Label"]</label>
+<select id="language-switcher" class="select !w-auto !py-1 text-sm" value="@_current" @onchange="OnChangedAsync">
+    @foreach (var (cultureCode, displayName) in SupportedCultures.All)
+    {
+        <option value="@cultureCode">@displayName</option>
+    }
+</select>
+
+@code {
+    private string _current = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName;
+
+    private Task OnChangedAsync(ChangeEventArgs e)
+    {
+        var culture = e.Value?.ToString() ?? SupportedCultures.Default;
+        var returnPath = "/" + Navigation.ToBaseRelativePath(Navigation.Uri);
+        // Real navigation, not SPA routing: culture is a per-request cookie read by
+        // UseRequestLocalization, so switching it requires a fresh HTTP round-trip.
+        Navigation.NavigateTo($"/culture/set?culture={culture}&redirectUri={Uri.EscapeDataString(returnPath)}", forceLoad: true);
+        return Task.CompletedTask;
+    }
+}

@@ -1,0 +1,129 @@
+@page "/tables/{DatabaseName}/{TableName}"
+@inject IStringLocalizer<SharedResources> Localizer
+
+<PageTitle>@TableName - @Localizer["AppName"]</PageTitle>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="databases">@Localizer["Nav_Databases"]</a>
+    <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    <a href="@($"tables/{Uri.EscapeDataString(DatabaseName)}")">@DatabaseName</a>
+    <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    <span aria-current="page">@TableName</span>
+</nav>
+
+<div class="flex items-center justify-between">
+    <h1 class="section-title !mb-0">@TableName</h1>
+    <a class="btn-primary" href="@($"data/{Uri.EscapeDataString(DatabaseName)}/{Uri.EscapeDataString(TableName)}")">@Localizer["Tables_BrowseData"]</a>
+</div>
+
+<ErrorAlert @bind-Message="_errorMessage" />
+
+<LoadingIndicator IsLoading="_isLoading" />
+
+@if (!_isLoading && _table is not null)
+{
+    <div class="card-grid mb-4 mt-4">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title">@Localizer["Tables_KeySchema"]</h2>
+                <pre class="overflow-x-auto text-xs"><code>@Pretty(_table.KeySchema)</code></pre>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title">@Localizer["Tables_ValueSchema"]</h2>
+                <pre class="overflow-x-auto text-xs"><code>@Pretty(_table.ValueSchema)</code></pre>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-2 flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">@Localizer["TableDetail_Indexes"]</h2>
+        <div class="toolbar">
+            <button type="button" class="btn-secondary btn-sm" @onclick="() => _showCreateIndex = !_showCreateIndex">
+                @(_showCreateIndex ? Localizer["Common_Cancel"] : Localizer["TableDetail_NewIndex"])
+            </button>
+            <ConfirmButton ConfirmText="@Localizer["TableDetail_ConfirmRebuildAll"].Value" CssClass="btn-secondary btn-sm" OnConfirmed="RebuildAllAsync">
+                @Localizer["TableDetail_RebuildAll"]
+            </ConfirmButton>
+        </div>
+    </div>
+
+    @if (_showCreateIndex)
+    {
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="grid grid-cols-1 items-end gap-3 md:grid-cols-4">
+                    <div class="field">
+                        <label class="label" for="new-index-name">@Localizer["TableDetail_IndexName"]</label>
+                        <input id="new-index-name" class="input" @bind="_newIndexName" />
+                    </div>
+                    <div class="field">
+                        <label class="label" for="new-index-members">@Localizer["TableDetail_MemberFields"]</label>
+                        <input id="new-index-members" class="input" placeholder="City,Age" @bind="_newIndexMembers" />
+                    </div>
+                    <div class="field">
+                        <label class="label" for="new-index-type">@Localizer["TableDetail_Type"]</label>
+                        <select id="new-index-type" class="select" @bind="_newIndexType">
+                            @foreach (var type in IndexTypes.All)
+                            {
+                                <option value="@type">@type</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <button type="button" class="btn-primary" disabled="@_isCreatingIndex" @onclick="CreateIndexAsync">
+                            @(_isCreatingIndex ? Localizer["Databases_Creating"] : Localizer["Common_Create"])
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">@Localizer["TableDetail_IndexNameCol"]</th>
+                    <th scope="col">@Localizer["TableDetail_MembersCol"]</th>
+                    <th scope="col">@Localizer["TableDetail_Type"]</th>
+                    <th scope="col" class="text-end">@Localizer["Common_Actions"]</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var index in _indexes)
+                {
+                    <tr>
+                        <td>@index.Name</td>
+                        <td>@string.Join(", ", index.Members)</td>
+                        <td>
+                            @if (index.Type == IndexTypes.Unique)
+                            {
+                                <span class="badge-blue">@index.Type</span>
+                            }
+                            else
+                            {
+                                <span class="badge-neutral">@index.Type</span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            <div class="toolbar justify-end">
+                                <ConfirmButton ConfirmText="@Localizer["TableDetail_ConfirmRebuild", index.Name].Value" CssClass="btn-secondary btn-sm" OnConfirmed="() => RebuildIndexAsync(index.Name)">
+                                    @Localizer["TableDetail_Rebuild"]
+                                </ConfirmButton>
+                                <ConfirmButton ConfirmText="@Localizer["TableDetail_ConfirmDrop", index.Name].Value" OnConfirmed="() => DeleteIndexAsync(index.Name)">
+                                    @Localizer["TableDetail_Drop"]
+                                </ConfirmButton>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                @if (_indexes.Count == 0)
+                {
+                    <tr><td colspan="4" class="subtle">@Localizer["TableDetail_NoIndexes"]</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

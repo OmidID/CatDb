@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="AppName" xml:space="preserve"><value>CatDb Admin</value></data>
+
+  <data name="Nav_Home" xml:space="preserve"><value>خانه</value></data>
+  <data name="Nav_Databases" xml:space="preserve"><value>پایگاه‌های داده</value></data>
+  <data name="Nav_Users" xml:space="preserve"><value>کاربران</value></data>
+  <data name="Nav_Refresh" xml:space="preserve"><value>بازخوانی</value></data>
+  <data name="Nav_Expand" xml:space="preserve"><value>باز کردن</value></data>
+  <data name="Nav_Collapse" xml:space="preserve"><value>بستن</value></data>
+  <data name="Nav_SignedInAs" xml:space="preserve"><value>واردشده به‌عنوان</value></data>
+  <data name="Nav_SignOut" xml:space="preserve"><value>خروج از حساب</value></data>
+  <data name="Nav_NoDatabases" xml:space="preserve"><value>پایگاه داده‌ای وجود ندارد</value></data>
+  <data name="Nav_NoTables" xml:space="preserve"><value>جدولی وجود ندارد</value></data>
+  <data name="Nav_SkipToContent" xml:space="preserve"><value>رفتن به محتوا</value></data>
+
+  <data name="Login_ServerAddress" xml:space="preserve"><value>آدرس سرور</value></data>
+  <data name="Login_Username" xml:space="preserve"><value>نام کاربری</value></data>
+  <data name="Login_Password" xml:space="preserve"><value>گذرواژه</value></data>
+  <data name="Login_SignIn" xml:space="preserve"><value>ورود</value></data>
+  <data name="Login_SigningIn" xml:space="preserve"><value>در حال ورود...</value></data>
+  <data name="Login_InvalidCredentials" xml:space="preserve"><value>نام کاربری یا گذرواژه نامعتبر است.</value></data>
+  <data name="Login_ConnectionError" xml:space="preserve"><value>اتصال به CatDb.Server برقرار نشد: {0}</value></data>
+
+  <data name="Common_Save" xml:space="preserve"><value>ذخیره</value></data>
+  <data name="Common_Cancel" xml:space="preserve"><value>انصراف</value></data>
+  <data name="Common_Delete" xml:space="preserve"><value>حذف</value></data>
+  <data name="Common_Edit" xml:space="preserve"><value>ویرایش</value></data>
+  <data name="Common_Create" xml:space="preserve"><value>ایجاد</value></data>
+  <data name="Common_Loading" xml:space="preserve"><value>در حال بارگذاری...</value></data>
+  <data name="Common_Actions" xml:space="preserve"><value>عملیات</value></data>
+  <data name="Common_Close" xml:space="preserve"><value>بستن</value></data>
+
+  <data name="Theme_Light" xml:space="preserve"><value>روشن</value></data>
+  <data name="Theme_Dark" xml:space="preserve"><value>تیره</value></data>
+  <data name="Theme_System" xml:space="preserve"><value>سیستم</value></data>
+  <data name="Language_Label" xml:space="preserve"><value>زبان</value></data>
+
+  <data name="Home_Subtitle" xml:space="preserve"><value>پایگاه‌های داده، کاربران، جدول‌ها و ایندکس‌ها را مدیریت کنید و داده‌های نمونهٔ CatDb.Server خود را مرور/جستجو کنید.</value></data>
+  <data name="Home_DatabasesDesc" xml:space="preserve"><value>پایگاه‌های داده را ایجاد، فهرست و حذف کنید؛ به جدول‌ها و داده‌ها دسترسی داشته باشید.</value></data>
+  <data name="Home_UsersDesc" xml:space="preserve"><value>حساب‌های کاربری و دسترسی‌های سراسری/مربوط به هر پایگاه داده را مدیریت کنید.</value></data>
+  <data name="Home_Open" xml:space="preserve"><value>باز کردن</value></data>
+
+  <data name="Pagination_Previous" xml:space="preserve"><value>قبلی</value></data>
+  <data name="Pagination_Next" xml:space="preserve"><value>بعدی</value></data>
+  <data name="Pagination_PageOf" xml:space="preserve"><value>صفحهٔ {0} از {1}</value></data>
+
+  <data name="Databases_NewPlaceholder" xml:space="preserve"><value>نام پایگاه داده جدید</value></data>
+  <data name="Databases_Create" xml:space="preserve"><value>ایجاد پایگاه داده</value></data>
+  <data name="Databases_Creating" xml:space="preserve"><value>در حال ایجاد...</value></data>
+  <data name="Databases_Name" xml:space="preserve"><value>نام</value></data>
+  <data name="Databases_CreatedUtc" xml:space="preserve"><value>ایجادشده (UTC)</value></data>
+  <data name="Databases_TablesLink" xml:space="preserve"><value>جدول‌ها</value></data>
+  <data name="Databases_ConfirmDelete" xml:space="preserve"><value>پایگاه داده «{0}» حذف شود؟ این عمل غیرقابل بازگشت است.</value></data>
+  <data name="Databases_None" xml:space="preserve"><value>هنوز پایگاه داده‌ای وجود ندارد.</value></data>
+
+  <data name="Users_New" xml:space="preserve"><value>کاربر جدید</value></data>
+  <data name="Users_Edit" xml:space="preserve"><value>ویرایش کاربر: {0}</value></data>
+  <data name="Users_PasswordHint" xml:space="preserve"><value>در هر ذخیره‌سازی الزامی است — CatDb.Server گذرواژه را در هر به‌روزرسانی بازنشانی می‌کند.</value></data>
+  <data name="Users_GlobalPermissions" xml:space="preserve"><value>دسترسی‌های سراسری</value></data>
+  <data name="Users_DatabasePermissions" xml:space="preserve"><value>دسترسی‌های پایگاه داده</value></data>
+  <data name="Users_DatabasePlaceholder" xml:space="preserve"><value>پایگاه داده (یا * برای همه)</value></data>
+  <data name="Users_RemoveRow" xml:space="preserve"><value>حذف</value></data>
+  <data name="Users_AddDatabasePermission" xml:space="preserve"><value>افزودن دسترسی پایگاه داده</value></data>
+  <data name="Users_Saving" xml:space="preserve"><value>در حال ذخیره...</value></data>
+  <data name="Users_ConfirmDelete" xml:space="preserve"><value>کاربر «{0}» حذف شود؟</value></data>
+  <data name="Users_None" xml:space="preserve"><value>هنوز کاربری وجود ندارد.</value></data>
+
+  <data name="Tables_Title" xml:space="preserve"><value>جدول‌های «{0}»</value></data>
+  <data name="Tables_New" xml:space="preserve"><value>جدول جدید</value></data>
+  <data name="Tables_TableName" xml:space="preserve"><value>نام جدول</value></data>
+  <data name="Tables_KeySchema" xml:space="preserve"><value>شمای کلید (JSON Schema)</value></data>
+  <data name="Tables_ValueSchema" xml:space="preserve"><value>شمای مقدار (JSON Schema)</value></data>
+  <data name="Tables_SampleObject" xml:space="preserve"><value>شیء نمونه</value></data>
+  <data name="Tables_Modified" xml:space="preserve"><value>ویرایش‌شده</value></data>
+  <data name="Tables_Manage" xml:space="preserve"><value>مدیریت</value></data>
+  <data name="Tables_BrowseData" xml:space="preserve"><value>مرور داده‌ها</value></data>
+  <data name="Tables_ConfirmDelete" xml:space="preserve"><value>جدول «{0}» حذف شود؟ این عمل غیرقابل بازگشت است.</value></data>
+  <data name="Tables_None" xml:space="preserve"><value>هنوز جدولی وجود ندارد.</value></data>
+
+  <data name="TableDetail_Indexes" xml:space="preserve"><value>ایندکس‌ها</value></data>
+  <data name="TableDetail_NewIndex" xml:space="preserve"><value>ایندکس جدید</value></data>
+  <data name="TableDetail_RebuildAll" xml:space="preserve"><value>بازسازی همه</value></data>
+  <data name="TableDetail_ConfirmRebuildAll" xml:space="preserve"><value>همهٔ ایندکس‌های این جدول بازسازی شوند؟</value></data>
+  <data name="TableDetail_IndexName" xml:space="preserve"><value>نام ایندکس</value></data>
+  <data name="TableDetail_MemberFields" xml:space="preserve"><value>فیلدهای عضو (جداشده با کاما)</value></data>
+  <data name="TableDetail_Type" xml:space="preserve"><value>نوع</value></data>
+  <data name="TableDetail_IndexNameCol" xml:space="preserve"><value>نام</value></data>
+  <data name="TableDetail_MembersCol" xml:space="preserve"><value>اعضا</value></data>
+  <data name="TableDetail_Rebuild" xml:space="preserve"><value>بازسازی</value></data>
+  <data name="TableDetail_ConfirmRebuild" xml:space="preserve"><value>ایندکس «{0}» بازسازی شود؟</value></data>
+  <data name="TableDetail_Drop" xml:space="preserve"><value>حذف</value></data>
+  <data name="TableDetail_ConfirmDrop" xml:space="preserve"><value>ایندکس «{0}» حذف شود؟</value></data>
+  <data name="TableDetail_NoIndexes" xml:space="preserve"><value>ایندکس ثانویه‌ای وجود ندارد.</value></data>
+
+  <data name="DataBrowser_Data" xml:space="preserve"><value>داده‌ها</value></data>
+  <data name="DataBrowser_LoadingSchema" xml:space="preserve"><value>در حال بارگذاری طرح‌واره...</value></data>
+  <data name="DataBrowser_Browse" xml:space="preserve"><value>مرور</value></data>
+  <data name="DataBrowser_FilterAndSort" xml:space="preserve"><value>فیلتر و مرتب‌سازی</value></data>
+  <data name="DataBrowser_FromKey" xml:space="preserve"><value>از کلید</value></data>
+  <data name="DataBrowser_ToKey" xml:space="preserve"><value>تا کلید</value></data>
+  <data name="DataBrowser_Start" xml:space="preserve"><value>(ابتدا)</value></data>
+  <data name="DataBrowser_End" xml:space="preserve"><value>(انتها)</value></data>
+  <data name="DataBrowser_Direction" xml:space="preserve"><value>جهت</value></data>
+  <data name="DataBrowser_Forward" xml:space="preserve"><value>روبه‌جلو</value></data>
+  <data name="DataBrowser_Backward" xml:space="preserve"><value>روبه‌عقب</value></data>
+  <data name="DataBrowser_Take" xml:space="preserve"><value>تعداد</value></data>
+  <data name="DataBrowser_RowCount" xml:space="preserve"><value>{0} ردیف.</value></data>
+  <data name="DataBrowser_RowCountWithTotal" xml:space="preserve"><value>{0} ردیف بازگردانده شد (مجموعاً {1} مورد منطبق).</value></data>
+  <data name="DataBrowser_FiltersAnded" xml:space="preserve"><value>فیلترها (AND)</value></data>
+  <data name="DataBrowser_FilterField" xml:space="preserve"><value>فیلد</value></data>
+  <data name="DataBrowser_FilterOperator" xml:space="preserve"><value>عملگر</value></data>
+  <data name="DataBrowser_FilterValue" xml:space="preserve"><value>مقدار</value></data>
+  <data name="DataBrowser_FilterValue2" xml:space="preserve"><value>مقدار ۲</value></data>
+  <data name="DataBrowser_AddFilter" xml:space="preserve"><value>افزودن فیلتر</value></data>
+  <data name="DataBrowser_NoObjectFields" xml:space="preserve"><value>شمای مقدار این جدول یک شیء نیست، بنابراین فیلتر بر اساس فیلد در دسترس نیست — از بازهٔ کلید در پایین استفاده کنید.</value></data>
+  <data name="DataBrowser_Sort" xml:space="preserve"><value>مرتب‌سازی</value></data>
+  <data name="DataBrowser_SortField" xml:space="preserve"><value>فیلد مرتب‌سازی</value></data>
+  <data name="DataBrowser_PrimaryKey" xml:space="preserve"><value>$key (کلید اصلی)</value></data>
+  <data name="DataBrowser_Descending" xml:space="preserve"><value>نزولی</value></data>
+  <data name="DataBrowser_AddSort" xml:space="preserve"><value>افزودن مرتب‌سازی</value></data>
+  <data name="DataBrowser_KeyRangeAndPaging" xml:space="preserve"><value>بازهٔ کلید و صفحه‌بندی</value></data>
+  <data name="DataBrowser_KeyFrom" xml:space="preserve"><value>کلید از</value></data>
+  <data name="DataBrowser_KeyTo" xml:space="preserve"><value>کلید تا</value></data>
+  <data name="DataBrowser_Skip" xml:space="preserve"><value>رد کردن</value></data>
+  <data name="DataBrowser_ComputeCount" xml:space="preserve"><value>محاسبهٔ تعداد کل</value></data>
+  <data name="DataBrowser_Searching" xml:space="preserve"><value>در حال جستجو...</value></data>
+  <data name="DataBrowser_Search" xml:space="preserve"><value>جستجو</value></data>
+  <data name="DataBrowser_InsertRecord" xml:space="preserve"><value>افزودن رکورد</value></data>
+  <data name="DataBrowser_NewRecord" xml:space="preserve"><value>رکورد جدید</value></data>
+  <data name="DataBrowser_EditRecord" xml:space="preserve"><value>ویرایش رکورد (جایگزینی)</value></data>
+  <data name="DataBrowser_KeyJson" xml:space="preserve"><value>کلید (JSON)</value></data>
+  <data name="DataBrowser_ValueJson" xml:space="preserve"><value>مقدار (JSON)</value></data>
+  <data name="DataBrowser_Insert" xml:space="preserve"><value>افزودن</value></data>
+  <data name="DataBrowser_Key" xml:space="preserve"><value>کلید</value></data>
+  <data name="DataBrowser_Value" xml:space="preserve"><value>مقدار</value></data>
+  <data name="DataBrowser_ConfirmDelete" xml:space="preserve"><value>این رکورد حذف شود؟</value></data>
+  <data name="DataBrowser_NoRows" xml:space="preserve"><value>ردیفی وجود ندارد.</value></data>
+</root>

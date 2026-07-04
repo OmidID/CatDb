@@ -1,0 +1,66 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject IStringLocalizer<SharedResources> Localizer
+
+<button type="button" class="icon-btn" title="@CurrentLabel" aria-label="@CurrentLabel" @onclick="CycleAsync">
+    <Icon Name="@CurrentIcon" />
+</button>
+
+@code {
+    private IJSObjectReference? _module;
+    private string _mode = "system"; // "light" | "dark" | "system" — mirrors wwwroot/theme.js
+
+    private IconName CurrentIcon => _mode switch
+    {
+        "light" => IconName.Sun,
+        "dark" => IconName.Moon,
+        _ => IconName.Monitor,
+    };
+
+    private string CurrentLabel => _mode switch
+    {
+        "light" => Localizer["Theme_Light"],
+        "dark" => Localizer["Theme_Dark"],
+        _ => Localizer["Theme_System"],
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./theme.js");
+        _mode = await _module.InvokeAsync<string>("getMode");
+        StateHasChanged();
+    }
+
+    private async Task CycleAsync()
+    {
+        if (_module is null)
+            return;
+
+        _mode = _mode switch
+        {
+            "system" => "light",
+            "light" => "dark",
+            _ => "system",
+        };
+        await _module.InvokeVoidAsync("setMode", _mode);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // Expected when the circuit is already tearing down (e.g. LanguageSwitcher's
+            // forceLoad navigation) — the JS side is gone, nothing left to dispose.
+        }
+    }
+}

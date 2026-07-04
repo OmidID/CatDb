@@ -1,0 +1,29 @@
+@if (TotalPages > 1)
+{
+    <nav class="toolbar" aria-label="Pagination">
+        <button type="button" class="btn-secondary btn-sm" disabled="@(Page <= 1)" @onclick="() => GoTo(Page - 1)">
+            @Localizer["Pagination_Previous"]
+        </button>
+        <span class="subtle" aria-current="page">@Localizer["Pagination_PageOf", Page, TotalPages]</span>
+        <button type="button" class="btn-secondary btn-sm" disabled="@(Page >= TotalPages)" @onclick="() => GoTo(Page + 1)">
+            @Localizer["Pagination_Next"]
+        </button>
+    </nav>
+}
+
+@code {
+    [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public int PageSize { get; set; } = 20;
+    [Parameter] public int Total { get; set; }
+    [Parameter] public EventCallback<int> PageChanged { get; set; }
+    [Inject] private IStringLocalizer<SharedResources> Localizer { get; set; } = default!;
+
+    private int TotalPages => PageSize <= 0 ? 1 : Math.Max(1, (int)Math.Ceiling(Total / (double)PageSize));
+
+    private Task GoTo(int page)
+    {
+        if (page < 1 || page > TotalPages || page == Page)
+            return Task.CompletedTask;
+        return PageChanged.InvokeAsync(page);
+    }
+}

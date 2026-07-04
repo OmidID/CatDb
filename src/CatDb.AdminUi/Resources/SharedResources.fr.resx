@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="AppName" xml:space="preserve"><value>CatDb Admin</value></data>
+
+  <data name="Nav_Home" xml:space="preserve"><value>Accueil</value></data>
+  <data name="Nav_Databases" xml:space="preserve"><value>Bases de données</value></data>
+  <data name="Nav_Users" xml:space="preserve"><value>Utilisateurs</value></data>
+  <data name="Nav_Refresh" xml:space="preserve"><value>Actualiser</value></data>
+  <data name="Nav_Expand" xml:space="preserve"><value>Développer</value></data>
+  <data name="Nav_Collapse" xml:space="preserve"><value>Réduire</value></data>
+  <data name="Nav_SignedInAs" xml:space="preserve"><value>Connecté en tant que</value></data>
+  <data name="Nav_SignOut" xml:space="preserve"><value>Déconnexion</value></data>
+  <data name="Nav_NoDatabases" xml:space="preserve"><value>Aucune base de données</value></data>
+  <data name="Nav_NoTables" xml:space="preserve"><value>Aucune table</value></data>
+  <data name="Nav_SkipToContent" xml:space="preserve"><value>Aller au contenu</value></data>
+
+  <data name="Login_ServerAddress" xml:space="preserve"><value>Adresse du serveur</value></data>
+  <data name="Login_Username" xml:space="preserve"><value>Nom d'utilisateur</value></data>
+  <data name="Login_Password" xml:space="preserve"><value>Mot de passe</value></data>
+  <data name="Login_SignIn" xml:space="preserve"><value>Se connecter</value></data>
+  <data name="Login_SigningIn" xml:space="preserve"><value>Connexion en cours...</value></data>
+  <data name="Login_InvalidCredentials" xml:space="preserve"><value>Nom d'utilisateur ou mot de passe invalide.</value></data>
+  <data name="Login_ConnectionError" xml:space="preserve"><value>Impossible de joindre CatDb.Server : {0}</value></data>
+
+  <data name="Common_Save" xml:space="preserve"><value>Enregistrer</value></data>
+  <data name="Common_Cancel" xml:space="preserve"><value>Annuler</value></data>
+  <data name="Common_Delete" xml:space="preserve"><value>Supprimer</value></data>
+  <data name="Common_Edit" xml:space="preserve"><value>Modifier</value></data>
+  <data name="Common_Create" xml:space="preserve"><value>Créer</value></data>
+  <data name="Common_Loading" xml:space="preserve"><value>Chargement...</value></data>
+  <data name="Common_Actions" xml:space="preserve"><value>Actions</value></data>
+  <data name="Common_Close" xml:space="preserve"><value>Fermer</value></data>
+
+  <data name="Theme_Light" xml:space="preserve"><value>Clair</value></data>
+  <data name="Theme_Dark" xml:space="preserve"><value>Sombre</value></data>
+  <data name="Theme_System" xml:space="preserve"><value>Système</value></data>
+  <data name="Language_Label" xml:space="preserve"><value>Langue</value></data>
+
+  <data name="Home_Subtitle" xml:space="preserve"><value>Gérez les bases de données, les utilisateurs, les tables, les index, et explorez/interrogez les données de votre instance CatDb.Server.</value></data>
+  <data name="Home_DatabasesDesc" xml:space="preserve"><value>Créez, listez et supprimez des bases de données ; accédez aux tables et aux données.</value></data>
+  <data name="Home_UsersDesc" xml:space="preserve"><value>Gérez les comptes utilisateurs et les permissions globales/par base de données.</value></data>
+  <data name="Home_Open" xml:space="preserve"><value>Ouvrir</value></data>
+
+  <data name="Pagination_Previous" xml:space="preserve"><value>Précédent</value></data>
+  <data name="Pagination_Next" xml:space="preserve"><value>Suivant</value></data>
+  <data name="Pagination_PageOf" xml:space="preserve"><value>Page {0} sur {1}</value></data>
+
+  <data name="Databases_NewPlaceholder" xml:space="preserve"><value>Nom de la nouvelle base de données</value></data>
+  <data name="Databases_Create" xml:space="preserve"><value>Créer une base de données</value></data>
+  <data name="Databases_Creating" xml:space="preserve"><value>Création en cours...</value></data>
+  <data name="Databases_Name" xml:space="preserve"><value>Nom</value></data>
+  <data name="Databases_CreatedUtc" xml:space="preserve"><value>Créée (UTC)</value></data>
+  <data name="Databases_TablesLink" xml:space="preserve"><value>Tables</value></data>
+  <data name="Databases_ConfirmDelete" xml:space="preserve"><value>Supprimer la base de données « {0} » ? Cette action est irréversible.</value></data>
+  <data name="Databases_None" xml:space="preserve"><value>Aucune base de données pour le moment.</value></data>
+
+  <data name="Users_New" xml:space="preserve"><value>Nouvel utilisateur</value></data>
+  <data name="Users_Edit" xml:space="preserve"><value>Modifier l'utilisateur : {0}</value></data>
+  <data name="Users_PasswordHint" xml:space="preserve"><value>Requis à chaque enregistrement — CatDb.Server réinitialise le mot de passe à chaque mise à jour.</value></data>
+  <data name="Users_GlobalPermissions" xml:space="preserve"><value>Permissions globales</value></data>
+  <data name="Users_DatabasePermissions" xml:space="preserve"><value>Permissions par base de données</value></data>
+  <data name="Users_DatabasePlaceholder" xml:space="preserve"><value>base de données (ou * pour toutes)</value></data>
+  <data name="Users_RemoveRow" xml:space="preserve"><value>Retirer</value></data>
+  <data name="Users_AddDatabasePermission" xml:space="preserve"><value>Ajouter une permission de base de données</value></data>
+  <data name="Users_Saving" xml:space="preserve"><value>Enregistrement...</value></data>
+  <data name="Users_ConfirmDelete" xml:space="preserve"><value>Supprimer l'utilisateur « {0} » ?</value></data>
+  <data name="Users_None" xml:space="preserve"><value>Aucun utilisateur pour le moment.</value></data>
+
+  <data name="Tables_Title" xml:space="preserve"><value>Tables dans « {0} »</value></data>
+  <data name="Tables_New" xml:space="preserve"><value>Nouvelle table</value></data>
+  <data name="Tables_TableName" xml:space="preserve"><value>Nom de la table</value></data>
+  <data name="Tables_KeySchema" xml:space="preserve"><value>Schéma de clé (JSON Schema)</value></data>
+  <data name="Tables_ValueSchema" xml:space="preserve"><value>Schéma de valeur (JSON Schema)</value></data>
+  <data name="Tables_SampleObject" xml:space="preserve"><value>exemple d'objet</value></data>
+  <data name="Tables_Modified" xml:space="preserve"><value>Modifiée</value></data>
+  <data name="Tables_Manage" xml:space="preserve"><value>Gérer</value></data>
+  <data name="Tables_BrowseData" xml:space="preserve"><value>Explorer les données</value></data>
+  <data name="Tables_ConfirmDelete" xml:space="preserve"><value>Supprimer la table « {0} » ? Cette action est irréversible.</value></data>
+  <data name="Tables_None" xml:space="preserve"><value>Aucune table pour le moment.</value></data>
+
+  <data name="TableDetail_Indexes" xml:space="preserve"><value>Index</value></data>
+  <data name="TableDetail_NewIndex" xml:space="preserve"><value>Nouvel index</value></data>
+  <data name="TableDetail_RebuildAll" xml:space="preserve"><value>Tout reconstruire</value></data>
+  <data name="TableDetail_ConfirmRebuildAll" xml:space="preserve"><value>Reconstruire tous les index de cette table ?</value></data>
+  <data name="TableDetail_IndexName" xml:space="preserve"><value>Nom de l'index</value></data>
+  <data name="TableDetail_MemberFields" xml:space="preserve"><value>Champs membres (séparés par des virgules)</value></data>
+  <data name="TableDetail_Type" xml:space="preserve"><value>Type</value></data>
+  <data name="TableDetail_IndexNameCol" xml:space="preserve"><value>Nom</value></data>
+  <data name="TableDetail_MembersCol" xml:space="preserve"><value>Membres</value></data>
+  <data name="TableDetail_Rebuild" xml:space="preserve"><value>Reconstruire</value></data>
+  <data name="TableDetail_ConfirmRebuild" xml:space="preserve"><value>Reconstruire l'index « {0} » ?</value></data>
+  <data name="TableDetail_Drop" xml:space="preserve"><value>Supprimer</value></data>
+  <data name="TableDetail_ConfirmDrop" xml:space="preserve"><value>Supprimer l'index « {0} » ?</value></data>
+  <data name="TableDetail_NoIndexes" xml:space="preserve"><value>Aucun index secondaire.</value></data>
+
+  <data name="DataBrowser_Data" xml:space="preserve"><value>Données</value></data>
+  <data name="DataBrowser_LoadingSchema" xml:space="preserve"><value>Chargement du schéma...</value></data>
+  <data name="DataBrowser_Browse" xml:space="preserve"><value>Explorer</value></data>
+  <data name="DataBrowser_FilterAndSort" xml:space="preserve"><value>Filtrer et trier</value></data>
+  <data name="DataBrowser_FromKey" xml:space="preserve"><value>Clé de début</value></data>
+  <data name="DataBrowser_ToKey" xml:space="preserve"><value>Clé de fin</value></data>
+  <data name="DataBrowser_Start" xml:space="preserve"><value>(début)</value></data>
+  <data name="DataBrowser_End" xml:space="preserve"><value>(fin)</value></data>
+  <data name="DataBrowser_Direction" xml:space="preserve"><value>Direction</value></data>
+  <data name="DataBrowser_Forward" xml:space="preserve"><value>Avant</value></data>
+  <data name="DataBrowser_Backward" xml:space="preserve"><value>Arrière</value></data>
+  <data name="DataBrowser_Take" xml:space="preserve"><value>Quantité</value></data>
+  <data name="DataBrowser_RowCount" xml:space="preserve"><value>{0} ligne(s).</value></data>
+  <data name="DataBrowser_RowCountWithTotal" xml:space="preserve"><value>{0} ligne(s) retournée(s) ({1} correspondances au total).</value></data>
+  <data name="DataBrowser_FiltersAnded" xml:space="preserve"><value>Filtres (ET)</value></data>
+  <data name="DataBrowser_FilterField" xml:space="preserve"><value>Champ</value></data>
+  <data name="DataBrowser_FilterOperator" xml:space="preserve"><value>Opérateur</value></data>
+  <data name="DataBrowser_FilterValue" xml:space="preserve"><value>Valeur</value></data>
+  <data name="DataBrowser_FilterValue2" xml:space="preserve"><value>Valeur 2</value></data>
+  <data name="DataBrowser_AddFilter" xml:space="preserve"><value>Ajouter un filtre</value></data>
+  <data name="DataBrowser_NoObjectFields" xml:space="preserve"><value>Le schéma de valeur de cette table n'est pas un objet, les filtres par champ ne sont donc pas disponibles — utilisez la plage de clés ci-dessous.</value></data>
+  <data name="DataBrowser_Sort" xml:space="preserve"><value>Tri</value></data>
+  <data name="DataBrowser_SortField" xml:space="preserve"><value>Champ de tri</value></data>
+  <data name="DataBrowser_PrimaryKey" xml:space="preserve"><value>$key (clé primaire)</value></data>
+  <data name="DataBrowser_Descending" xml:space="preserve"><value>Décroissant</value></data>
+  <data name="DataBrowser_AddSort" xml:space="preserve"><value>Ajouter un tri</value></data>
+  <data name="DataBrowser_KeyRangeAndPaging" xml:space="preserve"><value>Plage de clés et pagination</value></data>
+  <data name="DataBrowser_KeyFrom" xml:space="preserve"><value>Clé depuis</value></data>
+  <data name="DataBrowser_KeyTo" xml:space="preserve"><value>Clé jusqu'à</value></data>
+  <data name="DataBrowser_Skip" xml:space="preserve"><value>Ignorer</value></data>
+  <data name="DataBrowser_ComputeCount" xml:space="preserve"><value>Calculer le total</value></data>
+  <data name="DataBrowser_Searching" xml:space="preserve"><value>Recherche en cours...</value></data>
+  <data name="DataBrowser_Search" xml:space="preserve"><value>Rechercher</value></data>
+  <data name="DataBrowser_InsertRecord" xml:space="preserve"><value>Insérer un enregistrement</value></data>
+  <data name="DataBrowser_NewRecord" xml:space="preserve"><value>Nouvel enregistrement</value></data>
+  <data name="DataBrowser_EditRecord" xml:space="preserve"><value>Modifier l'enregistrement (remplacer)</value></data>
+  <data name="DataBrowser_KeyJson" xml:space="preserve"><value>Clé (JSON)</value></data>
+  <data name="DataBrowser_ValueJson" xml:space="preserve"><value>Valeur (JSON)</value></data>
+  <data name="DataBrowser_Insert" xml:space="preserve"><value>Insérer</value></data>
+  <data name="DataBrowser_Key" xml:space="preserve"><value>Clé</value></data>
+  <data name="DataBrowser_Value" xml:space="preserve"><value>Valeur</value></data>
+  <data name="DataBrowser_ConfirmDelete" xml:space="preserve"><value>Supprimer cet enregistrement ?</value></data>
+  <data name="DataBrowser_NoRows" xml:space="preserve"><value>Aucune ligne.</value></data>
+</root>

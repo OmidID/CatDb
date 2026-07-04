@@ -1,0 +1,38 @@
+@* No visible markup. Mounted once per layout (MainLayout + BlankLayout both embed it) to re-apply
+   client-side state that App.razor's one-time server render gets wrong/stale after Blazor's
+   client-side navigation — theme (see wwwroot/theme.js) and RTL direction (see wwwroot/rtl.js)
+   both need this; a plain <head> script/server-rendered attribute isn't enough for either. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@code {
+    private IJSObjectReference? _themeModule;
+    private IJSObjectReference? _rtlModule;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        _themeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./theme.js");
+        await _themeModule.InvokeVoidAsync("applyCurrent");
+
+        _rtlModule = await JS.InvokeAsync<IJSObjectReference>("import", "./rtl.js");
+        await _rtlModule.InvokeVoidAsync("applyDir", System.Globalization.CultureInfo.CurrentUICulture.TextInfo.IsRightToLeft);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_themeModule is not null)
+                await _themeModule.DisposeAsync();
+            if (_rtlModule is not null)
+                await _rtlModule.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // Expected when the circuit is already tearing down.
+        }
+    }
+}

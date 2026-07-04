@@ -1,0 +1,60 @@
+@page "/databases"
+@inject IStringLocalizer<SharedResources> Localizer
+
+<PageTitle>@Localizer["Nav_Databases"] - @Localizer["AppName"]</PageTitle>
+
+<h1 class="section-title">@Localizer["Nav_Databases"]</h1>
+
+<ErrorAlert @bind-Message="_errorMessage" />
+
+<div class="toolbar mb-4">
+    <input class="input max-w-xs" placeholder="@Localizer["Databases_NewPlaceholder"]"
+           aria-label="@Localizer["Databases_NewPlaceholder"]"
+           @bind="_newDatabaseName" @bind:event="oninput" />
+    <button type="button" class="btn-primary" disabled="@(_isCreating || string.IsNullOrWhiteSpace(_newDatabaseName))" @onclick="CreateAsync">
+        @(_isCreating ? Localizer["Databases_Creating"] : Localizer["Databases_Create"])
+    </button>
+</div>
+
+<LoadingIndicator IsLoading="_isLoading" />
+
+@if (!_isLoading && _result is not null)
+{
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">@Localizer["Databases_Name"]</th>
+                    <th scope="col">@Localizer["Databases_CreatedUtc"]</th>
+                    <th scope="col" class="text-end">@Localizer["Common_Actions"]</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var db in _result.Items)
+                {
+                    <tr>
+                        <td>@db.Name</td>
+                        <td>@db.CreatedAtUtc.ToString("u")</td>
+                        <td class="text-end">
+                            <div class="toolbar justify-end">
+                                <a class="btn-secondary btn-sm" href="@($"tables/{Uri.EscapeDataString(db.Name)}")">@Localizer["Databases_TablesLink"]</a>
+                                <ConfirmButton ConfirmText="@Localizer["Databases_ConfirmDelete", db.Name].Value"
+                                               OnConfirmed="() => DeleteAsync(db.Name)">
+                                    @Localizer["Common_Delete"]
+                                </ConfirmButton>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                @if (_result.Items.Count == 0)
+                {
+                    <tr><td colspan="3" class="subtle">@Localizer["Databases_None"]</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mt-3">
+        <Pagination Page="_page" PageSize="_pageSize" Total="_result.Total" PageChanged="OnPageChangedAsync" />
+    </div>
+}
