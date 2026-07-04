@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<RootNamespace>CatDb.Cli</RootNamespace>
+		<AssemblyName>CatDb.Cli</AssemblyName>
+		<InvariantGlobalization>true</InvariantGlobalization>
+
+		<!-- `dotnet tool install -g CatDb.Cli` gives a `catdb` command on PATH. -->
+		<PackAsTool>true</PackAsTool>
+		<ToolCommandName>catdb</ToolCommandName>
+		<Description>Command-line client for CatDb.Server: login, and create/read/update/delete on
+databases, tables, indexes, users and rows over the HTTP API.</Description>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="System.CommandLine" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+		<PackageReference Include="Microsoft.Extensions.Http" />
+	</ItemGroup>
+
+</Project>
