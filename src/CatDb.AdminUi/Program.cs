@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using CatDb.AdminUi.Clients;
 using CatDb.AdminUi.Components;
@@ -7,7 +8,30 @@ using CatDb.AdminUi.Resources;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Localization;
 
-var builder = WebApplication.CreateBuilder(args);
+// A single-file self-contained publish extracts native libs/content to a per-run temp cache dir
+// (AppContext.BaseDirectory) that is NOT where wwwroot/the static-assets manifest actually live —
+// those sit next to the real executable. Environment.ProcessPath still points at the real exe even
+// under single-file, so pin ContentRootPath (and therefore the default WebRootPath) to its directory;
+// otherwise MapStaticAssets/wwwroot lookups fail with "static resources manifest file ... was not found".
+var appDirectory = Path.GetDirectoryName(Environment.ProcessPath) is { Length: > 0 } dir
+    ? dir
+    : AppContext.BaseDirectory;
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = appDirectory,
+});
+
+// Published single-file/self-contained runs (double-click, no `dotnet run`, no launchSettings) need a
+// fixed default address to bind AND to open a browser against. Only applied when nothing else already
+// configured a URL (env var, --urls, or appsettings "Kestrel" section) so `dotnet run`/hosting
+// overrides still win.
+const string DefaultUrl = "http://127.0.0.1:5390";
+var hasExplicitUrl = !string.IsNullOrEmpty(builder.Configuration["urls"])
+    || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS"))
+    || builder.Configuration.GetSection("Kestrel:Endpoints").Exists();
+if (!hasExplicitUrl)
+    builder.WebHost.UseUrls(DefaultUrl);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -53,6 +77,25 @@ builder.Services.AddHttpClient<IDataClient, DataClient>();
 
 var app = builder.Build();
 
+// Double-click/standalone-exe UX: open the default browser once Kestrel is actually listening.
+// Skipped in Development so `dotnet run` (launchSettings already has launchBrowser: true) doesn't
+// pop two tabs.
+if (!app.Environment.IsDevelopment())
+{
+    app.Lifetime.ApplicationStarted.Register(() =>
+    {
+        var url = app.Urls.FirstOrDefault() ?? DefaultUrl;
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch
+        {
+            // Best-effort only — headless/container hosts have no browser to open.
+        }
+    });
+}
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
@@ -80,7 +123,10 @@ app.MapGet("/culture/set", (string culture, string redirectUri, HttpContext http
 
 app.UseAntiforgery();
 
-app.MapStaticAssets();
+// Same single-file caveat as ContentRootPath above: the default overload resolves the manifest via
+// the entry assembly location, which is empty/wrong under a single-file publish. Point it at the
+// manifest that actually sits next to the real executable.
+app.MapStaticAssets(Path.Combine(appDirectory, $"{typeof(Program).Assembly.GetName().Name}.staticwebassets.endpoints.json"));
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

@@ -5,6 +5,24 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <AssemblyName>CatDb.AdminUi</AssemblyName>
+
+    <!-- Release publishes this as one self-contained executable (see release.yml): wwwroot/Razor
+         static assets and appsettings.json are normally extracted next to the exe on a single-file
+         publish, which defeats "one file" — bundle them INTO the bundle instead (extracted to a
+         per-run temp cache at first launch, transparent to the app). -->
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
+
+  <!-- ASP.NET Core's static-web-assets pipeline always copies wwwroot next to the exe even on a
+       single-file publish (MapStaticAssets' manifest expects physical files, not bundled ones) — a
+       true 1-file output isn't possible for this app. These items aren't part of that pipeline and
+       aren't needed at runtime at all, so at least keep them out of the publish/release output. -->
+  <ItemGroup>
+    <Content Remove="package.json" />
+    <Content Remove="package-lock.json" />
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
 
 </Project>
