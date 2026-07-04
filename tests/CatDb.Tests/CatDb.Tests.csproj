@@ -24,6 +24,13 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\CatDb\CatDb.csproj" />
     <ProjectReference Include="..\..\src\CatDb.Server\CatDb.Server.csproj" />
+    <!-- Not linked (ReferenceOutputAssembly=false): IncrementalCheckpointCrashTests launches this as an
+         out-of-process subprocess by path, never calls into it in-proc. This reference exists purely so
+         building the test project also builds CrashWriter in the SAME configuration — without it, an IDE
+         "run tests" that builds only CatDb.Tests + its real references leaves CrashWriter.dll missing (or
+         built in a stale/mismatched config), and the crash test fails with "crash-writer must be built at
+         .../CatDb.CrashWriter.dll, but found False" instead of testing anything. -->
+    <ProjectReference Include="..\..\examples\CatDb.CrashWriter\CatDb.CrashWriter.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>
