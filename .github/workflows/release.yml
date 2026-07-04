@@ -1,0 +1,130 @@
+name: Release
+
+# Fires for both full releases and prereleases — GitHub sends "published" for either.
+# To ship a prerelease: set VersionSuffix in Directory.Build.props (e.g. "beta.1"), tag/create the
+# GitHub release as "v2.0.0-beta.1", and check "Set as a pre-release" in the release UI (or
+# `gh release create v2.0.0-beta.1 --prerelease`).
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  # Directory.Build.props is the single source of truth for the version (docs read it directly too).
+  # This job refuses to ship anything if the release tag doesn't match it — catches a forgotten bump
+  # before a mismatched NuGet package / binary / docs version ever reaches a release asset.
+  validate-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate release tag matches Directory.Build.props
+        id: check
+        run: |
+          PREFIX=$(grep -oP '(?<=<VersionPrefix>)[^<]+' Directory.Build.props)
+          SUFFIX=$(grep -oP '(?<=<VersionSuffix>)[^<]*' Directory.Build.props)
+          EXPECTED="$PREFIX"
+          if [ -n "$SUFFIX" ]; then EXPECTED="$PREFIX-$SUFFIX"; fi
+
+          TAG="${{ github.event.release.tag_name }}"
+          TAG_VERSION="${TAG#v}"
+
+          echo "Directory.Build.props version: $EXPECTED"
+          echo "Release tag version:          $TAG_VERSION"
+
+          if [ "$EXPECTED" != "$TAG_VERSION" ]; then
+            echo "::error::Release tag '$TAG' does not match Directory.Build.props (expected 'v$EXPECTED'). Bump VersionPrefix/VersionSuffix in Directory.Build.props to match, or retag the release."
+            exit 1
+          fi
+
+          echo "version=$EXPECTED" >> "$GITHUB_OUTPUT"
+
+  build-and-test:
+    needs: validate-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - run: dotnet restore CatDb.slnx
+
+      - run: dotnet build CatDb.slnx --no-incremental --configuration Release
+
+      - run: dotnet test tests/CatDb.Tests/CatDb.Tests.csproj --no-build --configuration Release
+
+  publish-nuget:
+    needs: [validate-version, build-and-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Pack CatDb
+        run: dotnet pack src/CatDb/CatDb.csproj -c Release -o nupkgs
+
+      - name: Upload NuGet package to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" nupkgs/*.nupkg --clobber
+
+  publish-server-binaries:
+    needs: [validate-version, build-and-test]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rid: win-x64
+            archive: zip
+          - rid: win-arm64
+            archive: zip
+          - rid: linux-x64
+            archive: tar.gz
+          - rid: linux-arm64
+            archive: tar.gz
+          - rid: osx-x64
+            archive: tar.gz
+          - rid: osx-arm64
+            archive: tar.gz
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Self-contained + single-file: no separate .NET runtime install needed on the target machine.
+      # Cross-publishing all RIDs from one ubuntu-latest runner works fine (no AOT/trimming involved).
+      - name: Publish self-contained ${{ matrix.rid }}
+        run: |
+          dotnet publish src/CatDb.Server/CatDb.Server.csproj \
+            -c Release -r ${{ matrix.rid }} --self-contained true \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+            -o "publish/${{ matrix.rid }}"
+
+      - name: Archive
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+          NAME="CatDb.Server-${VERSION}-${{ matrix.rid }}"
+          cd "publish/${{ matrix.rid }}"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            zip -r "../../${NAME}.zip" .
+          else
+            tar -czf "../../${NAME}.tar.gz" .
+          fi
+
+      - name: Upload archive to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+          gh release upload "${{ github.event.release.tag_name }}" "CatDb.Server-${VERSION}-${{ matrix.rid }}".* --clobber
