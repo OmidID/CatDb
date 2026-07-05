@@ -25,7 +25,7 @@
     <!-- Leave empty for a stable release. Set to e.g. "beta.1" for a prerelease
          (produces NuGet/assembly version "2.0.0-beta.1"; tag the GitHub release "v2.0.0-beta.1"
          and mark it as a prerelease). -->
-    <VersionSuffix>beta.1</VersionSuffix>
+    <VersionSuffix></VersionSuffix>
     <AssemblyVersion>2.0.0.0</AssemblyVersion>
     <FileVersion>2.0.0.0</FileVersion>
 
