@@ -2,15 +2,13 @@
 
 [<img src="https://raw.githubusercontent.com/OmidID/CatDb/master/images/nuget.png" align="left" width="128">](https://github.com/OmidID/CatDb/)
 
-CatDb is an embedded ordered key-value database for .NET, built around the Waterfall Tree (WTree): https://ieeexplore.ieee.org/document/6857846.
+CatDb is a high-performance ordered key-value database for .NET, built around the Waterfall Tree (WTree): https://ieeexplore.ieee.org/document/6857846.
 
 CatDb started from STSdb4, but this project has evolved substantially and now differs significantly in architecture, behavior, and public API.
 
 ## Deployment Model
 
-CatDb is **embedded-first**. The primary model is linking the engine directly into your .NET process and operating on local storage.
-
-CatDb also includes optional remote/server components for specific scenarios, but those are wrappers over the same engine, not a separate server-oriented architecture.
+CatDb is **server-first**. Run it as a dedicated service via `CatDb.Server` (ASP.NET Core with HTTP/TCP APIs), or embed it as a library directly in your .NET process. Both use the same high-performance engine.
 
 ## Installation
 
@@ -20,7 +18,7 @@ CatDb also includes optional remote/server components for specific scenarios, bu
 
 ## Why CatDb
 
-- Embedded engine with no external service dependency.
+- Server or embedded: run as a service or link directly into your process.
 - Ordered key storage with efficient forward/backward/range scans.
 - Write-optimized WTree internals for heavy mixed workloads.
 - Secondary index support in the public API.

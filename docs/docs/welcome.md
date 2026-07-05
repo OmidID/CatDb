@@ -6,13 +6,13 @@ slug: /
 
 # Welcome to CatDb
 
-CatDb is an embedded, ordered key-value database engine written in C# for modern .NET. It stores named tables in one database file, keeps keys sorted, and uses a Waterfall Tree (WTree) to batch and cascade writes through the tree.
+CatDb is a high-performance ordered key-value database engine written in C# for modern .NET. It stores named tables in one database file, keeps keys sorted, and uses a Waterfall Tree (WTree) to batch and cascade writes through the tree.
 
-You can use CatDb in three shapes:
+You can use CatDb in three deployment modes:
 
+- As a dedicated server via `CatDb.Server` (HTTP/TCP APIs, ASP.NET Core hosted).
 - Embedded in a process with `CatDb.Database.CatDb.FromFile("app.catdb")`.
 - In-memory with `FromMemory()` for tests and short-lived workloads.
-- Remotely through `CatDb.Server` or the TCP client returned by `FromNetwork(...)`.
 
 ## What CatDb is good at
 
