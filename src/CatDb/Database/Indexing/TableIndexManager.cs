@@ -142,10 +142,13 @@ internal sealed partial class TableIndexManager : ITableIndexManager
         return FindKeysByIndexCore(entry, fieldValue);
     }
 
-    private IEnumerable<IData> FindKeysByIndexCore(IndexEntry entry, IData fieldValue) =>
-        entry.Definition.Type == IndexType.Unique
+    private IEnumerable<IData> FindKeysByIndexCore(IndexEntry entry, IData fieldValue)
+    {
+        fieldValue = entry.NormalizeFieldValue(fieldValue); // enum / Nullable<T> → storage form
+        return entry.Definition.Type == IndexType.Unique
             ? FindKeysByUniqueIndex(entry, fieldValue)
             : FindKeysByNonUniqueIndex(entry, fieldValue);
+    }
 
     public IEnumerable<KeyValuePair<IData, IData>> FindByIndexRange(
         string indexName,
@@ -185,6 +188,7 @@ internal sealed partial class TableIndexManager : ITableIndexManager
     private static IEnumerable<IData> ScanPrefixKeys(IndexEntry entry, IData prefixValue, int prefixLen, bool backward)
     {
         entry.IndexTable.Flush();
+        if (prefixLen == 1) prefixValue = entry.NormalizeLeadValue(prefixValue); // enum / Nullable<T> → storage form
         var getPk = entry.PkFromCompositeExtractor!;
 
         var lo = BuildCompositeBound(entry, prefixValue, prefixLen, fillMax: false);
@@ -308,6 +312,9 @@ internal sealed partial class TableIndexManager : ITableIndexManager
         entry.IndexTable.Flush();
         var eq = entry.FieldEquals;
 
+        if (hasFrom) from = entry.NormalizeFieldValue(from!); // enum / Nullable<T> → storage form
+        if (hasTo) to = entry.NormalizeFieldValue(to!);
+
         // Unique index key IS the field value, so range bounds map directly.
         foreach (var kv in BatchedScan(entry.IndexTable, from, hasFrom, to, hasTo, backward))
         {
@@ -326,6 +333,9 @@ internal sealed partial class TableIndexManager : ITableIndexManager
     {
         entry.IndexTable.Flush();
         var fieldCount = entry.Definition.SlotIndices.Length;
+
+        if (hasFrom) from = entry.NormalizeFieldValue(from!); // enum / Nullable<T> → storage form
+        if (hasTo) to = entry.NormalizeFieldValue(to!);
 
         // Encode field-level inclusivity into the trailing primary-key sentinel so the WHOLE bound
         // is a single composite key the WTree can seek to:
@@ -537,19 +547,35 @@ internal sealed partial class TableIndexManager : ITableIndexManager
         DataType fieldDataType;
         Type fieldType;
 
+        // Index field types are driven by the record members' NORMALIZED storage types
+        // (enum → underlying, Nullable<T> → T) so the extracted/queried values match the index
+        // table's regenerated-on-reopen CLR key type. See SlotAccessor.NormalizeStorageType.
+        Type[] rawTypes;
+        Type[] storageTypes;
         if (recordDataType.IsPrimitive && def.SlotIndices.Length == 1 && def.SlotIndices[0] == 0)
         {
             // Primitive record — identity extraction
             fieldExtractor = r => r;
-            fieldDataType = recordDataType;
-            fieldType = recordType;
+            rawTypes = [recordType];
+            storageTypes = [SlotAccessor.NormalizeStorageType(recordType)];
+            fieldType = storageTypes[0];
+            fieldDataType = DataTypeUtils.BuildDataType(fieldType);
         }
         else
         {
             fieldExtractor = SlotAccessor.BuildExtractor(recordType, def.SlotIndices);
-            fieldDataType = SlotAccessor.BuildIndexKeyDataType(recordDataType, def.SlotIndices);
-            fieldType = DataTypeUtils.BuildType(fieldDataType);
+            rawTypes = def.SlotIndices.Select(i => SlotAccessor.GetRecordMemberRawType(recordType, i)).ToArray();
+            storageTypes = def.SlotIndices.Select(i => SlotAccessor.GetRecordMemberStorageType(recordType, i)).ToArray();
+            fieldType = storageTypes.Length == 1 ? storageTypes[0] : SlotsBuilder.BuildType(storageTypes);
+            fieldDataType = DataTypeUtils.BuildDataType(fieldType);
         }
+
+        // Query-value normalizers: convert user-supplied enum / Nullable<T> field values to the
+        // index's normalized storage form. Identity (no-op) for plain primitive/string fields.
+        var normalizeFieldValue = def.SlotIndices.Length == 1
+            ? SlotAccessor.BuildValueNormalizer(rawTypes[0])
+            : (Func<IData, IData>)(v => v);
+        var normalizeLeadValue = SlotAccessor.BuildValueNormalizer(rawTypes[0]);
 
         // Build field equality + ordering comparers (ordering drives range stop conditions).
         var fieldEquals = SlotAccessor.BuildFieldEqualityComparer(fieldType);
@@ -578,10 +604,13 @@ internal sealed partial class TableIndexManager : ITableIndexManager
         }
         else
         {
-            // Non-unique: index table key = Slots(field..., primaryKey), value = byte
-            var compositeKeyDataType = SlotAccessor.BuildNonUniqueIndexKeyDataType(
-                recordDataType, def.SlotIndices, keyDataType);
-            compositeKeyType = DataTypeUtils.BuildType(compositeKeyDataType);
+            // Non-unique: index table key = Slots(field..., primaryKey), value = byte.
+            // Built from normalized storage types so it matches the reopen-regenerated CLR key type.
+            var compositeStorageTypes = storageTypes
+                .Append(SlotAccessor.NormalizeStorageType(keyType))
+                .ToArray();
+            compositeKeyType = SlotsBuilder.BuildType(compositeStorageTypes);
+            var compositeKeyDataType = DataTypeUtils.BuildDataType(compositeKeyType);
 
             var idxLocator = _tree.CreateLocator(
                 indexTableName, StructureType.XTABLE,
@@ -613,7 +642,8 @@ internal sealed partial class TableIndexManager : ITableIndexManager
             def, indexTable, fieldExtractor, fieldEquals, fieldComparer,
             nonUniqueKeyBuilder, scanFromKeyBuilder,
             fieldFromCompositeExtractor, pkFromCompositeExtractor,
-            compositeKeyType, prefixExtractor, prefixSeekBuilder, prefixComparer, fieldType);
+            compositeKeyType, prefixExtractor, prefixSeekBuilder, prefixComparer, fieldType,
+            normalizeFieldValue, normalizeLeadValue);
     }
 
     /// <summary>The .NET type of an index's field value (single-slot scalar or composite Slots).</summary>
@@ -773,6 +803,11 @@ internal sealed partial class TableIndexManager : ITableIndexManager
         public readonly Func<IData, IData>? PrefixSeekBuilder;
         public readonly IComparer<IData>? PrefixComparer;
         public readonly Type FieldType;
+        // Normalize user-supplied query values (enum / Nullable<T>) to the index storage form.
+        // NormalizeFieldValue: whole single-field value (identity for composite / plain fields).
+        // NormalizeLeadValue: the leading field value (used by prefix / composite-lead seeks).
+        public readonly Func<IData, IData> NormalizeFieldValue;
+        public readonly Func<IData, IData> NormalizeLeadValue;
 
         public IndexEntry(
             IndexDefinition definition,
@@ -788,7 +823,9 @@ internal sealed partial class TableIndexManager : ITableIndexManager
             Func<IData, IData>? prefixExtractor,
             Func<IData, IData>? prefixSeekBuilder,
             IComparer<IData>? prefixComparer,
-            Type fieldType)
+            Type fieldType,
+            Func<IData, IData> normalizeFieldValue,
+            Func<IData, IData> normalizeLeadValue)
         {
             Definition = definition;
             IndexTable = indexTable;
@@ -804,6 +841,8 @@ internal sealed partial class TableIndexManager : ITableIndexManager
             PrefixSeekBuilder = prefixSeekBuilder;
             PrefixComparer = prefixComparer;
             FieldType = fieldType;
+            NormalizeFieldValue = normalizeFieldValue;
+            NormalizeLeadValue = normalizeLeadValue;
         }
     }
 }

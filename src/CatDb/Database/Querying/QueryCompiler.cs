@@ -3,6 +3,7 @@
 
 using System.Text;
 using CatDb.Data;
+using CatDb.Database.Indexing;
 
 namespace CatDb.Database.Querying;
 
@@ -262,22 +263,25 @@ internal static class QueryCompiler
     private static RowPredicate LeafPredicate(FieldFilter f, int vSlot, int v2Slot, IQueryEngineContext ctx)
     {
         var extract = ctx.FieldExtractor(f.Member);
-        var cmp = new DataComparer(f.FieldType);
+        // Extractors yield NORMALIZED field values (enum → underlying, Nullable<T> → T); build the
+        // comparer on that normalized type and normalize the bound literals to match.
+        var cmp = new DataComparer(SlotAccessor.NormalizeStorageType(f.FieldType));
+        var norm = SlotAccessor.BuildValueNormalizer(f.FieldType);
         switch (f.Op)
         {
-            case FilterOp.Equal:       return (rec, c) => cmp.Compare(extract(rec), c.Parameter(vSlot)) == 0;
-            case FilterOp.AtLeast:     return (rec, c) => cmp.Compare(extract(rec), c.Parameter(vSlot)) >= 0;
-            case FilterOp.GreaterThan: return (rec, c) => cmp.Compare(extract(rec), c.Parameter(vSlot)) > 0;
-            case FilterOp.AtMost:      return (rec, c) => cmp.Compare(extract(rec), c.Parameter(vSlot)) <= 0;
-            case FilterOp.LessThan:    return (rec, c) => cmp.Compare(extract(rec), c.Parameter(vSlot)) < 0;
+            case FilterOp.Equal:       return (rec, c) => cmp.Compare(extract(rec), norm(c.Parameter(vSlot))) == 0;
+            case FilterOp.AtLeast:     return (rec, c) => cmp.Compare(extract(rec), norm(c.Parameter(vSlot))) >= 0;
+            case FilterOp.GreaterThan: return (rec, c) => cmp.Compare(extract(rec), norm(c.Parameter(vSlot))) > 0;
+            case FilterOp.AtMost:      return (rec, c) => cmp.Compare(extract(rec), norm(c.Parameter(vSlot))) <= 0;
+            case FilterOp.LessThan:    return (rec, c) => cmp.Compare(extract(rec), norm(c.Parameter(vSlot))) < 0;
             case FilterOp.Between:
                 var fromIncl = f.FromInclusive; var toIncl = f.ToInclusive;
                 return (rec, c) =>
                 {
                     var v = extract(rec);
-                    var lo = cmp.Compare(v, c.Parameter(vSlot));
+                    var lo = cmp.Compare(v, norm(c.Parameter(vSlot)));
                     if (lo < 0 || (lo == 0 && !fromIncl)) return false;
-                    var hi = cmp.Compare(v, c.Parameter(v2Slot));
+                    var hi = cmp.Compare(v, norm(c.Parameter(v2Slot)));
                     return hi < 0 || (hi == 0 && toIncl);
                 };
             case FilterOp.Prefix:
@@ -325,7 +329,8 @@ internal static class QueryCompiler
                 return (Compare: (Func<Row, Row, int>)((a, b) => keyCmp.Compare(a.Key, b.Key)), s.Descending);
             }
             var extract = ctx.FieldExtractor(s.Member);
-            var cmp = new DataComparer(s.FieldType!);
+            // Extractor yields normalized values → comparer must use the normalized type too.
+            var cmp = new DataComparer(SlotAccessor.NormalizeStorageType(s.FieldType!));
             return (Compare: (Func<Row, Row, int>)((a, b) => cmp.Compare(extract(a.Value), extract(b.Value))), s.Descending);
         }).ToArray();
 
@@ -360,8 +365,12 @@ internal static class QueryCompiler
         {
             case null: return;
             case PredicateNode p:
-                if (p.Filter.Value is not null) values.Add(p.Filter.Value);
-                if (p.Filter.Op == FilterOp.Between && p.Filter.Value2 is not null) values.Add(p.Filter.Value2);
+                // Slot COUNT must match what the plan (cached by value-independent Signature) was
+                // compiled with — always add a slot, even for a null literal (e.g. Equal(null) on a
+                // nullable field), or a later/earlier execution with a different null-ness desyncs
+                // the parameter array length from the baked-in slot indices (IndexOutOfRangeException).
+                values.Add(p.Filter.Value!);
+                if (p.Filter.Op == FilterOp.Between) values.Add(p.Filter.Value2!);
                 break;
             case AndNode a:
                 foreach (var c in a.Children) CollectNode(c, values);

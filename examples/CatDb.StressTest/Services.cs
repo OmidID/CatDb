@@ -2130,3 +2130,176 @@ public sealed class FilterStressService : BackgroundService
             create();
     }
 }
+
+/// <summary>
+/// Regression stress for the 2026-07 index-normalization fix: an enum-typed index (Status), a
+/// nullable-typed index (ExpiresAt, including explicit null rows), and a Guid schema field (Id).
+/// Single instance, fully sequential (no concurrent writers to its own table besides itself), so a
+/// brute-force shadow-dictionary recount is race-free and every mismatch is a genuine correctness bug
+/// — not just a liveness/no-throw check like the enum/nullable index paths used to require.
+/// </summary>
+public sealed class TypedIndexStressService : BackgroundService
+{
+    private static readonly RecordStatus[] Statuses = Enum.GetValues<RecordStatus>();
+
+    private readonly StressContext _ctx;
+    private readonly Random _rng;
+    private readonly ITable<long, TypedIndexRecord> _items;
+    private readonly Dictionary<long, TypedIndexRecord> _shadow = new();
+    private long _nextId;
+    private bool _ready;
+
+    public TypedIndexStressService(string name, StressContext ctx) : base(name)
+    {
+        _ctx = ctx;
+        _rng = new Random(name.GetHashCode() ^ unchecked((int)0x7A9ED11));
+        _items = ctx.Engine.OpenXTable<long, TypedIndexRecord>("typed_idx_items");
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        if (!_ready)
+        {
+            EnsureIndex("Status", () => _items.CreateIndex("Status", r => r.Status, IndexType.NonUnique));
+            EnsureIndex("ExpiresAt", () => _items.CreateIndex("ExpiresAt", r => r.ExpiresAt, IndexType.NonUnique));
+
+            _nextId = _items.LastRow?.Key ?? 0; // continue ids past any persisted rows
+            for (int i = 0; i < 500; i++)
+                Insert();
+            _ctx.Commit();
+            _ready = true;
+        }
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var op = _rng.Next(100);
+                if (op < 30) Insert();
+                else if (op < 50) Update();
+                else if (op < 60) Delete();
+                else if (op < 75) VerifyGuidRoundtrip();
+                else if (op < 90) VerifyStatusIndex();
+                else VerifyExpiresAtIndex();
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                Fail(ex, _ctx);
+            }
+
+            await Task.Yield();
+        }
+    }
+
+    private RecordStatus RandomStatus() => Statuses[_rng.Next(Statuses.Length)];
+
+    // ~25% null, exercising the Nullable<T> → default(T) storage normalization on the null path.
+    private DateTime? RandomExpiry()
+        => _rng.Next(100) < 25 ? null : new DateTime(2024, 1, 1).AddDays(_rng.Next(0, 730));
+
+    private void Insert()
+    {
+        var id = ++_nextId;
+        var rec = new TypedIndexRecord
+        {
+            Id = Guid.NewGuid(),
+            Status = RandomStatus(),
+            ExpiresAt = RandomExpiry(),
+            Amount = (int)(id % 1000),
+        };
+        _items.Replace(id, rec);
+        _shadow[id] = rec;
+        Hit($"insert id={id} status={rec.Status}");
+    }
+
+    private void Update()
+    {
+        if (_shadow.Count == 0) return;
+        var id = _shadow.Keys.ElementAt(_rng.Next(_shadow.Count));
+        var old = _shadow[id];
+        // A FRESH record, never the aliased old reference: Replace() diffs the index against the
+        // engine's currently-cached record object to decide whether to update it, so mutating a
+        // reference in place and handing that SAME instance back poisons that diff (old == new by
+        // aliasing) and silently skips the index update — a stress-harness trap, not an engine bug.
+        var rec = new TypedIndexRecord
+        {
+            Id = old.Id,
+            Status = RandomStatus(),
+            ExpiresAt = RandomExpiry(),
+            Amount = old.Amount,
+        };
+        _items.Replace(id, rec);
+        _shadow[id] = rec;
+        Hit($"update id={id} status={rec.Status}");
+    }
+
+    private void Delete()
+    {
+        if (_shadow.Count == 0) return;
+        var id = _shadow.Keys.ElementAt(_rng.Next(_shadow.Count));
+        _items.Delete(id);
+        _shadow.Remove(id);
+        Hit($"delete id={id}");
+    }
+
+    // Guid schema field round-trip (the AmbiguousMatchException bug: .NET 10 ToByteArray(bool) overload).
+    private void VerifyGuidRoundtrip()
+    {
+        if (_shadow.Count == 0) return;
+        var id = _shadow.Keys.ElementAt(_rng.Next(_shadow.Count));
+        var expected = _shadow[id];
+        if (!_items.TryGet(id, out var actual))
+        { Corrupt($"guid: id={id} missing on readback"); return; }
+        if (actual.Id != expected.Id)
+        { Corrupt($"guid: id={id} expected={expected.Id} actual={actual.Id}"); return; }
+        Hit($"verify.guid id={id}");
+    }
+
+    // Enum-indexed equality count vs. brute-force shadow recount (the InvalidCastException bug).
+    private void VerifyStatusIndex()
+    {
+        var status = RandomStatus();
+        var expected = _shadow.Values.Count(r => r.Status == status);
+        var actual = _items.Query(r => r.Status).Equal(status).Count();
+        if (actual != expected)
+        { Corrupt($"status-index: status={status} expected={expected} actual={actual}"); return; }
+        Hit($"verify.status={status} cnt={actual}");
+    }
+
+    // Nullable-indexed equality (both a concrete value and explicit null) vs. brute-force recount
+    // (the NullReferenceException-on-2nd-distinct-value bug).
+    private void VerifyExpiresAtIndex()
+    {
+        if (_rng.Next(2) == 0)
+        {
+            var expected = _shadow.Values.Count(r => r.ExpiresAt is null);
+            var actual = _items.Query(r => r.ExpiresAt).Equal((DateTime?)null).Count();
+            if (actual != expected)
+            { Corrupt($"expiresat-index: null expected={expected} actual={actual}"); return; }
+            Hit($"verify.expiresat=null cnt={actual}");
+        }
+        else
+        {
+            var withValue = _shadow.Values.Where(r => r.ExpiresAt.HasValue).ToList();
+            if (withValue.Count == 0) return;
+            var sample = withValue[_rng.Next(withValue.Count)].ExpiresAt!.Value;
+            var expected = _shadow.Values.Count(r => r.ExpiresAt == sample);
+            var actual = _items.Query(r => r.ExpiresAt).Equal((DateTime?)sample).Count();
+            if (actual != expected)
+            { Corrupt($"expiresat-index: value={sample:o} expected={expected} actual={actual}"); return; }
+            Hit($"verify.expiresat={sample:d} cnt={actual}");
+        }
+    }
+
+    private void Corrupt(string detail)
+    {
+        Interlocked.Increment(ref TotalErrors);
+        _ctx.RecordError(Name, $"TYPED-INDEX-CORRUPTION: {detail}");
+    }
+
+    private void EnsureIndex(string name, Action create)
+    {
+        if (_items.Indexes.GetIndex(name) is null)
+            create();
+    }
+}

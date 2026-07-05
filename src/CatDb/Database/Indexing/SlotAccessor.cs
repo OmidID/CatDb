@@ -34,7 +34,9 @@ internal static class SlotAccessor
         if (slotIndices.Length == 1)
         {
             var slotMember = GetSlotMember(recordType, slotIndices[0]);
-            var slotAccess = AccessMember(valueAccess, slotMember);
+            // Normalize enum → underlying and Nullable<T> → T so the extracted value matches the
+            // index table's normalized storage CLR type (see NormalizeStorageValue / NormalizeStorageType).
+            var slotAccess = NormalizeStorageValue(AccessMember(valueAccess, slotMember));
 
             // box slot value to object
             var castResult = Expression.Convert(slotAccess, typeof(object));
@@ -42,47 +44,17 @@ internal static class SlotAccessor
         }
         else
         {
-            var slotMembers = slotIndices.Select(i => GetSlotMember(recordType, i)).ToArray();
-            var slotTypes   = slotMembers.Select(GetMemberType).ToArray();
-            var slotsType   = SlotsBuilder.BuildType(slotTypes);
+            var slotMembers  = slotIndices.Select(i => GetSlotMember(recordType, i)).ToArray();
+            var slotAccesses = slotMembers.Select(m => NormalizeStorageValue(AccessMember(valueAccess, m))).ToArray();
+            var slotTypes    = slotAccesses.Select(a => a.Type).ToArray();
+            var slotsType    = SlotsBuilder.BuildType(slotTypes);
 
-            var slotAccesses = slotMembers.Select(m => AccessMember(valueAccess, m)).ToArray();
             var slotsCtor    = slotsType.GetConstructors()
                 .First(c => c.GetParameters().Length == slotTypes.Length);
             var newSlots   = Expression.New(slotsCtor, slotAccesses);
             var castResult = Expression.Convert(newSlots, typeof(object));
             return Expression.Lambda<Func<IData, IData>>(castResult, inputParam).Compile();
         }
-    }
-
-    internal static DataType BuildIndexKeyDataType(DataType recordDataType, int[] slotIndices)
-    {
-        if (recordDataType.IsPrimitive)
-        {
-            if (slotIndices.Length == 1 && slotIndices[0] == 0)
-                return recordDataType;
-            throw new ArgumentException("Primitive record type only supports slot index 0.");
-        }
-
-        if (!recordDataType.IsSlots)
-            throw new ArgumentException("Record DataType must be Slots or Primitive for indexing.");
-
-        if (slotIndices.Length == 1)
-            return recordDataType[slotIndices[0]];
-
-        var types = slotIndices.Select(i => recordDataType[i]).ToArray();
-        return DataType.Slots(types);
-    }
-
-    internal static DataType BuildNonUniqueIndexKeyDataType(DataType recordDataType, int[] slotIndices, DataType primaryKeyDataType)
-    {
-        var fieldTypes = slotIndices.Select(i =>
-            recordDataType.IsPrimitive ? recordDataType : recordDataType[i]).ToArray();
-
-        var allTypes = new DataType[fieldTypes.Length + 1];
-        Array.Copy(fieldTypes, allTypes, fieldTypes.Length);
-        allTypes[^1] = primaryKeyDataType;
-        return DataType.Slots(allTypes);
     }
 
     /// <summary>
@@ -95,25 +67,25 @@ internal static class SlotAccessor
         var recordParam = Expression.Parameter(typeof(object), "record");
         var keyParam    = Expression.Parameter(typeof(object), "key");
 
-        // cast object → recordType / primaryKeyType
+        // cast object → recordType / primaryKeyType, then normalize enum/Nullable to storage form.
         var recordValue = Expression.Convert(recordParam, recordType);
-        var keyValue    = Expression.Convert(keyParam, primaryKeyType);
+        var keyValue    = NormalizeStorageValue(Expression.Convert(keyParam, primaryKeyType));
 
         Expression[] slotAccesses;
         if (DataType.IsPrimitiveType(recordType))
         {
-            slotAccesses = [recordValue];
+            slotAccesses = [NormalizeStorageValue(recordValue)];
         }
         else
         {
             var slotMembers = slotIndices.Select(i => GetSlotMember(recordType, i)).ToArray();
-            slotAccesses    = slotMembers.Select(m => AccessMember(recordValue, m)).ToArray();
+            slotAccesses    = slotMembers.Select(m => NormalizeStorageValue(AccessMember(recordValue, m))).ToArray();
         }
 
         var slotTypes = slotAccesses.Select(a => a.Type).ToArray();
         var allTypes  = new Type[slotTypes.Length + 1];
         Array.Copy(slotTypes, allTypes, slotTypes.Length);
-        allTypes[^1] = primaryKeyType;
+        allTypes[^1] = keyValue.Type; // normalized primary-key storage type
 
         var compositeType  = SlotsBuilder.BuildType(allTypes);
         var compositeCtor  = compositeType.GetConstructors()
@@ -289,6 +261,66 @@ internal static class SlotAccessor
         var castResult   = Expression.Convert(newComposite, typeof(object));
         return Expression.Lambda<Func<IData, IData>>(castResult, inputParam).Compile();
     }
+
+    // ── Storage-type normalization ───────────────────────────────────────────
+    // The index table's key CLR type is rebuilt from its (normalized) DataType on reopen
+    // (anonymous Slots types are regenerated), so index keys MUST use the same normalized
+    // scalar types the persist/DataType layer uses: enum → underlying integral, Nullable<T> → T.
+    // Raw enum/Nullable values would otherwise be boxed as their declared type and fail the
+    // index table's cast (InvalidCastException for enum) or its comparer (NullReferenceException
+    // for Nullable). Primitives and everything else pass through unchanged.
+
+    /// <summary>Maps a member CLR type to its normalized index-storage type (enum → underlying, Nullable&lt;T&gt; → T).</summary>
+    internal static Type NormalizeStorageType(Type t)
+    {
+        if (t.IsEnum)
+            return t.GetEnumUnderlyingType();
+        var underlying = Nullable.GetUnderlyingType(t);
+        return underlying is not null ? NormalizeStorageType(underlying) : t;
+    }
+
+    /// <summary>Wraps a value expression so it yields the normalized storage value (see <see cref="NormalizeStorageType"/>).</summary>
+    private static Expression NormalizeStorageValue(Expression access)
+    {
+        var t = access.Type;
+        if (t.IsEnum)
+            return Expression.Convert(access, t.GetEnumUnderlyingType());
+
+        var underlying = Nullable.GetUnderlyingType(t);
+        if (underlying is not null)
+        {
+            // null → default(underlying): keeps the value seekable and avoids the comparer NRE.
+            Expression value = Expression.Call(access, t.GetMethod("GetValueOrDefault", Type.EmptyTypes)!);
+            return underlying.IsEnum ? Expression.Convert(value, underlying.GetEnumUnderlyingType()) : value;
+        }
+
+        return access;
+    }
+
+    /// <summary>
+    /// Builds a boxed-value normalizer for query inputs: a user-supplied field value of the declared
+    /// member type (e.g. an enum literal, or a Nullable&lt;DateTime&gt;) is converted to the index's
+    /// normalized storage representation. Identity (no allocation) when no normalization is needed.
+    /// </summary>
+    internal static Func<IData, IData> BuildValueNormalizer(Type rawType)
+    {
+        if (NormalizeStorageType(rawType) == rawType)
+            return v => v;
+
+        var input     = Expression.Parameter(typeof(object), "value");
+        var typed     = Expression.Convert(input, rawType);
+        var normalized = NormalizeStorageValue(typed);
+        var boxed     = Expression.Convert(normalized, typeof(object));
+        return Expression.Lambda<Func<IData, IData>>(boxed, input).Compile();
+    }
+
+    /// <summary>Declared CLR type of an indexed record member (before normalization).</summary>
+    internal static Type GetRecordMemberRawType(Type recordType, int slotIndex)
+        => GetMemberType(GetSlotMember(recordType, slotIndex));
+
+    /// <summary>Normalized index-storage CLR type of an indexed record member.</summary>
+    internal static Type GetRecordMemberStorageType(Type recordType, int slotIndex)
+        => NormalizeStorageType(GetRecordMemberRawType(recordType, slotIndex));
 
     private static MemberInfo GetSlotMember(Type recordType, int index)
     {

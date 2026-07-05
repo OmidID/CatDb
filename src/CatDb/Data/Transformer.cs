@@ -88,7 +88,8 @@ public static class TransformerHelper
             return Expression.Assign(value1,
                     type1 == typeof(Guid) ?
                     value2.Type == typeof(Guid) ? value2 : Expression.New(type1.GetConstructor(new[] { typeof(byte[]) })!, value2) :
-                        Expression.Call(value2, type2.GetMethod("ToByteArray")!)
+                        // .NET 10 added a ToByteArray(bool) overload; select the no-arg one explicitly.
+                        Expression.Call(value2, type2.GetMethod("ToByteArray", Type.EmptyTypes)!)
                 );
 
         if (type1.IsEnum || type2.IsEnum)

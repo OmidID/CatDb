@@ -161,6 +161,44 @@ residual/prefix, so it buffers. `string` (and other types lacking a max sentinel
 slot disables the upper-bound seek for that case (filtered-scan fallback). Mixed-direction multi-key
 sorts still run-buffer the leading group rather than streaming.
 
+**Enum / Nullable index & schema fields (2026-07):** index tables store scalar keys in a NORMALIZED
+storage type — **enum → underlying integral, `Nullable<T>` → `T`** (null → `default(T)`) — because the
+composite-key CLR type is regenerated from its (normalized) DataType on reopen ([Locator.cs](src/CatDb/WaterfallTree/Locator.cs)),
+so raw enum/Nullable values can't be the stored key type. `SlotAccessor.NormalizeStorageType` /
+`BuildValueNormalizer` centralize this; `TableIndexManager.BuildEntry` drives all index field/composite
+types from normalized member types and stores per-entry query-value normalizers applied at every seek
+chokepoint (`FindKeysByIndexCore` / `Scan{Unique,NonUnique}RangeKeys` / `ScanPrefixKeys`). The residual +
+sort comparers in `QueryCompiler` build on the normalized type and normalize bound literals to match the
+(already-normalized) `FieldExtractor`. Covered by `EnumNullableGuidIndexTests`. Was three real bugs pre-fix:
+enum index → `InvalidCastException` (`Slots<Enum,…>` vs `Slots<int,…>`), Nullable index → `NullReferenceException`
+on the 2nd distinct key, and any **Guid schema field** → `AmbiguousMatchException` (.NET 10 added a
+`Guid.ToByteArray(bool)` overload; the unqualified `GetMethod("ToByteArray")` in `Persist`/`Transformer` now
+passes `Type.EmptyTypes`). Known gap: multi-column composite **prefix** query values are not per-slot
+normalized (enum/Nullable only supported for the LEADING prefix field); Guid AS an index field still maps to
+`byte[]` (no sentinel → filtered scan).
+
+**Query-value `null` literal desynced the plan-cache parameter slots (2026-07, found by
+`TypedIndexStressService` stress churn):** `QueryCompiler.Signature` (the plan-cache key) is
+value-independent, but `Collect()` used to SKIP adding a parameter slot when a filter's literal was
+`null` (e.g. `.Equal((DateTime?)null)` on a nullable field), while `AllocSlots` (compile time, once
+per query shape) always assigns a slot regardless of runtime value. Two same-shape executions where
+one passed a null literal and the other didn't ended up with parameter arrays of different lengths
+against the SAME cached, slot-indexed plan → `ParameterizedContext.Parameter(slot)` threw
+`IndexOutOfRangeException` on whichever ran second. Fixed: `Collect()` now always appends a slot
+(`Value`/`Value2`), matching `AllocSlots` unconditionally. Covered by
+`EnumNullableGuidIndexTests.EqualNullLiteral_DoesNotDesyncPlanCacheSlots`.
+
+**Stress-harness trap — never mutate a record in place and hand the same reference back to
+`Replace`:** `XTablePortable.Replace` calls `TryGetInternal` to fetch the pre-write record for index
+diffing. If a caller mutates an object it already gave the engine (or got back from it) and then
+calls `Replace` with that SAME instance, the "old" and "new" values the diff sees are the identical
+(already-mutated) object — the index update is silently skipped, leaving a stale index entry. A first
+cut of `TypedIndexStressService.Update` mutated its shadow-dictionary object in place before
+`Replace`ing it; a 20k-iteration sequential (zero-concurrency) churn test still corrupted the enum
+index, and switching to "always construct a fresh record object" made 20k iterations clean. Not an
+engine bug — a caller-contract violation — but worth remembering when writing tests/services against
+this API: **build a new object per write; never reuse+mutate a previously-written/fetched one.**
+
 **`Query(...).Count()` is fetch-free** (2026-06): `Count()` routes through `TableIndexManager.TryCountFast` →
 `PlanNode.CountFast`, which counts index keys WITHOUT a per-row main-table heap point-lookup (the `Fetch`
 node's `TryFetch`). It strips the order-irrelevant `Sort`, honours `Skip`/`Take` (clamp), and falls back to

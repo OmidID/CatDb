@@ -209,7 +209,8 @@ public static class PersistHelper
         var canBeNull = allowNull == AllowNull.All || (allowNull == AllowNull.OnlyMembers && !isTop);
 
         if (type == typeof(Guid))
-            return GetWriteCommand(writer, Expression.Call(item, type.GetMethod("ToByteArray")!), false);
+            // .NET 10 added a ToByteArray(bool) overload; select the no-arg one explicitly.
+            return GetWriteCommand(writer, Expression.Call(item, type.GetMethod("ToByteArray", Type.EmptyTypes)!), false);
 
         if (type.IsEnum)
             return GetWriteCommand(writer, Expression.Convert(item, item.Type.GetEnumUnderlyingType()), canBeNull);

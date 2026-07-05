@@ -110,6 +110,7 @@ var services = new List<BackgroundService>
     new IndexStressService        ("IndexStress",  SvcCtx()),
     new SortStressService         ("SortStress",   SvcCtx()),
     new FilterStressService       ("FilterStress", SvcCtx()),
+    new TypedIndexStressService   ("TypedIndex",   SvcCtx()),
 };
 
 // ─── Ctrl+C → graceful shutdown ───────────────────────────────────────────

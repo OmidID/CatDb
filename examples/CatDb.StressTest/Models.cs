@@ -127,3 +127,17 @@ public class IndexedProduct
     public int    Stock    { get; set; }
     public string Brand    { get; set; } = "";
 }
+
+// ─── Enum / Nullable / Guid indexed record (for TypedIndexStressService) ──
+// Regression coverage for the 2026-07 index-normalization fix: enum-indexed field,
+// nullable-indexed field (incl. explicit null), and a Guid schema field.
+
+public enum RecordStatus { Pending, Active, Archived, Cancelled }
+
+public class TypedIndexRecord
+{
+    public Guid         Id        { get; set; }   // Guid schema field
+    public RecordStatus Status    { get; set; }   // enum indexed field
+    public DateTime?    ExpiresAt { get; set; }   // nullable indexed field (may be null)
+    public int          Amount    { get; set; }
+}
