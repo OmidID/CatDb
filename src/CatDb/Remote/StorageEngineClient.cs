@@ -215,6 +215,10 @@ public sealed class StorageEngineClient : IStorageEngine, IAsyncDisposable
         return OpenXTablePortable<TKey, TRecord>(name, keyDataType, recordDataType, null!, null!);
     }
 
+    /// Engine-internal tables are server-side only; a remote client may not open them.
+    public ITable<TKey, TRecord> OpenInternalXTablePortable<TKey, TRecord>(string name) =>
+        throw new NotSupportedException("Internal tables are not accessible over a remote connection.");
+
     public ITable<TKey, TRecord> OpenXTable<TKey, TRecord>(string name)
     {
         var keyDataType    = DataTypeUtils.BuildDataType(typeof(TKey));

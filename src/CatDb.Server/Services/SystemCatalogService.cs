@@ -24,8 +24,8 @@ public sealed class SystemCatalogService : IDisposable
     {
         _logger = logger;
         _systemEngine = Database.CatDb.FromFile(systemDatabasePath);
-        _users = _systemEngine.OpenXTablePortable<string, SystemUserRecord>(UsersTableName);
-        _databases = _systemEngine.OpenXTablePortable<string, SystemDatabaseRecord>(DatabasesTableName);
+        _users = _systemEngine.OpenInternalXTablePortable<string, SystemUserRecord>(UsersTableName);
+        _databases = _systemEngine.OpenInternalXTablePortable<string, SystemDatabaseRecord>(DatabasesTableName);
     }
 
     public void EnsureInitialized()

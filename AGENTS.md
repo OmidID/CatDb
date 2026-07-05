@@ -29,6 +29,19 @@ Its core structure is the Waterfall Tree (WTree).
   were deleted, not kept. Bump `FormatVersion.Current` — and only that — for the next breaking change.
   Existing on-disk databases from before this change will throw on open; recreate them.
 
+- **Internal (hidden) tables + reserved prefix (2026-07):** engine-internal tables (secondary indexes,
+  server system catalog) are hidden from the public engine surface. `InternalNaming.ReservedPrefix` = `"__"`
+  (`src/CatDb/Database/InternalNaming.cs`); any table whose name starts with it is internal. Index tables use
+  it (`IndexDefinition.GetTableName` → `__idx_…`); system catalog uses `__system_…`. `StorageEngine` still
+  tracks internal tables in `_map` for commit/lifecycle but filters them out of `GetEnumerator`/`Count`/
+  `Exists`/`this[name]` and refuses public `Delete`/`Rename`. Public open methods (`Obtain`) THROW on a
+  reserved-prefix name → users cannot create `__…` tables. Internal callers use
+  `IStorageEngine.OpenInternalXTablePortable<TKey,TRecord>(name)` (requires the prefix; bypasses the guard).
+  The remote `StorageEngineClient` throws `NotSupportedException` for it — internal tables are server-side
+  only; the remote server open handler routes through the guarded public open so remote clients can't create
+  `__…` tables either. Index functionality is unchanged (index tables are built via `_tree.CreateLocator`,
+  never `_map`).
+
 ## Build & Validate
 
 Repo layout: `src/` (library + server), `examples/` (runnable demos, stress test, crash writer),

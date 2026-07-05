@@ -26,14 +26,22 @@ public class StorageEngine : WTree, IStorageEngine
             if (locator.IsDeleted)
                 continue;
 
+            // Internal tables (secondary indexes, system catalog, …) are tracked here for
+            // lifecycle/commit but hidden from the public surface (enumeration/Count/Exists/
+            // indexer). Only InternalNaming-prefixed callers reach them.
             _map[locator.Name] = new Item1(locator, null);
         }
     }
 
-    private Item1 Obtain(string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType)
+    private Item1 Obtain(string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType, bool allowInternal = false)
     {
         Debug.Assert(keyDataType != null);
         Debug.Assert(recordDataType != null);
+
+        if (!allowInternal && InternalNaming.IsInternal(name))
+            throw new ArgumentException(
+                $"Table name '{name}' is reserved: names starting with '{InternalNaming.ReservedPrefix}' are for engine-internal tables.",
+                nameof(name));
 
         if (!_map.TryGetValue(name, out var item))
         {
@@ -152,6 +160,32 @@ public class StorageEngine : WTree, IStorageEngine
         return OpenXTablePortable<TKey, TRecord>(name, keyDataType, recordDataType, null, null);
     }
 
+    /// <summary>
+    /// Opens (creating if absent) an engine-internal table whose name MUST carry the
+    /// <see cref="InternalNaming.ReservedPrefix"/>. Internal tables are committed like any
+    /// other table but stay hidden from the public surface (enumeration/Count/Exists/indexer).
+    /// For engine/server infrastructure only (e.g. the system catalog).
+    /// </summary>
+    public ITable<TKey, TRecord> OpenInternalXTablePortable<TKey, TRecord>(string name)
+    {
+        if (!InternalNaming.IsInternal(name))
+            throw new ArgumentException(
+                $"Internal table name must start with '{InternalNaming.ReservedPrefix}'.", nameof(name));
+
+        _syncRoot.Enter();
+        try
+        {
+            var keyDataType    = DataTypeUtils.BuildDataType(typeof(TKey));
+            var recordDataType = DataTypeUtils.BuildDataType(typeof(TRecord));
+            var item = Obtain(name, StructureType.XTABLE, keyDataType, recordDataType, null, null, allowInternal: true);
+            var keyTransformer = GetOrCreateTransformer<TKey>(item.Locator.KeyType!);
+            var recordTransformer = GetOrCreateTransformer<TRecord>(item.Locator.RecordType!);
+            item.Portable ??= new XTablePortable<TKey, TRecord>(item.Table, keyTransformer, recordTransformer);
+            return (ITable<TKey, TRecord>)item.Portable;
+        }
+        finally { _syncRoot.Exit(); }
+    }
+
     public ITable<TKey, TRecord> OpenXTable<TKey, TRecord>(string name)
     {
         _syncRoot.Enter();
@@ -182,6 +216,7 @@ public class StorageEngine : WTree, IStorageEngine
     {
         get
         {
+            if (InternalNaming.IsInternal(name)) return null;
             _syncRoot.Enter();
             try { return _map.TryGetValue(name, out var item) ? item.Locator : null; }
             finally { _syncRoot.Exit(); }
@@ -197,6 +232,9 @@ public class StorageEngine : WTree, IStorageEngine
 
     public void Delete(string name)
     {
+        if (InternalNaming.IsInternal(name))
+            return; // internal tables are not deletable through the public surface
+
         _syncRoot.Enter();
         try
         {
@@ -221,6 +259,14 @@ public class StorageEngine : WTree, IStorageEngine
         _syncRoot.Enter();
         try
         {
+            if (InternalNaming.IsInternal(name))
+                return; // internal tables are not visible/renamable through the public surface
+
+            if (InternalNaming.IsInternal(newName))
+                throw new ArgumentException(
+                    $"Table name '{newName}' is reserved: names starting with '{InternalNaming.ReservedPrefix}' are for engine-internal tables.",
+                    nameof(newName));
+
             if (_map.ContainsKey(newName) || !_map.TryGetValue(name, out var item))
                 return;
 
@@ -233,6 +279,7 @@ public class StorageEngine : WTree, IStorageEngine
 
     public bool Exists(string name)
     {
+        if (InternalNaming.IsInternal(name)) return false;
         _syncRoot.Enter();
         try { return _map.ContainsKey(name); }
         finally { _syncRoot.Exit(); }
@@ -243,7 +290,7 @@ public class StorageEngine : WTree, IStorageEngine
         get
         {
             _syncRoot.Enter();
-            try { return _map.Count; }
+            try { return _map.Count(kv => !InternalNaming.IsInternal(kv.Key)); }
             finally { _syncRoot.Exit(); }
         }
     }
@@ -280,7 +327,14 @@ public class StorageEngine : WTree, IStorageEngine
     public IEnumerator<IDescriptor> GetEnumerator()
     {
         _syncRoot.Enter();
-        try { return _map.Select(x => (IDescriptor)x.Value.Locator).GetEnumerator(); }
+        try
+        {
+            return _map
+                .Where(x => !InternalNaming.IsInternal(x.Key))
+                .Select(x => (IDescriptor)x.Value.Locator)
+                .ToList() // materialize under lock; internal tables stay hidden
+                .GetEnumerator();
+        }
         finally { _syncRoot.Exit(); }
     }
 

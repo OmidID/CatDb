@@ -34,6 +34,6 @@ public sealed class IndexDefinition
     internal string GetTableName(string mainTableName)
     {
         var suffix = Type == IndexType.Unique ? "_u" : "_nu";
-        return $"__idx_{mainTableName}_{Name}{suffix}";
+        return $"{InternalNaming.ReservedPrefix}idx_{mainTableName}_{Name}{suffix}";
     }
 }

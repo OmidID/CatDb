@@ -33,6 +33,11 @@ public interface IStorageEngine : IEnumerable<IDescriptor>, IDisposable
     /// Works with anonymous types via default transformers.
     ITable<TKey, TRecord> OpenXTablePortable<TKey, TRecord>(string name);
 
+    /// Opens an engine-internal table (name MUST start with <see cref="InternalNaming.ReservedPrefix"/>).
+    /// Internal tables are committed like any other table but hidden from the public surface
+    /// (enumeration/Count/Exists/indexer). For engine/server infrastructure only.
+    ITable<TKey, TRecord> OpenInternalXTablePortable<TKey, TRecord>(string name);
+
     /// Works with the user types directly.
     ITable<TKey, TRecord> OpenXTable<TKey, TRecord>(string name);
 
