@@ -67,6 +67,7 @@ jobs:
     # job mint the GitHub OIDC token that NuGet/login exchanges for a short-lived (1h) API key.
     environment: release
     permissions:
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
