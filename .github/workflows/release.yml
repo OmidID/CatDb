@@ -11,10 +11,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
   # Directory.Build.props is the single source of truth for the version (docs read it directly too).
   # This job refuses to ship anything if the release tag doesn't match it — catches a forgotten bump
@@ -66,6 +62,12 @@ jobs:
   publish-nuget:
     needs: [validate-version, build-and-test]
     runs-on: ubuntu-latest
+    # Matches the nuget.org Trusted Publishing policy (repo OmidID/CatDb, workflow release.yml,
+    # environment "release") — no long-lived NUGET_API_KEY secret needed. id-token: write lets this
+    # job mint the GitHub OIDC token that NuGet/login exchanges for a short-lived (1h) API key.
+    environment: release
+    permissions:
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -80,6 +82,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ github.event.release.tag_name }}" nupkgs/*.nupkg --clobber
+
+      - name: NuGet login (OIDC -> temp API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: omidid
+
+      - name: Push to NuGet.org
+        run: dotnet nuget push nupkgs/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
   publish-server-binaries:
     needs: [validate-version, build-and-test]
@@ -242,39 +253,3 @@ jobs:
         run: |
           VERSION="${{ needs.validate-version.outputs.version }}"
           gh release upload "${{ github.event.release.tag_name }}" "CatDb.AdminUi-${VERSION}-${{ matrix.rid }}".* --clobber
-
-  deploy-docs:
-    needs: [validate-version, build-and-test]
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: docs/package-lock.json
-
-      - name: Install deps
-        working-directory: docs
-        run: npm ci
-
-      - name: Build docs site
-        working-directory: docs
-        run: npm run build
-
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs/build
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
