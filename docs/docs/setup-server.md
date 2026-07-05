@@ -117,3 +117,10 @@ var table = engine.OpenXTable<long, string>("events");
 table[1] = "from client";
 engine.Commit();
 ```
+
+Or the same connection via a single connection string (see [Database engine](database-engine.md#connection-strings) for every key/alias):
+
+```csharp
+using var engine = CatDb.Database.CatDb.FromConnectionString(
+    "Provider=Network;Host=localhost;Port=7182;Database=mydb;User Id=admin;Password=admin");
+```

@@ -17,13 +17,33 @@ var engine = CatDb.Database.CatDb.FromFile("app.catdb");
 
 | Method | Use case |
 | --- | --- |
-| `FromFile(fileName, options)` | Open or create a persistent database file. |
-| `FromMemory(options)` | Tests, demos, temporary stores. |
-| `FromStream(stream, options)` | Store on any seekable stream. |
-| `FromHeap(heap, options)` | Custom heap implementation. |
-| `FromNetwork(host, port, databaseName, userName, password)` | Remote TCP client. |
+| `FromNetwork(host, port, databaseName, userName, password)` | Remote TCP client — the server-first path. |
 | `FromNetworkAsync(...)` | Async TCP connection setup. |
+| `FromConnectionString(connectionString)` | One `Key=Value;...` string for any provider (File/Memory/Network); see below. |
+| `FromConnectionStringAsync(connectionString)` | Async version — only the Network provider actually awaits. |
+| `FromFile(fileName, options)` | Embedded: open or create a persistent database file. |
+| `FromMemory(options)` | Embedded: tests, demos, temporary stores. |
+| `FromStream(stream, options)` | Embedded: store on any seekable stream. |
+| `FromHeap(heap, options)` | Embedded: custom heap implementation. |
 | `CreateServer(engine, port)` | Wrap an engine in the TCP storage server. |
+
+## Connection strings
+
+`FromConnectionString` covers all three backends from one ADO.NET-style string — `Key=Value;Key=Value;...`, keys case-insensitive, common aliases accepted. `Provider` picks the backend explicitly (`File`/`Disk`, `Memory`/`Mem`/`InMemory`, `Network`/`Remote`/`Tcp`/`Server`); if omitted it's inferred from the other keys present (`Host` → Network, `Path` → File, else → Memory).
+
+```csharp
+using var remote = CatDb.Database.CatDb.FromConnectionString(
+    "Provider=Network;Host=localhost;Port=7182;Database=default;User Id=admin;Password=secret");
+
+using var file = CatDb.Database.CatDb.FromConnectionString(
+    "Provider=File;Path=app.catdb;CommitMode=TransactionLog;CacheSizeBytes=2GB");
+
+using var memory = CatDb.Database.CatDb.FromConnectionString("Provider=Memory;UseNativeLeafStorage=true");
+```
+
+Network keys: `Host`/`Server`/`Address`, `Port` (default `7182`), `Database`/`DatabaseName`/`Catalog`, `UserName`/`User Id`/`UID`, `Password`/`PWD`, plus `InitialPageCapacity`/`MaxPageCapacity`/`PageGrowthFactor`/`WriteBatchCapacity`/`CacheSize` for client tuning.
+
+File/Memory keys map onto every `DatabaseOptions` property (`CommitMode`, `CommitDurability`, `CheckpointIntervalMs`, `CheckpointLogSizeBytes`, `IncrementalCheckpoint`, `CheckpointMaxNodes`, `MaxBranchesPerNode`, `MaxRecordsPerLeaf`, `MinRecordsPerLeaf`, `MaxOperationsInRoot`, `MaxOperationsPerNode`, `MinOperationsPerNode`, `CacheSize`, `CacheSizeBytes`, `UseNativeLeafStorage`), plus `Path`/`File`/`Filename` (File only), `UseCompression`/`Compression`, and `AllocationStrategy`/`Strategy`. Byte-size values accept `KB`/`MB`/`GB`/`TB` suffixes (e.g. `CacheSizeBytes=2GB`).
 
 ## StorageEngine responsibilities
 

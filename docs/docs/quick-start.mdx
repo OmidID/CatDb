@@ -14,12 +14,15 @@ Add the package with the same version:
 
 <PackageInstall />
 
-Then open an engine, open a table, write records, and call `Commit()` when those writes must survive process exit.
+CatDb is **server-first**: point client code at a running `CatDb.Server`/TCP server and open tables the same way you would locally. Embedding the engine directly in your process (no server) is the other supported mode, for single-process apps, tests, and demos.
+
+Once you have an engine — remote or embedded — open a table, write records, and call `Commit()` when those writes must survive process exit.
 
 ```csharp
 using CatDb.Database;
 
-using var engine = CatDb.Database.CatDb.FromFile("app.catdb");
+using var engine = CatDb.Database.CatDb.FromConnectionString(
+    "Provider=Network;Host=localhost;Port=7182;Database=default;User Id=admin;Password=admin");
 
 var users = engine.OpenXTable<long, User>("users");
 users[1] = new User("Ada", "Lovelace");
@@ -37,10 +40,30 @@ public sealed record User(string FirstName, string LastName);
 
 ## Open an engine
 
+Connect to a server (see [Setup server](setup-server.md) to run one):
+
+```csharp
+using var remoteEngine = CatDb.Database.CatDb.FromNetwork(
+    host: "localhost", port: 7182, databaseName: "default", userName: "admin", password: "admin");
+```
+
+Or use one connection string for any backend — `FromConnectionString` picks File/Memory/Network from the string itself (see [Database engine](database-engine.md#connection-strings) for the full key reference):
+
+```csharp
+using var networked = CatDb.Database.CatDb.FromConnectionString(
+    "Provider=Network;Host=localhost;Port=7182;Database=default;User Id=admin;Password=admin");
+```
+
+For embedded use (no server process), open a file, an in-memory store, or any stream directly:
+
 ```csharp
 using var fileEngine = CatDb.Database.CatDb.FromFile("app.catdb");
 using var memoryEngine = CatDb.Database.CatDb.FromMemory();
 using var streamEngine = CatDb.Database.CatDb.FromStream(stream);
+
+// same file, via connection string
+using var fileViaConnString = CatDb.Database.CatDb.FromConnectionString(
+    "Provider=File;Path=app.catdb;CommitMode=TransactionLog");
 ```
 
 `FromFile` uses `CommitMode.WriteAheadLog` by default. It creates a main database file and a `.wal` file next to it.

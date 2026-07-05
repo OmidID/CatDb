@@ -10,7 +10,7 @@ CatDb is a high-performance ordered key-value database engine written in C# for 
 
 You can use CatDb in three deployment modes:
 
-- As a dedicated server via `CatDb.Server` (HTTP/TCP APIs, ASP.NET Core hosted).
+- As a dedicated server via `CatDb.Server` (HTTP/TCP APIs, ASP.NET Core hosted), reached from client code with `CatDb.Database.CatDb.FromNetwork(...)` or one `FromConnectionString("Provider=Network;...")`.
 - Embedded in a process with `CatDb.Database.CatDb.FromFile("app.catdb")`.
 - In-memory with `FromMemory()` for tests and short-lived workloads.
 

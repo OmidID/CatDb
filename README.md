@@ -27,10 +27,14 @@ CatDb is **server-first**. Run it as a dedicated service via `CatDb.Server` (ASP
 
 ## Quick Start
 
+Server-first: connect to a running `CatDb.Server`/TCP server (one connection string covers Network, File, or Memory — see [Database engine](docs/docs/database-engine.md#connection-strings)):
+
 ```csharp
 using CatDb.Database;
 
-using var engine = CatDb.Database.CatDb.FromFile("app.catdb");
+using var engine = CatDb.Database.CatDb.FromConnectionString(
+    "Provider=Network;Host=localhost;Port=7182;Database=default;User Id=admin;Password=admin");
+
 var users = engine.OpenXTable<long, User>("users");
 
 users[1] = new User("ada@example.com", "Ada", "London");
@@ -42,6 +46,12 @@ if (users.TryGet(1, out var user))
 	Console.WriteLine($"{user.Email} / {user.City}");
 
 public sealed record User(string Email, string Name, string City);
+```
+
+Embedded (no server): swap the engine for a local file or in-memory store — same table API either way.
+
+```csharp
+using var engine = CatDb.Database.CatDb.FromFile("app.catdb");     // or FromMemory() / FromStream(stream)
 ```
 
 ## Fluent Queries

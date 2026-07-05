@@ -10,14 +10,19 @@ This page summarizes the public APIs most users touch first.
 ## `CatDb.Database.CatDb`
 
 ```csharp
-IStorageEngine FromFile(string fileName, DatabaseOptions? options = null);
-IStorageEngine FromMemory(DatabaseOptions? options = null);
-IStorageEngine FromStream(Stream stream, DatabaseOptions? options = null);
-IStorageEngine FromHeap(IHeap heap, DatabaseOptions? options = null);
 IStorageEngine FromNetwork(string host, int port = 7182, string databaseName = "default", string? userName = null, string? password = null);
 Task<IStorageEngine> FromNetworkAsync(...);
+IStorageEngine FromConnectionString(string connectionString);
+Task<IStorageEngine> FromConnectionStringAsync(string connectionString, CancellationToken ct = default);
 StorageEngineServer CreateServer(IStorageEngine engine, int port = 7182);
+
+IStorageEngine FromFile(string fileName, DatabaseOptions? options = null, bool useCompression = false, AllocationStrategy allocationStrategy = AllocationStrategy.FromTheBeginning);
+IStorageEngine FromMemory(DatabaseOptions? options = null, bool useCompression = false, AllocationStrategy allocationStrategy = AllocationStrategy.FromTheBeginning);
+IStorageEngine FromStream(Stream stream, DatabaseOptions? options = null, bool useCompression = false, AllocationStrategy allocationStrategy = AllocationStrategy.FromTheBeginning);
+IStorageEngine FromHeap(IHeap heap, DatabaseOptions? options = null);
 ```
+
+`FromConnectionString`/`FromConnectionStringAsync` dispatch to whichever of the above the connection string names — see [Database engine](database-engine.md#connection-strings) for the full key/alias reference.
 
 ## `IStorageEngine`
 
