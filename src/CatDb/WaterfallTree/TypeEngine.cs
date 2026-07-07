@@ -22,12 +22,14 @@ public class TypeEngine
             Persist = new DataPersist(type, null, AllowNull.OnlyMembers)
         };
 
-        if (DataTypeUtils.IsAllPrimitive(type) || type == typeof(Guid))
+        if (DataTypeUtils.IsAllComparable(type))
         {
             descriptor.Comparer = new DataComparer(type);
             descriptor.EqualityComparer = new DataEqualityComparer(type);
 
-            if (type != typeof(Guid))
+            // IndexerPersist only for pure primitives — Guid (bare or as a composite slot,
+            // e.g. a non-unique index key over a Guid-keyed table) has no DataIndexerPersist.
+            if (DataTypeUtils.IsAllPrimitive(type) && type != typeof(Guid))
                 descriptor.IndexerPersist = new DataIndexerPersist(type);
         }
 

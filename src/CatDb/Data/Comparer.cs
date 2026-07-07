@@ -53,7 +53,6 @@ public static class ComparerHelper
         var exitPoint = Expression.Label(typeof(int));
         var list = new List<Expression>();
         var variables = new List<ParameterExpression>();
-        var haveCmp = false;
 
         if (expressions != null)
             foreach (var expression in expressions)
@@ -70,14 +69,15 @@ public static class ComparerHelper
         {
             var i = 0;
             var cmp = Expression.Variable(typeof(int));
+            // The `cmp` temp is assigned by every non-last member compare (numeric, Guid, DateTime,
+            // char, byte[], decimal, string, …), so it must always be declared in the block scope.
+            // The old `haveCmp` gate only registered it for char/byte[]/decimal/string members, so a
+            // composite whose non-last members are e.g. Guid/int/DateTime (a non-unique index key over
+            // a Guid-keyed table builds Slots<field, Guid>) referenced an undeclared variable and the
+            // expression tree failed to compile.
+            variables.Add(cmp);
             foreach (var field in DataTypeUtils.GetPublicMembers(x.Type, membersOrder))
             {
-                if (!haveCmp && (field.GetPropertyOrFieldType() == typeof(char) || field.GetPropertyOrFieldType() == typeof(byte[]) || field.GetPropertyOrFieldType() == typeof(Decimal) || field.GetPropertyOrFieldType() == typeof(String)))
-                {
-                    haveCmp = true;
-                    variables.Add(cmp);
-                }
-
                 foreach (var command in GetCompareCommands(Expression.PropertyOrField(x, field.Name), Expression.PropertyOrField(y, field.Name), cmp, exitPoint, field.GetPropertyOrFieldType(), compareOptions[i++], i == DataTypeUtils.GetPublicMembers(x.Type, membersOrder).Count()))
                     list.Add(command);
             }

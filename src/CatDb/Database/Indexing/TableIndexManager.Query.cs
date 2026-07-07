@@ -137,7 +137,16 @@ internal sealed partial class TableIndexManager : IQueryEngineContext
     {
         var slot = ResolveSlotIndices([member])[0];
         var dt = _locator.RecordDataType;
-        return dt.IsPrimitive ? dt.PrimitiveType : dt[slot].PrimitiveType;
+        var slotDt = dt.IsPrimitive ? dt : dt[slot];
+        if (slotDt.IsPrimitive)
+            return slotDt.PrimitiveType;
+
+        // Non-primitive slot: on a portable/remote table a Nullable<T> field is carried as a
+        // single-slot Slots<T>. Reconstruct Nullable<T> so RemoteFieldCodec decodes the value with the
+        // same CLR type the client encoded it with (typeof(TField)); otherwise `.PrimitiveType` throws
+        // "The type (T) is not primitive" on the wrapper.
+        var clr = DataTypeUtils.BuildType(slotDt);
+        return SlotAccessor.TryGetPortableNullableType(clr, out var nullable) ? nullable : clr;
     }
 
     /// <summary>CLR type of the primary key (for remote key-range decoding).</summary>
