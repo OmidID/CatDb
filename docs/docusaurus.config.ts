@@ -20,7 +20,7 @@ const catdbVersion = readVersionPrefix();
 
 const config: Config = {
   title: 'CatDb',
-  tagline: `Embedded ordered key-value storage for .NET - v${catdbVersion}`,
+  tagline: `High-performance ordered key-value storage for .NET - v${catdbVersion}`,
   favicon: 'img/catdb-icon.svg',
   customFields: {
     catdbVersion,

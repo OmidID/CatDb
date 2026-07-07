@@ -21,10 +21,10 @@ var engine = CatDb.Database.CatDb.FromFile("app.catdb");
 | `FromNetworkAsync(...)` | Async TCP connection setup. |
 | `FromConnectionString(connectionString)` | One `Key=Value;...` string for any provider (File/Memory/Network); see below. |
 | `FromConnectionStringAsync(connectionString)` | Async version — only the Network provider actually awaits. |
-| `FromFile(fileName, options)` | Embedded: open or create a persistent database file. |
-| `FromMemory(options)` | Embedded: tests, demos, temporary stores. |
-| `FromStream(stream, options)` | Embedded: store on any seekable stream. |
-| `FromHeap(heap, options)` | Embedded: custom heap implementation. |
+| `FromFile(fileName, options)` | Local: open or create a persistent database file. |
+| `FromMemory(options)` | Local: tests, demos, temporary stores. |
+| `FromStream(stream, options)` | Local: store on any seekable stream. |
+| `FromHeap(heap, options)` | Local: custom heap implementation. |
 | `CreateServer(engine, port)` | Wrap an engine in the TCP storage server. |
 
 ## Connection strings

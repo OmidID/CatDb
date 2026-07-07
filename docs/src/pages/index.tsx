@@ -15,7 +15,7 @@ const features = [
     text: 'Writes are buffered and cascaded through a WTree, a write-optimized W-tree variant designed for random-key workloads.',
   },
   {
-    title: 'Embedded or server',
+    title: 'Local or server',
     text: 'Use CatDb directly from a file, memory, stream, heap, or through the CatDb.Server HTTP and TCP layers.',
   },
 ];
@@ -27,7 +27,7 @@ export default function Home(): ReactNode {
   return (
     <Layout
       title="CatDb documentation"
-      description="Documentation for CatDb, an embedded ordered key-value database for .NET.">
+      description="Documentation for CatDb, a high-performance ordered key-value database for .NET.">
       <main>
         <section className={styles.hero}>
           <div className="container">
@@ -37,7 +37,7 @@ export default function Home(): ReactNode {
                   CatDb
                 </Heading>
                 <p className={styles.subtitle}>
-                  A high-performance embedded ordered key-value database for .NET,
+                  A high-performance ordered key-value database for .NET,
                   powered by a write-optimized Waterfall Tree.
                 </p>
                 <p className={styles.version}>Current release: v{version}</p>

@@ -35,7 +35,7 @@
     <RepositoryUrl>https://github.com/OmidID/CatDb</RepositoryUrl>
     <PackageProjectUrl>https://github.com/OmidID/CatDb</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageTags>Database;Cache;Fast Collection;KeyValue Pair;Embedded;WaterfallTree</PackageTags>
+    <PackageTags>Database;Cache;Fast Collection;KeyValue Pair;HighPerformance;WaterfallTree</PackageTags>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
   </PropertyGroup>
 

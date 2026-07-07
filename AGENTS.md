@@ -7,7 +7,7 @@ If you change architecture, core behavior, build/test flow, or public query/inde
 
 ## Project Overview
 
-CatDb is a high-performance ordered key-value database in C# targeting .NET 10, deployable as a server or embedded library.
+CatDb is a high-performance ordered key-value database in C# targeting .NET 10, deployable as a server or in-process library.
 Its core structure is the Waterfall Tree (WTree).
 
 > **Before touching any WTree code, read [docs/WaterfallTree.md](docs/WaterfallTree.md).**

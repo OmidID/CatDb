@@ -8,7 +8,7 @@ CatDb started from STSdb4, but this project has evolved substantially and now di
 
 ## Deployment Model
 
-CatDb is **server-first**. Run it as a dedicated service via `CatDb.Server` (ASP.NET Core with HTTP/TCP APIs), or embed it as a library directly in your .NET process. Both use the same high-performance engine.
+CatDb is **server-first**. Run it as a dedicated service via `CatDb.Server` (ASP.NET Core with HTTP/TCP APIs), or link it as a library directly into your .NET process. Both use the same high-performance engine.
 
 ## Installation
 
@@ -18,7 +18,7 @@ CatDb is **server-first**. Run it as a dedicated service via `CatDb.Server` (ASP
 
 ## Why CatDb
 
-- Server or embedded: run as a service or link directly into your process.
+- Server or in-process: run as a service or link directly into your process.
 - Ordered key storage with efficient forward/backward/range scans.
 - Write-optimized WTree internals for heavy mixed workloads.
 - Secondary index support in the public API.
@@ -48,7 +48,7 @@ if (users.TryGet(1, out var user))
 public sealed record User(string Email, string Name, string City);
 ```
 
-Embedded (no server): swap the engine for a local file or in-memory store — same table API either way.
+No server needed: swap the engine for a local file or in-memory store — same table API either way.
 
 ```csharp
 using var engine = CatDb.Database.CatDb.FromFile("app.catdb");     // or FromMemory() / FromStream(stream)

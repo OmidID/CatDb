@@ -325,7 +325,7 @@ public static class CatDb
             return result;
         }
 
-        /// <summary>Builds a <see cref="DatabaseOptions"/> from every recognized tuning key (embedded providers only).</summary>
+        /// <summary>Builds a <see cref="DatabaseOptions"/> from every recognized tuning key (local providers only).</summary>
         public DatabaseOptions BuildDatabaseOptions()
         {
             var options = DatabaseOptions.Default;

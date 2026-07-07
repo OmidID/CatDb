@@ -14,9 +14,9 @@ Add the package with the same version:
 
 <PackageInstall />
 
-CatDb is **server-first**: point client code at a running `CatDb.Server`/TCP server and open tables the same way you would locally. Embedding the engine directly in your process (no server) is the other supported mode, for single-process apps, tests, and demos.
+CatDb is **server-first**: point client code at a running `CatDb.Server`/TCP server and open tables the same way you would locally. Linking the engine directly into your process (no server) is the other supported mode, for single-process apps, tests, and demos.
 
-Once you have an engine — remote or embedded — open a table, write records, and call `Commit()` when those writes must survive process exit.
+Once you have an engine — remote or in-process — open a table, write records, and call `Commit()` when those writes must survive process exit.
 
 ```csharp
 using CatDb.Database;
@@ -54,7 +54,7 @@ using var networked = CatDb.Database.CatDb.FromConnectionString(
     "Provider=Network;Host=localhost;Port=7182;Database=default;User Id=admin;Password=admin");
 ```
 
-For embedded use (no server process), open a file, an in-memory store, or any stream directly:
+For local use (no server process), open a file, an in-memory store, or any stream directly:
 
 ```csharp
 using var fileEngine = CatDb.Database.CatDb.FromFile("app.catdb");
