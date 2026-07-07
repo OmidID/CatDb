@@ -21,13 +21,13 @@
          The release workflow (.github/workflows/release.yml) requires the GitHub release tag to equal
          "v$(VersionPrefix)" (or "v$(VersionPrefix)-$(VersionSuffix)" when VersionSuffix is set) and fails
          the release otherwise — bump this FIRST, then tag/publish the matching release. -->
-    <VersionPrefix>2.0.1</VersionPrefix>
+    <VersionPrefix>2.0.2</VersionPrefix>
     <!-- Leave empty for a stable release. Set to e.g. "beta.1" for a prerelease
-         (produces NuGet/assembly version "2.0.1-beta.1"; tag the GitHub release "v2.0.1-beta.1"
+         (produces NuGet/assembly version "2.0.2-beta.1"; tag the GitHub release "v2.0.2-beta.1"
          and mark it as a prerelease). -->
     <VersionSuffix></VersionSuffix>
-    <AssemblyVersion>2.0.1</AssemblyVersion>
-    <FileVersion>2.0.1</FileVersion>
+    <AssemblyVersion>2.0.2</AssemblyVersion>
+    <FileVersion>2.0.2</FileVersion>
 
     <!-- NuGet package metadata shared by all publishable projects -->
     <Authors>Omid Mafakher</Authors>
