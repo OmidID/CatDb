@@ -41,6 +41,31 @@ public static class DataTypeUtils
         return true;
     }
 
+    /// <summary>
+    /// Like <see cref="IsAllPrimitive"/> but also treats <see cref="Guid"/> as a comparable scalar.
+    /// Used to decide whether a type (e.g. a composite Slots index key) can get a compiled
+    /// <c>DataComparer</c>/<c>DataEqualityComparer</c>. A non-unique index over a Guid-keyed table
+    /// builds a composite key <c>Slots(field, Guid)</c>; that Guid slot is not "primitive", so
+    /// <see cref="IsAllPrimitive"/> returns false and the key would otherwise get no comparer.
+    /// </summary>
+    public static bool IsAllComparable(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
+    {
+        if (DataType.IsPrimitiveType(type) || type == typeof(Guid))
+            return true;
+
+        if (type.IsArray || type.IsList() || type.IsDictionary() || type.IsKeyValuePair() || type.IsNullable())
+            return false;
+
+        foreach (var member in GetPublicMembers(type, membersOrder))
+        {
+            var memberType = member.GetPropertyOrFieldType();
+            if (!DataType.IsPrimitiveType(memberType) && memberType != typeof(Guid))
+                return false;
+        }
+
+        return true;
+    }
+
     private static bool InternalIsAnonymousType(Type type, Func<Type, MemberInfo, int>? membersOrder = null)
     {
         if (DataType.IsPrimitiveType(type))

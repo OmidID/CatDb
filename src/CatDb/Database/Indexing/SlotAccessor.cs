@@ -276,7 +276,16 @@ internal static class SlotAccessor
         if (t.IsEnum)
             return t.GetEnumUnderlyingType();
         var underlying = Nullable.GetUnderlyingType(t);
-        return underlying is not null ? NormalizeStorageType(underlying) : t;
+        if (underlying is not null)
+            return NormalizeStorageType(underlying);
+        // Remote/portable tables transport a Nullable<T> as a single-slot Slots<T> (a CLR type the
+        // Nullable check above can't see). Flatten it to the inner storage type so the index key stays
+        // a flat scalar/composite — otherwise the key type is a NESTED Slots(Slots<T>, pk) whose
+        // comparer can't be built (null KeyComparer → NRE on insert → silently dropped rows). See
+        // RemoteInsertReproTests.
+        if (TryGetSingleSlotField(t, out var slot0))
+            return NormalizeStorageType(slot0.FieldType);
+        return t;
     }
 
     /// <summary>Wraps a value expression so it yields the normalized storage value (see <see cref="NormalizeStorageType"/>).</summary>
@@ -294,7 +303,60 @@ internal static class SlotAccessor
             return underlying.IsEnum ? Expression.Convert(value, underlying.GetEnumUnderlyingType()) : value;
         }
 
+        // Portable Nullable<T> representation (single-slot Slots<T>): read the inner slot, then
+        // normalize it. Matches NormalizeStorageType's flattening above. The Slots<T> wrapper is a
+        // reference type, so a null Nullable<T> arrives as a NULL wrapper — guard it to default(inner)
+        // (same null → default(T) contract as the CLR Nullable path above), else extraction NREs and
+        // the whole write batch is dropped.
+        if (TryGetSingleSlotField(t, out var slot0))
+        {
+            var inner = NormalizeStorageValue(Expression.Field(access, slot0));
+            if (!t.IsValueType)
+                return Expression.Condition(
+                    Expression.ReferenceEqual(access, Expression.Constant(null, t)),
+                    Expression.Default(inner.Type),
+                    inner);
+            return inner;
+        }
+
         return access;
+    }
+
+    /// <summary>
+    /// True when <paramref name="t"/> is the portable representation of a <see cref="Nullable{T}"/>
+    /// (or any single-field composite): a one-slot <c>ISlots</c>. Multi-slot composites (real composite
+    /// index keys) and non-Slots types return false so only the nullable wrapper is unwrapped.
+    /// </summary>
+    private static bool TryGetSingleSlotField(Type t, out FieldInfo slot0)
+    {
+        slot0 = null!;
+        if (!typeof(ISlots).IsAssignableFrom(t))
+            return false;
+        if (t.GetField("Slot1") != null)     // 2+ slots → genuine composite, leave intact
+            return false;
+        var f = t.GetField("Slot0");
+        if (f == null)
+            return false;
+        slot0 = f;
+        return true;
+    }
+
+    /// <summary>
+    /// If <paramref name="t"/> is the portable representation of a <see cref="Nullable{T}"/> over a
+    /// value type (a single-slot <c>Slots&lt;T&gt;</c>), returns <c>Nullable&lt;T&gt;</c> — the CLR type
+    /// a remote client serialized the field value with (typeof(TField)). Lets the server keep the
+    /// RemoteFieldCodec symmetric instead of calling <c>.PrimitiveType</c> on the non-primitive wrapper.
+    /// </summary>
+    internal static bool TryGetPortableNullableType(Type t, out Type nullableType)
+    {
+        nullableType = null!;
+        if (!TryGetSingleSlotField(t, out var slot0))
+            return false;
+        var inner = slot0.FieldType;
+        if (!inner.IsValueType || Nullable.GetUnderlyingType(inner) != null)
+            return false;
+        nullableType = typeof(Nullable<>).MakeGenericType(inner);
+        return true;
     }
 
     /// <summary>
@@ -304,6 +366,12 @@ internal static class SlotAccessor
     /// </summary>
     internal static Func<IData, IData> BuildValueNormalizer(Type rawType)
     {
+        // Portable Nullable<T> raw type (single-slot Slots<T>): remote query values arrive already
+        // flattened to the inner T (the client boxes/serializes the underlying value, never the
+        // wrapper), so normalize as the inner type. Casting the incoming T to Slots<T> would throw.
+        if (TryGetSingleSlotField(rawType, out var slot0))
+            return BuildValueNormalizer(slot0.FieldType);
+
         if (NormalizeStorageType(rawType) == rawType)
             return v => v;
 
