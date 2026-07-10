@@ -1,0 +1,42 @@
+name: Docker Publish (manual)
+
+# On-demand publish of CatDb.Server's image to ghcr.io for a version that was already released
+# before the Docker job existed (e.g. v2.0.3), without cutting a whole new GitHub release.
+# Builds from the CURRENT default-branch source (where the Dockerfile actually lives) — the
+# version input only names the image tag, it does NOT check out that old tag's tree (which
+# predates the Dockerfile and would fail to build). Run from the Actions tab ("Run workflow") or:
+#   gh workflow run docker-publish.yml -f version=2.0.3
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag the image with (e.g. 2.0.3) — builds current source, not that tag''s tree'
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ghcr.io/omidid/catdb-server:${{ inputs.version }}
+            ghcr.io/omidid/catdb-server:latest

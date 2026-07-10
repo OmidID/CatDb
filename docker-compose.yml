@@ -1,0 +1,15 @@
+services:
+  catdb-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: catdb-server
+    ports:
+      - "5100:5100"   # HTTP admin/data API
+      - "7182:7182"   # raw TCP data protocol
+    volumes:
+      - catdb-data:/data
+    restart: unless-stopped
+
+volumes:
+  catdb-data:
