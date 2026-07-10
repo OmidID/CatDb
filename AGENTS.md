@@ -174,8 +174,69 @@ enum index → `InvalidCastException` (`Slots<Enum,…>` vs `Slots<int,…>`), N
 on the 2nd distinct key, and any **Guid schema field** → `AmbiguousMatchException` (.NET 10 added a
 `Guid.ToByteArray(bool)` overload; the unqualified `GetMethod("ToByteArray")` in `Persist`/`Transformer` now
 passes `Type.EmptyTypes`). Known gap: multi-column composite **prefix** query values are not per-slot
-normalized (enum/Nullable only supported for the LEADING prefix field); Guid AS an index field still maps to
-`byte[]` (no sentinel → filtered scan).
+normalized (enum/Nullable only supported for the LEADING prefix field).
+
+**Guid / Guid? end-to-end (2026-07, remote-crash chain):** a Guid maps to `DataType.ByteArray` →
+portable CLR `byte[]`; `Guid?` → `Slots(ByteArray)` → wrapper `Slots<byte[]>`. Five stacked bugs fixed
+(each unmasked the next; covered by `RemoteIndexTests` Guid tests):
+1. `DataTransformer.CreateToMethod` pre-`Expression.New(_type2)`d the target — `byte[]` has no default
+   ctor. Now delegates allocation+conversion to `TransformerHelper.BuildBody` (mirrors `CreateFromMethod`).
+2. `BuildBody`'s `Nullable<T>` branch used raw `Expression.Convert` on the inner value (no byte[]↔Guid
+   coercion) — now recurses through `BuildBody` for the inner value.
+3. `TableIndexManager.GetMemberType` returned the `Slots<byte[]>` wrapper for a `Guid?` slot
+   (`TryGetPortableNullableType` only handles value-type inners) → remote filter literal decoded as the
+   wrapper → index-seek cast crash. Now flattens via `NormalizeStorageType` (encodings match:
+   `DataPersist` for Guid / Guid? / byte[] / single-slot Slots<byte[]> all emit the same
+   length-prefixed bytes).
+4. A null wrapper normalized to `default(byte[])` = NULL index key → `GetHashCodeEx` NRE on leaf apply.
+   `SlotAccessor.NormalizeStorageValue` now emits an EMPTY byte[]/"" for null reference-storage values
+   (`NullStorageDefault`) — the byte[] analogue of null→default(T).
+5. Equality seek on a byte[] field matched 0 rows: `Sentinels` had no byte[] entry (now Min=empty
+   array, no Max — like string); `BuildScanFromKeyBuilder`/`BuildPrefixSeekKeyBuilder` filled trailing
+   slots with `Expression.Default` (NULL for byte[]/string PKs, unorderable — now the min sentinel);
+   `BuildFieldEqualityComparer` used `EqualityComparer<byte[]>.Default` = REFERENCE equality (now
+   `BigEndianByteArrayEqualityComparer` content equality, scalar + per-slot). Remaining: byte[] has no
+   MAX sentinel → equality/upper bounds use the min-seek + stop-on-field-change fallback (still a seek).
+
+**Remote `GetIndex` was session-cache-only (2026-07):** `RemoteTableIndexManager.GetIndex` consulted
+only its local cache → a fresh connection saw `null` for an existing server-side index, so an
+"ensure" pattern (`GetIndex ?? CreateIndex`) re-created it → server "already exists" throw. Now
+refreshes via `ListIndexes()` on a cache miss. (`HasIndexes` is still local-cache-only.)
+
+## Automatic Schema Migration (2026-07)
+
+Reopening a table whose RECORD type gained/lost/reordered properties **migrates automatically**
+instead of throwing. `StorageEngine.Obtain` detects `recordDataType != locator.RecordDataType` and
+calls `MigrateRecordSchema` ([StorageEngine.Migration.cs](src/CatDb/Database/StorageEngine.Migration.cs)):
+
+- **Mapping is name-based** (the locator persists top-level name→slot member maps; new names come
+  from the typed record class or the remote client's member map): same name ⇒ copy (slot DataType
+  must be identical), new member ⇒ default value, removed member ⇒ dropped. Works for slot SHIFTS
+  (property inserted in the middle). Without names (untyped portable open) it falls back to
+  positional-prefix (append/truncate only). Values are converted per-slot via
+  `TransformerHelper.BuildBody` when CLR representations differ (POCO Guid ↔ portable byte[], enum…).
+- **Mechanics = table rewrite into a fresh locator** (same name, new id): read all rows in the old
+  layout, transform, `Clear` + soft-delete the old locator AND the table's `__idx_…` index tables
+  (their composite keys embed slots positionally — stale), reinsert. Rows are materialized in RAM
+  during the rewrite (v1); streaming rewrite is the follow-up for huge tables.
+- **NOT migratable (diagnostic `ArgumentException`):** key type changes (keys order the tree —
+  forbidden), primitive (non-Slots) record schemas, and a same-named member whose type changed.
+- **Caveats:** table handles obtained BEFORE the migration (same process) are stale — they point at
+  the soft-deleted locator; reopen to get the live table. A remote client holding the old locator id
+  from before another client's migration is likewise stale until it reopens.
+- Tests: `SchemaMigrationTests` (add-at-end, add-in-middle/slot-shift, remove+add, type-change
+  diagnostic, index rebuild, remote end-to-end).
+
+**Index lifecycle fixes that migration depends on (same change):**
+- `TableIndexManager.BuildEntry` now obtains its backing table via
+  `StorageEngine.ObtainInternalTable` which **REUSES the persisted `__idx_…` locator** when its
+  schema matches → **index data survives process restarts** (previously every `CreateIndex` made a
+  brand-new empty locator: after any restart, EnsureIndex-style code silently produced EMPTY
+  indexes — queries matched nothing). Stale-layout index tables are dropped+recreated.
+- Index tables are enrolled in the engine `_map` → **`Commit` now flushes their buffered ops**
+  (previously they bypassed the map and unflushed index writes could be lost).
+- `CreateIndex` **backfills** from existing main-table rows when the backing table is new
+  (`BackfillIfNeeded` → `RebuildEntry`); a reused persisted index table skips the rebuild.
 
 **Query-value `null` literal desynced the plan-cache parameter slots (2026-07, found by
 `TypedIndexStressService` stress churn):** `QueryCompiler.Signature` (the plan-cache key) is

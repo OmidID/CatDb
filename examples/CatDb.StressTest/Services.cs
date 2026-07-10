@@ -2163,6 +2163,12 @@ public sealed class TypedIndexStressService : BackgroundService
             EnsureIndex("Status", () => _items.CreateIndex("Status", r => r.Status, IndexType.NonUnique));
             EnsureIndex("ExpiresAt", () => _items.CreateIndex("ExpiresAt", r => r.ExpiresAt, IndexType.NonUnique));
 
+            // Seed the shadow with rows persisted by previous runs: index tables are REUSED across
+            // restarts now (and CreateIndex backfills), so index counts cover the WHOLE table. The
+            // old behavior (fresh empty index each start) let an empty shadow pass by accident.
+            foreach (var kv in _items)
+                _shadow[kv.Key] = kv.Value;
+
             _nextId = _items.LastRow?.Key ?? 0; // continue ids past any persisted rows
             for (int i = 0; i < 500; i++)
                 Insert();

@@ -36,6 +36,8 @@ internal static class Sentinels
         [typeof(TimeSpan)] = (TimeSpan.MinValue, TimeSpan.MaxValue),
         // string: ordinal-minimum is "", but there is no maximum string.
         [typeof(string)] = ("", null),
+        // byte[] (Guid fields normalize to it): minimum is the empty array, no maximum.
+        [typeof(byte[])] = (Array.Empty<byte>(), null),
     };
 
     /// <summary>

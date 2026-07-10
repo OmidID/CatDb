@@ -31,6 +31,7 @@ internal sealed class RemoteTableIndexManager : ITableIndexManager
         var cmd = new IndexCreateCommand(indexName, slotIndices, memberNames, type);
         _table.Execute(cmd);
         var def = new IndexDefinition(indexName, slotIndices, memberNames, type);
+        _localCache.RemoveAll(d => d.Name == indexName); // server create is idempotent — don't double-cache
         _localCache.Add(def);
         return def;
     }
@@ -41,6 +42,7 @@ internal sealed class RemoteTableIndexManager : ITableIndexManager
         var cmd = new IndexCreateCommand(indexName, [], memberNames, type);
         _table.Execute(cmd);
         var def = new IndexDefinition(indexName, [], memberNames, type);
+        _localCache.RemoveAll(d => d.Name == indexName); // server create is idempotent — don't double-cache
         _localCache.Add(def);
         return def;
     }
@@ -54,6 +56,16 @@ internal sealed class RemoteTableIndexManager : ITableIndexManager
 
     public IndexDefinition? GetIndex(string indexName)
     {
+        var found = _localCache.Find(d => d.Name == indexName);
+        if (found is not null)
+            return found;
+
+        // The local cache is only seeded by THIS session's CreateIndex/ListIndexes calls.
+        // On a fresh connection it is empty even when the index already exists server-side,
+        // so a plain cache lookup would wrongly report "not found" and a subsequent
+        // CreateIndex would throw "already exists". Refresh from the server before concluding
+        // the index is absent.
+        ListIndexes();
         return _localCache.Find(d => d.Name == indexName);
     }
 

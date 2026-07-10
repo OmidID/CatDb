@@ -43,14 +43,15 @@ internal sealed partial class TableIndexManager : ITableIndexManager
             throw new ArgumentException("Index name cannot be empty.", nameof(indexName));
         if (slotIndices == null || slotIndices.Length == 0)
             throw new ArgumentException("Must specify at least one slot index.", nameof(slotIndices));
-        if (_indexes.ContainsKey(indexName))
-            throw new InvalidOperationException($"Index '{indexName}' already exists on table '{_tableName}'.");
+        if (TryGetIdenticalOrThrow(indexName, slotIndices, type) is { } same)
+            return same;
 
         var memberNames = ResolveMemberNames(slotIndices);
         var def = new IndexDefinition(indexName, slotIndices, memberNames, type);
-        var entry = BuildEntry(def);
+        var entry = BuildEntry(def, out var preexisting);
         _indexes[indexName] = entry;
         _planCache.Clear(); // index set changed → cached plans may now be stale
+        BackfillIfNeeded(entry, preexisting);
         return def;
     }
 
@@ -60,15 +61,68 @@ internal sealed partial class TableIndexManager : ITableIndexManager
             throw new ArgumentException("Index name cannot be empty.", nameof(indexName));
         if (memberNames == null || memberNames.Length == 0)
             throw new ArgumentException("Must specify at least one member name.", nameof(memberNames));
-        if (_indexes.ContainsKey(indexName))
-            throw new InvalidOperationException($"Index '{indexName}' already exists on table '{_tableName}'.");
 
         var slotIndices = ResolveSlotIndices(memberNames);
+        if (TryGetIdenticalOrThrow(indexName, slotIndices, type) is { } same)
+            return same;
+
         var def = new IndexDefinition(indexName, slotIndices, memberNames, type);
-        var entry = BuildEntry(def);
+        var entry = BuildEntry(def, out var preexisting);
         _indexes[indexName] = entry;
         _planCache.Clear();
+        BackfillIfNeeded(entry, preexisting);
         return def;
+    }
+
+    /// <summary>
+    /// Re-registering an index that already exists with the IDENTICAL definition is a no-op
+    /// (SQL "IF NOT EXISTS" semantics) — the natural "ensure" pattern, and what a retried startup
+    /// does. A DIFFERENT definition under the same name still throws.
+    /// </summary>
+    private IndexDefinition? TryGetIdenticalOrThrow(string indexName, int[] slotIndices, IndexType type)
+    {
+        if (!_indexes.TryGetValue(indexName, out var existing))
+            return null;
+
+        var def = existing.Definition;
+        if (def.Type == type && def.SlotIndices.AsSpan().SequenceEqual(slotIndices))
+            return def;
+
+        throw new InvalidOperationException(
+            $"Index '{indexName}' already exists on table '{_tableName}' with a different definition " +
+            $"(existing: slots [{string.Join(",", def.SlotIndices)}] {def.Type}; " +
+            $"requested: slots [{string.Join(",", slotIndices)}] {type}). Drop it first to redefine.");
+    }
+
+    /// <summary>
+    /// A NEWLY created backing table for a main table that already holds rows must be built now —
+    /// without this, creating an index on existing data (or after a schema migration dropped the
+    /// stale index tables) left the index silently EMPTY: queries through it matched nothing.
+    /// A REUSED (persisted) index table is verified instead of trusted: every index (unique or
+    /// composite non-unique) holds exactly one entry per row, so an entry-count/row-count mismatch
+    /// means the persisted index is not in step with the table (e.g. written by a version that did
+    /// not flush index tables at commit) — rebuild it. Cost: one streaming count of each table at
+    /// index registration; a persisted sync stamp is the follow-up optimization.
+    /// </summary>
+    private void BackfillIfNeeded(IndexEntry entry, bool preexistingIndexTable)
+    {
+        _table.Flush();
+
+        if (preexistingIndexTable)
+        {
+            entry.IndexTable.Flush();
+            if (entry.IndexTable.Count() == _table.Count())
+                return; // in step — reuse as-is
+        }
+
+        if (_table.Forward().Any())
+            RebuildEntry(entry);
+        else
+        {
+            // Empty main table: make sure a stale persisted index doesn't resurrect ghost rows.
+            entry.IndexTable.Clear();
+            entry.IndexTable.Flush();
+        }
     }
 
     public void DropIndex(string indexName)
@@ -81,7 +135,10 @@ internal sealed partial class TableIndexManager : ITableIndexManager
 
         // Mark the index table's locator as deleted
         var indexTableName = entry.Definition.GetTableName(_tableName);
-        DeleteIndexTable(indexTableName);
+        if (_tree is StorageEngine engine)
+            engine.RemoveInternalTable(indexTableName); // clears + soft-deletes + unmaps
+        else
+            DeleteIndexTable(indexTableName);
 
         _indexes.Remove(indexName);
         _planCache.Clear();
@@ -531,7 +588,30 @@ internal sealed partial class TableIndexManager : ITableIndexManager
 
     private static readonly IData _dummyValue = (object)(byte)0;
 
-    private IndexEntry BuildEntry(IndexDefinition def)
+    /// <summary>
+    /// Opens the backing index table. Through a <see cref="StorageEngine"/> this REUSES the
+    /// persisted locator when its schema still matches (index data survives restarts, and the
+    /// table is enrolled in the engine map so commits flush it); <paramref name="preexisting"/>
+    /// then tells <see cref="CreateIndex(string,int[],IndexType)"/> whether a backfill is needed.
+    /// </summary>
+    private XTablePortable ObtainIndexTable(
+        string indexTableName, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType,
+        out bool preexisting)
+    {
+        if (_tree is StorageEngine engine)
+            return engine.ObtainInternalTable(indexTableName, keyDataType, recordDataType, keyType, recordType, out preexisting);
+
+        // Raw WTree (no engine surface): legacy path — always a fresh locator.
+        preexisting = false;
+        var idxLocator = _tree.CreateLocator(indexTableName, StructureType.XTABLE,
+            keyDataType, recordDataType, keyType, recordType);
+        if (!idxLocator.IsReady) idxLocator.Prepare();
+        return new XTablePortable(_tree, idxLocator);
+    }
+
+    private IndexEntry BuildEntry(IndexDefinition def) => BuildEntry(def, out _);
+
+    private IndexEntry BuildEntry(IndexDefinition def, out bool preexistingIndexTable)
     {
         var recordDataType = _locator.RecordDataType;
         var recordType = _locator.RecordType
@@ -592,15 +672,11 @@ internal sealed partial class TableIndexManager : ITableIndexManager
         Func<IData, IData>? prefixSeekBuilder = null;
         IComparer<IData>? prefixComparer = null;
 
+        var preexisting = false;
         if (def.Type == IndexType.Unique)
         {
             // Unique: index table key = field value, value = primary key
-            var idxLocator = _tree.CreateLocator(
-                indexTableName, StructureType.XTABLE,
-                fieldDataType, keyDataType,
-                fieldType, keyType);
-            if (!idxLocator.IsReady) idxLocator.Prepare();
-            indexTable = new XTablePortable(_tree, idxLocator);
+            indexTable = ObtainIndexTable(indexTableName, fieldDataType, keyDataType, fieldType, keyType, out preexisting);
         }
         else
         {
@@ -612,12 +688,7 @@ internal sealed partial class TableIndexManager : ITableIndexManager
             compositeKeyType = SlotsBuilder.BuildType(compositeStorageTypes);
             var compositeKeyDataType = DataTypeUtils.BuildDataType(compositeKeyType);
 
-            var idxLocator = _tree.CreateLocator(
-                indexTableName, StructureType.XTABLE,
-                compositeKeyDataType, DataType.Byte,
-                compositeKeyType, typeof(byte));
-            if (!idxLocator.IsReady) idxLocator.Prepare();
-            indexTable = new XTablePortable(_tree, idxLocator);
+            indexTable = ObtainIndexTable(indexTableName, compositeKeyDataType, DataType.Byte, compositeKeyType, typeof(byte), out preexisting);
 
             nonUniqueKeyBuilder = SlotAccessor.BuildNonUniqueKeyBuilder(
                 recordType, def.SlotIndices, keyType);
@@ -638,6 +709,7 @@ internal sealed partial class TableIndexManager : ITableIndexManager
             }
         }
 
+        preexistingIndexTable = preexisting;
         return new IndexEntry(
             def, indexTable, fieldExtractor, fieldEquals, fieldComparer,
             nonUniqueKeyBuilder, scanFromKeyBuilder,

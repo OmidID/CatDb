@@ -172,7 +172,12 @@ internal static class SlotAccessor
             }
         }
 
-        ctorArgs[^1] = Expression.Default(primaryKeyType);
+        // Min sentinel, not Default: for a reference-type PK (byte[] ← Guid, string) default is
+        // NULL, which the composite-key comparer/hasher cannot order — the seek silently matched
+        // nothing. Fall back to Default only for types without a sentinel.
+        ctorArgs[^1] = Sentinels.TryGet(primaryKeyType, max: false, out var pkMin)
+            ? Expression.Constant(pkMin, primaryKeyType)
+            : Expression.Default(primaryKeyType);
 
         var compositeCtor = compositeKeyType.GetConstructors()
             .First(c => c.GetParameters().Length == totalSlots);
@@ -203,28 +208,44 @@ internal static class SlotAccessor
             Expression? combined = null;
             foreach (var member in members)
             {
-                var memberType      = GetMemberType(member);
-                var accessA         = AccessMember(valueA, member);
-                var accessB         = AccessMember(valueB, member);
-                var slotComparerType = typeof(System.Collections.Generic.EqualityComparer<>).MakeGenericType(memberType);
-                var slotDefaultProp  = slotComparerType.GetProperty("Default", BindingFlags.Static | BindingFlags.Public)!;
-                var slotEqualsMethod = slotComparerType.GetMethod("Equals", [memberType, memberType])!;
-                var slotComparer     = Expression.Property(null, slotDefaultProp);
-                var slotEquals       = Expression.Call(slotComparer, slotEqualsMethod, accessA, accessB);
+                var memberType = GetMemberType(member);
+                var accessA    = AccessMember(valueA, member);
+                var accessB    = AccessMember(valueB, member);
+                var slotEquals = BuildEqualsCall(memberType, accessA, accessB);
                 combined = combined == null ? slotEquals : Expression.AndAlso(combined, slotEquals);
             }
             equalsExpr = combined ?? Expression.Constant(true);
         }
         else
         {
-            var comparerType  = typeof(System.Collections.Generic.EqualityComparer<>).MakeGenericType(fieldType);
-            var defaultProp   = comparerType.GetProperty("Default", BindingFlags.Static | BindingFlags.Public)!;
-            var equalsMethod  = comparerType.GetMethod("Equals", [fieldType, fieldType])!;
-            var comparer      = Expression.Property(null, defaultProp);
-            equalsExpr        = Expression.Call(comparer, equalsMethod, valueA, valueB);
+            equalsExpr = BuildEqualsCall(fieldType, valueA, valueB);
         }
 
         return Expression.Lambda<Func<IData, IData, bool>>(equalsExpr, aParam, bParam).Compile();
+    }
+
+    /// <summary>
+    /// Equality call for one (slot) value pair. byte[] (a Guid field's storage type) needs CONTENT
+    /// equality — <c>EqualityComparer&lt;byte[]&gt;.Default</c> is reference equality, which made a
+    /// re-materialized query value never match a stored index key.
+    /// </summary>
+    private static Expression BuildEqualsCall(Type type, Expression a, Expression b)
+    {
+        if (type == typeof(byte[]))
+        {
+            var cmp = Expression.Field(null, typeof(General.Comparers.BigEndianByteArrayEqualityComparer)
+                .GetField(nameof(General.Comparers.BigEndianByteArrayEqualityComparer.Instance))!);
+            return Expression.Call(cmp,
+                typeof(General.Comparers.BigEndianByteArrayEqualityComparer)
+                    .GetMethod(nameof(General.Comparers.BigEndianByteArrayEqualityComparer.Equals), [typeof(byte[]), typeof(byte[])])!,
+                a, b);
+        }
+
+        var comparerType = typeof(System.Collections.Generic.EqualityComparer<>).MakeGenericType(type);
+        var defaultProp  = comparerType.GetProperty("Default", BindingFlags.Static | BindingFlags.Public)!;
+        var equalsMethod = comparerType.GetMethod("Equals", [type, type])!;
+        var comparer     = Expression.Property(null, defaultProp);
+        return Expression.Call(comparer, equalsMethod, a, b);
     }
 
     internal static Type GetSlotType(Type compositeKeyType, int slotIndex)
@@ -255,7 +276,10 @@ internal static class SlotAccessor
                 args[i] = AccessMember(prefixValue, GetSlotMember(prefixType, i));
         }
         for (var i = prefixLen; i < ps.Length; i++)
-            args[i] = Expression.Default(ps[i].ParameterType);
+            // Min sentinel over Default: default(byte[])/default(string) is NULL and unorderable.
+            args[i] = Sentinels.TryGet(ps[i].ParameterType, max: false, out var min)
+                ? Expression.Constant(min, ps[i].ParameterType)
+                : Expression.Default(ps[i].ParameterType);
 
         var newComposite = Expression.New(ctor, args);
         var castResult   = Expression.Convert(newComposite, typeof(object));
@@ -314,12 +338,27 @@ internal static class SlotAccessor
             if (!t.IsValueType)
                 return Expression.Condition(
                     Expression.ReferenceEqual(access, Expression.Constant(null, t)),
-                    Expression.Default(inner.Type),
+                    NullStorageDefault(inner.Type),
                     inner);
             return inner;
         }
 
         return access;
+    }
+
+    /// <summary>
+    /// Storage stand-in for a null wrapper: <c>default(T)</c> for value types, but a NON-null empty
+    /// value for reference storage types — a null <c>byte[]</c>/<c>string</c> index key would NRE the
+    /// key hash/comparer on leaf apply (portable <c>Guid?</c> normalizes to <c>byte[]</c>, so a null
+    /// Guid must become an empty array, the byte[] analogue of default(T)).
+    /// </summary>
+    private static Expression NullStorageDefault(Type t)
+    {
+        if (t == typeof(byte[]))
+            return Expression.Constant(Array.Empty<byte>(), typeof(byte[]));
+        if (t == typeof(string))
+            return Expression.Constant(string.Empty, typeof(string));
+        return Expression.Default(t);
     }
 
     /// <summary>
