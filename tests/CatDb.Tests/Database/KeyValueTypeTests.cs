@@ -178,4 +178,31 @@ public class KeyValueTypeTests : IDisposable
         t[1] = data;
         t[1].Should().BeEquivalentTo(data);
     }
+
+    public class RecordV1 { public string Name { get; set; } = ""; public int Age { get; set; } }
+    public class RecordV2 { public string Name { get; set; } = ""; public int Age { get; set; } public bool Active { get; set; } }
+
+    // Reopening with a changed record shape now MIGRATES automatically (name-based slot remap;
+    // see SchemaMigrationTests for the full matrix). It must not throw, and data must survive.
+    [Fact]
+    public void Table_ReopenWithChangedRecordSchema_Migrates()
+    {
+        var t1 = _engine.OpenXTable<int, RecordV1>("t");
+        t1[1] = new RecordV1 { Name = "Ada", Age = 36 };
+
+        var t2 = _engine.OpenXTable<int, RecordV2>("t");
+        t2[1].Name.Should().Be("Ada");
+        t2[1].Age.Should().Be(36);
+        t2[1].Active.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Table_ReopenWithChangedKeyType_ThrowsDiagnosticMessage()
+    {
+        _engine.OpenXTable<int, string>("t");
+
+        var act = () => _engine.OpenXTable<long, string>("t");
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Key schema mismatch for table 't'*");
+    }
 }

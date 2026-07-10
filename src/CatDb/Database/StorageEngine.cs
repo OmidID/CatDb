@@ -10,7 +10,7 @@ using CatDb.WaterfallTree;
 
 namespace CatDb.Database;
 
-public class StorageEngine : WTree, IStorageEngine
+public partial class StorageEngine : WTree, IStorageEngine
 {
     private readonly Dictionary<string, Item1> _map = new();
     private readonly Dictionary<TransformerCacheKey, object> _transformerCache = new();
@@ -33,7 +33,7 @@ public class StorageEngine : WTree, IStorageEngine
         }
     }
 
-    private Item1 Obtain(string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType, bool allowInternal = false)
+    private Item1 Obtain(string name, int structureType, DataType keyDataType, DataType recordDataType, Type keyType, Type recordType, bool allowInternal = false, IReadOnlyDictionary<string, int>? recordMemberNames = null)
     {
         Debug.Assert(keyDataType != null);
         Debug.Assert(recordDataType != null);
@@ -60,19 +60,29 @@ public class StorageEngine : WTree, IStorageEngine
             if (locator.StructureType != structureType)
                 throw new ArgumentException($"Invalid structure type for '{name}'");
             if (keyDataType != locator.KeyDataType)
-                throw new ArgumentException(nameof(keyDataType));
+                throw new ArgumentException(
+                    $"Key schema mismatch for table '{name}': stored key type is {locator.KeyDataType}, " +
+                    $"but it was opened with {keyDataType}. The key type of an existing table cannot change; " +
+                    "open with the original type, or delete/recreate the table.");
             if (recordDataType != locator.RecordDataType)
-                throw new ArgumentException(nameof(recordDataType));
+            {
+                // Record schema changed (entity gained/lost/reordered properties): migrate the
+                // stored rows to the new layout instead of refusing to open. Throws a diagnostic
+                // ArgumentException when the change is not migratable (see SchemaMigrator).
+                item = MigrateRecordSchema(name, item, recordDataType, recordType, recordMemberNames);
+            }
+            else
+            {
+                locator.KeyType ??= DataTypeUtils.BuildType(keyDataType);
+                if (keyType != null && keyType != locator.KeyType)
+                    throw new ArgumentException($"Invalid keyType for table '{name}'");
 
-            locator.KeyType ??= DataTypeUtils.BuildType(keyDataType);
-            if (keyType != null && keyType != locator.KeyType)
-                throw new ArgumentException($"Invalid keyType for table '{name}'");
+                locator.RecordType ??= DataTypeUtils.BuildType(recordDataType);
+                if (recordType != null && recordType != locator.RecordType)
+                    throw new ArgumentException($"Invalid recordType for table '{name}'");
 
-            locator.RecordType ??= DataTypeUtils.BuildType(recordDataType);
-            if (recordType != null && recordType != locator.RecordType)
-                throw new ArgumentException($"Invalid recordType for table '{name}'");
-
-            locator.AccessTime = DateTime.Now;
+                locator.AccessTime = DateTime.Now;
+            }
         }
 
         if (!item.Locator.IsReady)
@@ -104,7 +114,8 @@ public class StorageEngine : WTree, IStorageEngine
         _syncRoot.Enter();
         try
         {
-            var item = Obtain(name, StructureType.XTABLE, keyDataType, recordDataType, null, null);
+            var item = Obtain(name, StructureType.XTABLE, keyDataType, recordDataType, null, null,
+                recordMemberNames: recordMembers);
             item.Locator.SetMembers(keyMembers, recordMembers);
             return item.Table;
         }
@@ -121,7 +132,8 @@ public class StorageEngine : WTree, IStorageEngine
         _syncRoot.Enter();
         try
         {
-            var item = Obtain(name, StructureType.XTABLE, keyDataType, recordDataType, null, null);
+            var item = Obtain(name, StructureType.XTABLE, keyDataType, recordDataType, null, null,
+                recordMemberNames: recordMemberMap?.Names);
             item.Locator.SetMembers(keyMemberMap, recordMemberMap);
             return item.Table;
         }

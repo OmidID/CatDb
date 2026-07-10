@@ -43,11 +43,12 @@ public class DataTransformer<T> : ITransformer<T, IData>
         }
         else
         {
-            // Different types — allocate T2, copy fields, return as object
+            // Different types — build T2 from the value (BuildBody handles conversion
+            // pairs like Guid↔byte[]/enum↔int and allocates POCOs itself; do NOT
+            // pre-New _type2 — byte[] has no default ctor), return as object.
             var t2   = Expression.Variable(_type2);
             var list = new List<Expression>
             {
-                Expression.Assign(t2, Expression.New(_type2)),
                 TransformerHelper.BuildBody(t2, value, _membersOrder1, _membersOrder2),
                 Expression.Convert(t2, typeof(object))
             };

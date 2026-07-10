@@ -165,21 +165,22 @@ public static class TransformerHelper
 
         if (type1.IsNullable())
         {
-            var data1Var = Expression.Variable(value1.Type);
-            var data2Var = Expression.Variable(value2.Type);
+            var data2Var  = Expression.Variable(value2.Type);
+            var innerType = type1.GetGenericArguments()[0];
+            var innerVar  = Expression.Variable(innerType);
 
-            new List<Expression>();
+            // Source of the wrapped value: Value for a Nullable, else the single slot.
+            var srcInner = Expression.PropertyOrField(data2Var,
+                type2.IsNullable() ? "Value" : DataTypeUtils.GetPublicMembers(type2, membersOrder2).First().Name);
 
-            var constructParam = Expression.PropertyOrField(data2Var, type2.IsNullable() ? "Value" : DataTypeUtils.GetPublicMembers(type2, membersOrder2).First().Name);
-
-            var block = Expression.Block(new[] { data1Var, data2Var },
+            // Convert the inner value through BuildBody so conversion pairs (Guid↔byte[],
+            // enum↔integral, numeric widening, nested objects) are honored — a raw
+            // Expression.Convert has no coercion between e.g. byte[] and Guid.
+            var block = Expression.Block(new[] { data2Var, innerVar },
                     Expression.Assign(data2Var, value2),
-                    Expression.Assign(data1Var, Expression.New(
-                        type1.GetConstructor(new[] { type1.GetGenericArguments()[0] })!,
-                            constructParam.GetType() == type1.GetGenericArguments()[0] ?
-                            constructParam :
-                            Expression.Convert(constructParam, type1.GetGenericArguments()[0]))),
-                    Expression.Assign(value1, data1Var)
+                    BuildBody(innerVar, srcInner, membersOrder1, membersOrder2),
+                    Expression.Assign(value1, Expression.New(
+                        type1.GetConstructor(new[] { innerType })!, innerVar))
                 );
 
             return Expression.IfThenElse(Expression.NotEqual(value2, Expression.Constant(null, type2)),

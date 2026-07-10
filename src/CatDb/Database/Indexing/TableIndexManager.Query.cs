@@ -146,7 +146,16 @@ internal sealed partial class TableIndexManager : IQueryEngineContext
         // same CLR type the client encoded it with (typeof(TField)); otherwise `.PrimitiveType` throws
         // "The type (T) is not primitive" on the wrapper.
         var clr = DataTypeUtils.BuildType(slotDt);
-        return SlotAccessor.TryGetPortableNullableType(clr, out var nullable) ? nullable : clr;
+        if (SlotAccessor.TryGetPortableNullableType(clr, out var nullable))
+            return nullable;
+
+        // Reference-type inner (Guid? → Slots(ByteArray) → Slots<byte[]>): TryGetPortableNullableType
+        // only handles value-type inners, so flatten the wrapper to its inner storage type here.
+        // The client encodes the FLAT value (DataPersist(Guid)/(Guid?) and (byte[]) share the same
+        // length-prefixed layout), and every downstream consumer (value normalizer, seek bounds,
+        // residual/sort comparers) works on the flat storage type — decoding as the Slots wrapper
+        // instead produced a Slots<byte[]> instance that the index seek then failed to cast to byte[].
+        return SlotAccessor.NormalizeStorageType(clr);
     }
 
     /// <summary>CLR type of the primary key (for remote key-range decoding).</summary>

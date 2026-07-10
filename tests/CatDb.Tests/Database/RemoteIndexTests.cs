@@ -383,4 +383,153 @@ public class RemoteIndexTests
             await server.StopAsync();
         }
     }
+
+    public class GuidRecord
+    {
+        public Guid Id { get; set; }
+        public Guid? OwnerId { get; set; }
+        public string Name { get; set; } = "";
+    }
+
+    // Regression: a Guid key/record over the remote client used to throw
+    // "Type 'System.Byte[]' does not have a default constructor" in
+    // DataTransformer.CreateToMethod — the remote descriptor regenerates the CLR
+    // type from the DataType (Guid → ByteArray → byte[]), so the transformer maps
+    // Guid ↔ byte[]; CreateToMethod pre-New'd byte[] instead of using BuildBody.
+    [Fact]
+    public async Task Remote_GuidKeyAndRecord_RoundTrip()
+    {
+        var port = FreePort();
+        using var serverEngine = CatDb.Database.CatDb.FromMemory();
+        await using var tcp = new TcpServer(port);
+        var server = new StorageEngineServer(serverEngine, tcp, accessPolicy: null);
+        await server.StartAsync();
+
+        var key = Guid.NewGuid();
+        var owner = Guid.NewGuid();
+        try
+        {
+            using (var client = CatDb.Database.CatDb.FromNetwork("localhost", port, "default", "u", "p"))
+            {
+                var table = client.OpenXTable<Guid, GuidRecord>("guids");
+                table.Replace(key, new GuidRecord { Id = key, OwnerId = owner, Name = "Omid" });
+                client.Commit();
+
+                var back = table.Find(key);
+                back.Should().NotBeNull();
+                back!.Id.Should().Be(key);
+                back.OwnerId.Should().Be(owner);
+                back.Name.Should().Be("Omid");
+            }
+        }
+        finally
+        {
+            await server.StopAsync();
+        }
+    }
+
+    // Regression: querying an indexed Guid?/Guid field over the remote client threw
+    // "Unable to cast object of type 'CatDb.Data.Slots`1[System.Byte[]]' to type 'System.Byte[]'"
+    // server-side: GetMemberType returned the portable wrapper Slots<byte[]> for a Guid? slot
+    // (TryGetPortableNullableType only handles value-type inners), so the filter literal was
+    // decoded as the wrapper and the index seek failed to cast it to the flat byte[] storage key.
+    [Fact]
+    public async Task Remote_QueryOnGuidNullableIndexedField_Works()
+    {
+        var port = FreePort();
+        using var serverEngine = CatDb.Database.CatDb.FromMemory();
+        await using var tcp = new TcpServer(port);
+        var server = new StorageEngineServer(serverEngine, tcp, accessPolicy: null);
+        await server.StartAsync();
+
+        var owner = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        try
+        {
+            using var client = CatDb.Database.CatDb.FromNetwork("localhost", port, "default", "u", "p");
+            var table = client.OpenXTable<Guid, GuidRecord>("apps");
+            table.CreateIndex("OwnerId", r => r.OwnerId, IndexType.NonUnique);
+
+            for (var i = 0; i < 20; i++)
+            {
+                var id = Guid.NewGuid();
+                table.Replace(id, new GuidRecord
+                {
+                    Id = id,
+                    OwnerId = i % 4 == 0 ? null : (i % 2 == 0 ? owner : other),
+                    Name = $"app{i}",
+                });
+            }
+            client.Commit();
+
+            table.Count().Should().Be(20);
+            table.Indexes.FindByIndexRange("OwnerId", null, false, true, null, false, true, backward: false)
+                .Count().Should().Be(20, "full index range = every row");
+            table.Indexes.CountByIndex("OwnerId", owner).Should().Be(5, "direct index count");
+            table.Indexes.FindByIndex("OwnerId", owner).Count().Should().Be(5, "direct index find");
+
+            // The exact repo pattern: fetch all records for one owner via the indexed Guid? field.
+            var mine = table.Query(x => x.OwnerId).Equal(owner).ToList();
+            mine.Should().HaveCount(5);            // i ∈ {2,6,10,14,18}
+            mine.Should().OnlyContain(kv => kv.Value.OwnerId == owner);
+
+            table.Query(x => x.OwnerId).Equal(owner).Count().Should().Be(5);
+            table.Query(x => x.OwnerId).Equal(other).Count().Should().Be(10);
+
+            // Exact repo shape: Equal(guid) + ORDER BY another field (drives a different plan).
+            var ordered = table.Query(x => x.OwnerId).Equal(owner).OrderBy(x => x.Name).ToList();
+            ordered.Should().HaveCount(5);
+            ordered.Select(kv => kv.Value.Name).Should().BeInAscendingOrder();
+        }
+        finally
+        {
+            await server.StopAsync();
+        }
+    }
+
+    // Regression: RemoteTableIndexManager.GetIndex only consulted a session-local cache,
+    // so a FRESH connection reported an existing index as null → an EnsureIndex-style
+    // "GetIndex ?? CreateIndex" pattern re-created it → server threw "already exists".
+    // GetIndex must refresh from the server on a cache miss.
+    [Fact]
+    public async Task Remote_GetIndex_FindsIndexCreatedOnEarlierConnection()
+    {
+        var port = FreePort();
+        using var serverEngine = CatDb.Database.CatDb.FromMemory();
+        await using var tcp = new TcpServer(port);
+        var server = new StorageEngineServer(serverEngine, tcp, accessPolicy: null);
+        await server.StartAsync();
+
+        try
+        {
+            // Connection 1: create the index.
+            using (var client = CatDb.Database.CatDb.FromNetwork("localhost", port, "default", "u", "p"))
+            {
+                var table = client.OpenXTable<int, Customer>("customers");
+                table.CreateIndex("City", c => c.City, IndexType.NonUnique);
+                client.Commit();
+            }
+
+            // Connection 2 (fresh cache): GetIndex must see the server-side index.
+            using (var client = CatDb.Database.CatDb.FromNetwork("localhost", port, "default", "u", "p"))
+            {
+                var table = client.OpenXTable<int, Customer>("customers");
+
+                table.Indexes.GetIndex("City").Should().NotBeNull();
+                table.Indexes.GetIndex("Nonexistent").Should().BeNull();
+
+                // The EnsureIndex pattern must now be a no-op (must NOT throw "already exists").
+                var act = () =>
+                {
+                    if (table.Indexes.GetIndex("City") is null)
+                        table.CreateIndex("City", c => c.City, IndexType.NonUnique);
+                };
+                act.Should().NotThrow();
+            }
+        }
+        finally
+        {
+            await server.StopAsync();
+        }
+    }
 }

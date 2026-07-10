@@ -677,12 +677,14 @@ public sealed class StorageEngineServer
     private ICommand StorageEngineOpenXIndex(IStorageEngine storageEngine, ICommand command)
     {
         var cmd = (StorageEngineOpenXIndexCommand)command;
-        storageEngine.OpenXTablePortable(cmd.Name, cmd.KeyType, cmd.RecordType);
+        // Route the client's member maps INTO the open: schema migration (record shape changed)
+        // resolves old→new slots by member NAME, so the names must be available at Obtain time —
+        // not stamped on afterwards.
+        if (cmd.KeyMembers != null || cmd.RecordMembers != null)
+            storageEngine.OpenXTablePortable(cmd.Name, cmd.KeyType, cmd.RecordType, cmd.KeyMembers, cmd.RecordMembers);
+        else
+            storageEngine.OpenXTablePortable(cmd.Name, cmd.KeyType, cmd.RecordType);
         var loc = storageEngine[cmd.Name];
-
-        // If the client sent member names, store them in the locator so they persist.
-        if (loc is Locator locator && (cmd.KeyMembers != null || cmd.RecordMembers != null))
-            locator.SetMembers(cmd.KeyMembers, cmd.RecordMembers);
 
         return new StorageEngineOpenXIndexCommand(loc.Id);
     }
